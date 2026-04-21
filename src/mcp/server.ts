@@ -6,6 +6,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 
+const MAX_TASK_TEXT_LENGTH = 10_000;
+const MAX_TEXT_LENGTH = 100_000;
+const MAX_CHUNK_IDS = 1_000;
+
 const TOOL_DEFINITIONS = [
   {
     name: 'score_context',
@@ -163,10 +167,7 @@ const TOOL_DEFINITIONS = [
   },
 ];
 
-export function startMCPServer(
-  pipeline: PipelineOrchestrator,
-  _options?: { port?: number; transport?: 'stdio' | 'sse' }
-): Server {
+function createServer(pipeline: PipelineOrchestrator): Server {
   const server = new Server(
     { name: 'spacefolding', version: '0.1.0' },
     { capabilities: { tools: {} } }
@@ -178,27 +179,28 @@ export function startMCPServer(
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    const validationError = validateArgs(args as Record<string, unknown> | undefined);
+    if (validationError) {
+      return errorResponse(validationError);
+    }
 
     try {
       switch (name) {
         case 'score_context': {
-          const result = await pipeline.processContext(args!.task as { text: string; type?: string; priority?: string });
-          return {
-            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-          };
+          const result = await pipeline.processContext(
+            args!.task as { text: string; type?: string; priority?: string }
+          );
+          return jsonResponse(result);
         }
 
         case 'compress_context': {
-          const chunkIds = (args!.chunkIds as string[]) ?? [];
-          // Get chunks, compress
-          const allChunks = pipeline['storage'].getAllChunks().filter((c: { id: string }) => chunkIds.includes(c.id));
-          const compression = await pipeline['compressionProvider'].compress(
+          const chunkIds = ((args!.chunkIds as string[]) ?? []).slice(0, MAX_CHUNK_IDS);
+          const chunkIdSet = new Set(chunkIds);
+          const compression = await pipeline.compressChunks(
             args!.task as { text: string; type?: string; priority?: string },
-            allChunks
+            pipeline.getAllChunks().filter((chunk) => chunkIdSet.has(chunk.id))
           );
-          return {
-            content: [{ type: 'text', text: JSON.stringify(compression, null, 2) }],
-          };
+          return jsonResponse(compression);
         }
 
         case 'get_relevant_memory': {
@@ -210,9 +212,7 @@ export function startMCPServer(
             args!.task as { text: string; type?: string; priority?: string },
             typedFilters
           );
-          return {
-            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-          };
+          return jsonResponse(result);
         }
 
         case 'ingest_context': {
@@ -223,9 +223,7 @@ export function startMCPServer(
             args!.path as string | undefined,
             args!.language as string | undefined
           );
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ chunkId: chunk.id }, null, 2) }],
-          };
+          return jsonResponse({ chunkId: chunk.id });
         }
 
         case 'update_context_graph': {
@@ -235,21 +233,18 @@ export function startMCPServer(
             type: string;
             weight?: number;
           }>) ?? [];
-          const links = deps.map((d) => ({
-            fromId: d.fromId,
-            toId: d.toId,
-            type: d.type as 'references' | 'defines' | 'summarizes' | 'overrides' | 'contains',
-            weight: d.weight ?? 0.5,
+          const links = deps.map((dependency) => ({
+            fromId: dependency.fromId,
+            toId: dependency.toId,
+            type: dependency.type as 'references' | 'defines' | 'summarizes' | 'overrides' | 'contains',
+            weight: dependency.weight ?? 0.5,
           }));
           if ((args!.operation as string) === 'add') {
             pipeline.addDependencies(links);
           } else {
             pipeline.removeDependencies(links);
           }
-          const stored = pipeline.getDependencies(args!.chunkId as string);
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ links: stored }, null, 2) }],
-          };
+          return jsonResponse({ links: pipeline.getDependencies(args!.chunkId as string) });
         }
 
         case 'explain_routing': {
@@ -257,29 +252,127 @@ export function startMCPServer(
             args!.task as { text: string; type?: string; priority?: string },
             args!.chunkId as string | undefined
           );
-          return {
-            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-          };
+          return jsonResponse(result);
         }
 
         default:
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${name}` }) }],
-            isError: true,
-          };
+          return errorResponse(`Unknown tool: ${name}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
-        isError: true,
-      };
+      return errorResponse(message);
     }
   });
 
-  // Connect with stdio transport
-  const transport = new StdioServerTransport();
-  server.connect(transport);
+  return server;
+}
 
+function jsonResponse(data: unknown) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+  };
+}
+
+function errorResponse(message: string) {
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
+    isError: true,
+  };
+}
+
+function validateArgs(args: Record<string, unknown> | undefined): string | undefined {
+  if (!args) {
+    return 'Missing tool arguments';
+  }
+
+  const task = args.task;
+  if (task && typeof task === 'object') {
+    const taskText = (task as { text?: unknown }).text;
+    if (typeof taskText !== 'string') {
+      return 'task.text must be a string';
+    }
+    if (taskText.length > MAX_TASK_TEXT_LENGTH) {
+      return `task.text exceeds ${MAX_TASK_TEXT_LENGTH} characters`;
+    }
+  }
+
+  if (typeof args.text === 'string' && args.text.length > MAX_TEXT_LENGTH) {
+    return `text exceeds ${MAX_TEXT_LENGTH} characters`;
+  }
+
+  if (args.chunkIds !== undefined) {
+    if (!Array.isArray(args.chunkIds)) {
+      return 'chunkIds must be an array';
+    }
+    if (args.chunkIds.length > MAX_CHUNK_IDS) {
+      return `chunkIds exceeds ${MAX_CHUNK_IDS} entries`;
+    }
+  }
+
+  return undefined;
+}
+
+export async function startMCPServer(
+  pipeline: PipelineOrchestrator,
+  options?: { port?: number; transport?: 'stdio' | 'sse' }
+): Promise<Server> {
+  const transportType = options?.transport ?? 'stdio';
+
+  if (transportType === 'sse') {
+    try {
+      const [{ createServer: createHttpServer }, { SSEServerTransport }] = await Promise.all([
+        import('node:http'),
+        import('@modelcontextprotocol/sdk/server/sse.js'),
+      ]);
+      const port = options?.port ?? 3000;
+      const transports = new Map<string, { transport: any; server: Server }>();
+
+      const httpServer = createHttpServer(async (req, res) => {
+        try {
+          const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+
+          if (req.method === 'GET' && url.pathname === '/sse') {
+            const server = createServer(pipeline);
+            const transport = new SSEServerTransport('/messages', res);
+            transports.set(transport.sessionId, { transport, server });
+            transport.onclose = () => {
+              transports.delete(transport.sessionId);
+              void server.close();
+            };
+            await server.connect(transport);
+            return;
+          }
+
+          if (req.method === 'POST' && url.pathname === '/messages') {
+            const sessionId = url.searchParams.get('sessionId');
+            const entry = sessionId ? transports.get(sessionId) : undefined;
+            if (!entry) {
+              res.writeHead(404).end('Unknown SSE session');
+              return;
+            }
+            await entry.transport.handlePostMessage(req, res);
+            return;
+          }
+
+          res.writeHead(404).end('Not found');
+        } catch (error) {
+          res.writeHead(500).end('SSE transport error');
+          console.error('SSE transport error:', error);
+        }
+      });
+
+      await new Promise<void>((resolve) => {
+        httpServer.listen(port, resolve);
+      });
+
+      console.error(`Spacefolding SSE server listening on port ${port}`);
+      return createServer(pipeline);
+    } catch (error) {
+      console.error('SSE transport unavailable, falling back to stdio:', error);
+    }
+  }
+
+  const server = createServer(pipeline);
+  await server.connect(new StdioServerTransport());
   return server;
 }

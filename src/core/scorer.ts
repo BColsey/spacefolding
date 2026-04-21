@@ -68,16 +68,25 @@ export class ContextScorer {
       chunkReasons.push(`recency: ${recencyScore.toFixed(3)}`);
 
       // Redundancy penalty
-      let redundancyPenalty = 0;
-      for (let j = 0; j < chunks.length; j++) {
-        if (i === j) continue;
-        const sim = cosineSimilarity(chunkEmbeddings[i], chunkEmbeddings[j]);
-        if (sim > 0.8) {
-          redundancyPenalty += 0.3;
-          chunkReasons.push(`redundant with chunk ${chunks[j].id.slice(0, 8)}`);
+      let redundancyScore = 1;
+      if (semanticScore > 0.95) {
+        chunkReasons.push('redundancy skipped: semantic similarity already very high');
+      } else {
+        let redundancyPenalty = 0;
+        let checkedNeighbors = 0;
+        for (let j = 0; j < chunks.length; j++) {
+          if (i === j) continue;
+          if (checkedNeighbors >= 20 || redundancyPenalty >= 1) break;
+          checkedNeighbors++;
+
+          const sim = cosineSimilarity(chunkEmbeddings[i], chunkEmbeddings[j]);
+          if (sim > 0.8) {
+            redundancyPenalty = Math.min(1, redundancyPenalty + 0.3);
+            chunkReasons.push(`redundant with chunk ${chunks[j].id.slice(0, 8)}`);
+          }
         }
+        redundancyScore = Math.max(0, 1 - redundancyPenalty);
       }
-      const redundancyScore = Math.max(0, 1 - redundancyPenalty);
 
       // Dependency score: boost if linked to high-scoring chunks
       let dependencyScore = 0;

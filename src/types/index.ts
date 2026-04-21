@@ -113,6 +113,8 @@ export interface RoutingConfig {
   thresholds: RoutingThresholds;
 }
 
+export declare function cosineSimilarity(a: number[], b: number[]): number;
+
 // --- Provider Interfaces ---
 
 export interface EmbeddingProvider {
@@ -146,6 +148,8 @@ export interface StorageProvider {
   updateChunk(chunk: ContextChunk): void;
   deleteChunk(id: string): void;
   storeDependency(link: DependencyLink): void;
+  removeDependency(fromId: string, toId: string, type: DependencyType): void;
+  removeAllDependenciesForChunk(chunkId: string): void;
   getDependencies(chunkId: string): DependencyLink[];
 }
 
@@ -154,6 +158,7 @@ export interface StorageProvider {
 export interface MCPScoreInput {
   task: TaskDescription;
   chunkIds?: string[];
+  maxTokens?: number;
 }
 
 export type MCPScoreOutput = ScoreResult;
@@ -205,53 +210,6 @@ export interface MCPExplainInput {
 export interface MCPExplainOutput {
   routing: RoutingDecision[];
   summary: string;
-}
-
-// --- Pipeline Types ---
-
-export interface PipelineDependencies {
-  storage: StorageProvider & {
-    init(): void;
-    storeRoutingDecision(
-      chunkId: string,
-      tier: ContextTier,
-      score: number,
-      reasons: string[],
-      taskText: string
-    ): void;
-    storeCompression(result: CompressionResult & { id: string; taskText: string }): void;
-    getCompression(id: string): CompressionResult | null;
-    getChunkCount(): number;
-    close(): void;
-  };
-  scorer: {
-    scoreChunks(
-      task: TaskDescription,
-      chunks: ContextChunk[]
-    ): Promise<{ scores: Record<string, number>; reasons: Record<string, string[]> }>;
-  };
-  router: {
-    route(
-      scores: Record<string, number>,
-      reasons: Record<string, string[]>,
-      chunks: ContextChunk[],
-      dependencies: DependencyLink[]
-    ): ScoreResult;
-  };
-  compressionProvider: CompressionProvider;
-  dependencyAnalyzer: DependencyAnalyzer;
-  ingester: {
-    ingestText(source: string, text: string, type?: ChunkType): ContextChunk;
-    ingestFile(filePath: string, content: string, language?: string): ContextChunk;
-    ingestDiff(diffText: string): ContextChunk;
-    ingestConversation(
-      messages: { role: string; content: string }[]
-    ): ContextChunk[];
-    ingestDirectory(
-      basePath: string,
-      files: { path: string; content: string }[]
-    ): ContextChunk[];
-  };
 }
 
 // --- App Configuration ---

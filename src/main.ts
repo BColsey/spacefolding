@@ -6,7 +6,7 @@ const program = buildCLI();
 
 // If no subcommand given, default to 'serve'
 const args = process.argv.slice(2);
-const knownCommands = ['serve', 'ingest', 'score', 'explain', 'graph', 'health', 'help'];
+const knownCommands = ['serve', 'ingest', 'score', 'explain', 'graph', 'health', 'download-model', 'help'];
 const hasCommand = args.some((a) => knownCommands.includes(a));
 
 if (!hasCommand) {

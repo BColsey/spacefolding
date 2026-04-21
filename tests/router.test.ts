@@ -73,35 +73,41 @@ describe('ContextRouter', () => {
   });
 
   it('promotes warm dependencies of hot chunks via closure', () => {
+    // Need enough chunks that promoting warm-dep doesn't exceed 60% hot cap
     const chunks = [
       makeChunk({ id: 'hot-1', type: 'code' }),
       makeChunk({ id: 'warm-dep', type: 'code' }),
+      makeChunk({ id: 'cold-1', type: 'fact' }),
+      makeChunk({ id: 'cold-2', type: 'background' }),
     ];
-    const scores = { 'hot-1': 0.8, 'warm-dep': 0.5 };
-    const reasons = { 'hot-1': ['high'], 'warm-dep': ['medium'] };
+    const scores = { 'hot-1': 0.8, 'warm-dep': 0.5, 'cold-1': 0.1, 'cold-2': 0.05 };
+    const reasons = { 'hot-1': ['high'], 'warm-dep': ['medium'], 'cold-1': ['low'], 'cold-2': ['low'] };
     const deps: DependencyLink[] = [
       { fromId: 'hot-1', toId: 'warm-dep', type: 'references', weight: 0.7 },
     ];
 
     const result = router.route(scores, reasons, chunks, deps);
     expect(result.hot).toContain('hot-1');
-    expect(result.hot).toContain('warm-dep');
+    expect(result.hot).toContain('warm-dep'); // promoted: 2/4 = 50% < 60% cap
   });
 
   it('places all chunks in exactly one tier', () => {
+    // Need enough chunks for constraint promotion to stay under 60% cap
     const chunks = [
       makeChunk({ id: 'a', type: 'fact' }),
       makeChunk({ id: 'b', type: 'constraint' }),
       makeChunk({ id: 'c', type: 'code' }),
+      makeChunk({ id: 'd', type: 'background' }),
+      makeChunk({ id: 'e', type: 'log' }),
     ];
-    const scores = { a: 0.8, b: 0.35, c: 0.1 };
-    const reasons = { a: [], b: [], c: [] };
+    const scores = { a: 0.8, b: 0.35, c: 0.1, d: 0.05, e: 0.02 };
+    const reasons = { a: [], b: [], c: [], d: [], e: [] };
 
     const result = router.route(scores, reasons, chunks, []);
     const allIds = [...result.hot, ...result.warm, ...result.cold];
-    expect(allIds).toHaveLength(3);
+    expect(allIds).toHaveLength(5);
     expect(result.hot).toContain('a');
-    expect(result.hot).toContain('b'); // promoted constraint
+    expect(result.hot).toContain('b'); // promoted constraint (2/5 = 40% < 60%)
     expect(result.cold).toContain('c');
   });
 

@@ -30,39 +30,39 @@ export class PipelineOrchestrator {
     task: TaskDescription,
     newChunks?: ContextChunk[]
   ): Promise<ScoreResult> {
-    // Store any new chunks
     if (newChunks) {
       for (const chunk of newChunks) {
         this.storage.storeChunk(chunk);
       }
     }
 
-    // Get all chunks from storage
     const allChunks = this.storage.getAllChunks();
     if (allChunks.length === 0) {
       return { hot: [], warm: [], cold: [], scores: {}, reasons: {} };
     }
 
-    // Analyze dependencies
     const dependencies = this.dependencyAnalyzer.analyze(allChunks);
     for (const dep of dependencies) {
       this.storage.storeDependency(dep);
     }
 
-    // Score chunks
     const { scores, reasons } = await this.scorer.scoreChunks(
       task,
       allChunks,
       dependencies
     );
 
-    // Route chunks
-    const result = this.router.route(scores, reasons, allChunks, dependencies);
+    const result = this.router.route(
+      scores,
+      reasons,
+      allChunks,
+      dependencies,
+      (task as TaskDescription & { maxTokens?: number }).maxTokens
+    );
 
-    // Compress warm chunks
-    const warmChunks = allChunks.filter((c) => result.warm.includes(c.id));
+    const warmChunks = allChunks.filter((chunk) => result.warm.includes(chunk.id));
     if (warmChunks.length > 0) {
-      const compression = await this.compressionProvider.compress(task, warmChunks);
+      const compression = await this.compressChunks(task, warmChunks);
       this.storage.storeCompression({
         id: randomUUID(),
         taskText: task.text,
@@ -70,7 +70,6 @@ export class PipelineOrchestrator {
       });
     }
 
-    // Persist routing decisions
     for (const chunk of allChunks) {
       const tier = result.hot.includes(chunk.id)
         ? 'hot'
@@ -113,17 +112,15 @@ export class PipelineOrchestrator {
       return { chunks: [], explanations: [] };
     }
 
-    // Score and take top matches
     const { scores, reasons } = await this.scorer.scoreChunks(task, chunks);
     const sorted = [...chunks].sort(
       (a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0)
     );
 
-    // Take top 10
     const topChunks = sorted.slice(0, 10);
     const explanations = topChunks.map(
-      (c) =>
-        `chunk ${c.id.slice(0, 8)} (score: ${(scores[c.id] ?? 0).toFixed(3)}, type: ${c.type}): ${(reasons[c.id] ?? []).join(', ')}`
+      (chunk) =>
+        `chunk ${chunk.id.slice(0, 8)} (score: ${(scores[chunk.id] ?? 0).toFixed(3)}, type: ${chunk.type}): ${(reasons[chunk.id] ?? []).join(', ')}`
     );
 
     return { chunks: topChunks, explanations };
@@ -188,6 +185,21 @@ export class PipelineOrchestrator {
     return chunk;
   }
 
+  getAllChunks(): ContextChunk[] {
+    return this.storage.getAllChunks();
+  }
+
+  async compressChunks(
+    task: TaskDescription,
+    chunks: ContextChunk[]
+  ): Promise<CompressionResult> {
+    return this.compressionProvider.compress(task, chunks);
+  }
+
+  close(): void {
+    this.storage.close();
+  }
+
   /** Get dependencies for a chunk */
   getDependencies(chunkId: string): DependencyLink[] {
     return this.storage.getDependencies(chunkId);
@@ -200,9 +212,15 @@ export class PipelineOrchestrator {
     }
   }
 
-  /** Remove dependencies (not stored = removed) */
-  removeDependencies(_links: DependencyLink[]): void {
-    // For now, dependencies are immutable once stored
-    // A production version would DELETE from the table
+  removeDependencies(links: DependencyLink[]): void {
+    const removeDependency = (
+      this.storage as SQLiteRepository & {
+        removeDependency?: (link: DependencyLink) => void;
+      }
+    ).removeDependency;
+
+    for (const link of links) {
+      removeDependency?.call(this.storage, link);
+    }
   }
 }

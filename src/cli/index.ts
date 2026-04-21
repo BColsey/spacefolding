@@ -9,15 +9,17 @@ import { DeterministicTokenEstimator } from '../providers/token-estimator.js';
 import { DeterministicEmbeddingProvider } from '../providers/deterministic-embedding.js';
 import { DeterministicCompressionProvider } from '../providers/deterministic-compression.js';
 import { SimpleDependencyAnalyzer } from '../providers/dependency-analyzer.js';
+import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
-import { downloadModel } from '../providers/local-embedding.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
 function createPipeline(dbPath: string): PipelineOrchestrator {
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
-  const embeddingProvider = new DeterministicEmbeddingProvider();
+  const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'local'
+    ? new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
+    : new DeterministicEmbeddingProvider();
   const compressionProvider = new DeterministicCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
 
@@ -35,6 +37,64 @@ function createPipeline(dbPath: string): PipelineOrchestrator {
   );
 }
 
+async function runDownloadModel(modelId: string): Promise<void> {
+  try {
+    await downloadModel(modelId);
+    console.log(chalk.green('\n✓ Model downloaded successfully'));
+  } catch (err) {
+    console.error(chalk.red('Failed to download model:'), err);
+    process.exit(1);
+  }
+}
+
+function getDownloadModelId(): string {
+  const rawArgs = process.argv.slice(2);
+  const modelIndex = rawArgs.indexOf('--model');
+  if (modelIndex >= 0 && rawArgs[modelIndex + 1]) {
+    return rawArgs[modelIndex + 1];
+  }
+  return process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
+}
+
+function warnIfOutsideWorkspace(inputPath: string): void {
+  if (inputPath.startsWith('/workspace') || inputPath.startsWith('./workspace')) {
+    return;
+  }
+  console.error(
+    chalk.yellow(`Warning: ingest path "${inputPath}" is outside /workspace`) 
+  );
+}
+
+function registerShutdown(pipeline: PipelineOrchestrator): void {
+  let closed = false;
+  const shutdown = (signal: string) => {
+    if (closed) return;
+    closed = true;
+    console.error(chalk.yellow(`Received ${signal}, shutting down Spacefolding...`));
+    pipeline.close();
+    process.exit(0);
+  };
+
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
+}
+
+async function startServe(
+  dbPath: string,
+  transport: 'stdio' | 'sse',
+  port: number
+): Promise<void> {
+  console.error(chalk.blue('Starting Spacefolding MCP server...'));
+  const pipeline = createPipeline(dbPath);
+  registerShutdown(pipeline);
+  await startMCPServer(pipeline, { transport, port });
+  console.error(
+    chalk.green(
+      `Spacefolding MCP server running on ${transport === 'sse' ? `SSE port ${port}` : 'stdio'}`
+    )
+  );
+}
+
 export function buildCLI(): Command {
   const program = new Command();
 
@@ -42,22 +102,30 @@ export function buildCLI(): Command {
     .name('spacefolding')
     .description('Spacefolding — context compression and routing for coding agents')
     .version('0.1.0')
-    .option('--db <path>', 'Database path', process.env.DB_PATH ?? './data/spacefolding.db');
+    .option('--db <path>', 'Database path', process.env.DB_PATH ?? './data/spacefolding.db')
+    .action(async () => {
+      await startServe(
+        program.opts().db,
+        (process.env.TRANSPORT ?? 'stdio') as 'stdio' | 'sse',
+        parseInt(process.env.PORT ?? '3000', 10)
+      );
+    });
 
   program
     .command('serve')
     .description('Start MCP server (default command)')
+    .allowExcessArguments(true)
+    .allowUnknownOption(true)
     .option('--transport <type>', 'Transport type: stdio or sse', process.env.TRANSPORT ?? 'stdio')
     .option('--port <number>', 'Port for SSE transport', process.env.PORT ?? '3000')
     .action(async (opts, cmd) => {
-      const dbPath = cmd.parent.opts().db;
-      console.error(chalk.blue('Starting Spacefolding MCP server...'));
-      const pipeline = createPipeline(dbPath);
-      startMCPServer(pipeline, {
-        transport: opts.transport as 'stdio' | 'sse',
-        port: parseInt(opts.port, 10),
-      });
-      console.error(chalk.green('Spacefolding MCP server running on stdio'));
+      if (process.argv.slice(2)[0] === 'download-model') {
+        await runDownloadModel(getDownloadModelId());
+        return;
+      }
+
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+      await startServe(dbPath, opts.transport as 'stdio' | 'sse', parseInt(opts.port, 10));
     });
 
   program
@@ -67,8 +135,10 @@ export function buildCLI(): Command {
     .option('--source <source>', 'Source label', 'file')
     .option('--type <type>', 'Chunk type override')
     .action(async (inputPath, opts, cmd) => {
-      const dbPath = cmd.parent.opts().db;
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
+
+      warnIfOutsideWorkspace(inputPath);
 
       const stat = statSync(inputPath);
       if (stat.isDirectory()) {
@@ -76,7 +146,7 @@ export function buildCLI(): Command {
         for (const filePath of files) {
           const content = readFileSync(filePath, 'utf-8');
           const chunk = pipeline.ingest('file', content, opts.type, filePath);
-          console.log(chalk.green(`✓`), chunk.id, filePath);
+          console.log(chalk.green('✓'), chunk.id, filePath);
         }
         console.log(chalk.blue(`Ingested ${files.length} files`));
       } else {
@@ -91,7 +161,7 @@ export function buildCLI(): Command {
     .description('Score current context against a task')
     .requiredOption('--task <text>', 'Task description')
     .action(async (opts, cmd) => {
-      const dbPath = cmd.parent.opts().db;
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
       const result = await pipeline.processContext({ text: opts.task });
 
@@ -124,7 +194,7 @@ export function buildCLI(): Command {
     .requiredOption('--task <text>', 'Task description')
     .option('--chunk <id>', 'Explain a specific chunk')
     .action(async (opts, cmd) => {
-      const dbPath = cmd.parent.opts().db;
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
       const { routing, summary } = await pipeline.explainRouting(
         { text: opts.task },
@@ -152,7 +222,7 @@ export function buildCLI(): Command {
     .description('Inspect chunk dependency graph')
     .option('--chunk <id>', 'Show dependencies for a specific chunk')
     .action(async (opts, cmd) => {
-      const dbPath = cmd.parent.opts().db;
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
 
       if (!opts.chunk) {
@@ -180,24 +250,17 @@ export function buildCLI(): Command {
     .description('Download a local embedding model for offline use')
     .option('--model <id>', 'HuggingFace model ID', process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
     .action(async (opts) => {
-      try {
-        await downloadModel(opts.model);
-        console.log(chalk.green('\n✓ Model downloaded successfully'));
-      } catch (err) {
-        console.error(chalk.red('Failed to download model:'), err);
-        process.exit(1);
-      }
+      await runDownloadModel(opts.model);
     });
 
   program
     .command('health')
     .description('Health check')
     .action((_opts, cmd) => {
-      const dbPath = cmd.parent.opts().db;
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       try {
         const pipeline = createPipeline(dbPath);
-        const count = pipeline['storage'].getChunkCount();
-        console.log(JSON.stringify({ status: 'ok', chunks: count }));
+        console.log(JSON.stringify({ status: 'ok', chunks: pipeline.getAllChunks().length }));
       } catch (err) {
         console.log(JSON.stringify({ status: 'error', message: String(err) }));
         process.exit(1);
@@ -207,7 +270,7 @@ export function buildCLI(): Command {
   return program;
 }
 
-function walkDir(dir: string, basePath: string = dir): string[] {
+function walkDir(dir: string): string[] {
   const results: string[] = [];
   const entries = readdirSync(dir);
   for (const entry of entries) {
@@ -215,7 +278,7 @@ function walkDir(dir: string, basePath: string = dir): string[] {
     const stat = statSync(fullPath);
     if (stat.isDirectory()) {
       if (entry !== 'node_modules' && entry !== '.git' && entry !== 'dist') {
-        results.push(...walkDir(fullPath, basePath));
+        results.push(...walkDir(fullPath));
       }
     } else {
       const ext = extname(entry);

@@ -98,9 +98,7 @@ export class SQLiteRepository {
 
   deleteChunk(id: string): void {
     this.db.prepare('DELETE FROM chunks WHERE id = ?').run(id);
-    this.db
-      .prepare('DELETE FROM dependencies WHERE fromId = ? OR toId = ?')
-      .run(id, id);
+    this.removeAllDependenciesForChunk(id);
   }
 
   storeDependency(link: DependencyLink): void {
@@ -110,6 +108,18 @@ export class SQLiteRepository {
          VALUES (?, ?, ?, ?)`
       )
       .run(link.fromId, link.toId, link.type, link.weight);
+  }
+
+  removeDependency(fromId: string, toId: string, type: DependencyLink['type']): void {
+    this.db
+      .prepare('DELETE FROM dependencies WHERE fromId = ? AND toId = ? AND type = ?')
+      .run(fromId, toId, type);
+  }
+
+  removeAllDependenciesForChunk(chunkId: string): void {
+    this.db
+      .prepare('DELETE FROM dependencies WHERE fromId = ? OR toId = ?')
+      .run(chunkId, chunkId);
   }
 
   getDependencies(chunkId: string): DependencyLink[] {
