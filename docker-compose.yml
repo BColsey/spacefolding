@@ -1,0 +1,26 @@
+services:
+  spacefolding:
+    build: .
+    container_name: spacefolding
+    volumes:
+      - ./data:/app/data
+      - ./workspace:/workspace:ro
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DB_PATH=/app/data/spacefolding.db
+      - MODEL_PATH=/app/data/models
+      - EMBEDDING_PROVIDER=local
+      - EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
+      - TRANSPORT=stdio
+      - PORT=3000
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "dist/main.js", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

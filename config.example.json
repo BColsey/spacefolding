@@ -1,0 +1,34 @@
+{
+  "routing": {
+    "weights": {
+      "semantic": 0.3,
+      "constraint": 0.25,
+      "recency": 0.2,
+      "redundancy": 0.1,
+      "dependency": 0.15
+    },
+    "thresholds": {
+      "hot": 0.7,
+      "warm": 0.4
+    }
+  },
+  "dbPath": "./data/spacefolding.db",
+  "transport": "stdio",
+  "port": 3000,
+  "providers": {
+    "embedding": {
+      "type": "local",
+      "modelId": "Xenova/all-MiniLM-L6-v2",
+      "modelPath": "./data/models",
+      "fallback": "deterministic"
+    },
+    "reranker": {
+      "type": "deterministic",
+      "options": {}
+    },
+    "compression": {
+      "type": "deterministic",
+      "options": {}
+    }
+  }
+}
