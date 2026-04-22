@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import type { Server as HttpServer } from 'node:http';
 import { createRepository } from '../storage/repository.js';
 import { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import { ContextScorer } from '../core/scorer.js';
@@ -9,10 +10,12 @@ import { FileWatcher } from '../core/watcher.js';
 import { DeterministicTokenEstimator } from '../providers/token-estimator.js';
 import { DeterministicEmbeddingProvider } from '../providers/deterministic-embedding.js';
 import { DeterministicCompressionProvider } from '../providers/deterministic-compression.js';
+import { LocalCompressionProvider } from '../providers/local-compression.js';
 import { SimpleDependencyAnalyzer } from '../providers/dependency-analyzer.js';
 import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
+import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
@@ -23,7 +26,9 @@ function createPipeline(dbPath: string): PipelineOrchestrator {
   const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'local'
     ? new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
     : new DeterministicEmbeddingProvider();
-  const compressionProvider = new DeterministicCompressionProvider();
+  const compressionProvider = process.env.COMPRESSION_PROVIDER === 'local'
+    ? new LocalCompressionProvider(process.env.COMPRESSION_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
+    : new DeterministicCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
 
   const scorer = new ContextScorer(DEFAULT_ROUTING_CONFIG, embeddingProvider, tokenEstimator);
@@ -68,12 +73,13 @@ function warnIfOutsideWorkspace(inputPath: string): void {
   );
 }
 
-function registerShutdown(pipeline: PipelineOrchestrator): void {
+function registerShutdown(pipeline: PipelineOrchestrator, webServer?: HttpServer): void {
   let closed = false;
   const shutdown = (signal: string) => {
     if (closed) return;
     closed = true;
     console.error(chalk.yellow(`Received ${signal}, shutting down Spacefolding...`));
+    webServer?.close();
     pipeline.close();
     process.exit(0);
   };
@@ -89,13 +95,20 @@ async function startServe(
 ): Promise<void> {
   console.error(chalk.blue('Starting Spacefolding MCP server...'));
   const pipeline = createPipeline(dbPath);
-  registerShutdown(pipeline);
+  const webPort = parseInt(process.env.WEB_PORT ?? '0', 10);
+  const webServer = Number.isFinite(webPort) && webPort > 0
+    ? startWebServer({ port: webPort, pipeline })
+    : undefined;
+  registerShutdown(pipeline, webServer);
   await startMCPServer(pipeline, { transport, port });
   console.error(
     chalk.green(
       `Spacefolding MCP server running on ${transport === 'sse' ? `SSE port ${port}` : 'stdio'}`
     )
   );
+  if (webServer) {
+    console.error(chalk.green(`Spacefolding web UI running on http://localhost:${webPort}`));
+  }
 }
 
 export function buildCLI(): Command {

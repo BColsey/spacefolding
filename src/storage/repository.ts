@@ -64,25 +64,41 @@ export class SQLiteRepository {
     const params: unknown[] = [];
 
     if (filter.source !== undefined) {
-      clauses.push('source = ?');
+      clauses.push('c.source = ?');
       params.push(filter.source);
     }
     if (filter.type !== undefined) {
-      clauses.push('type = ?');
+      clauses.push('c.type = ?');
       params.push(filter.type);
     }
     if (filter.path !== undefined) {
-      clauses.push('path = ?');
+      clauses.push('c.path = ?');
       params.push(filter.path);
     }
     if (filter.textContains !== undefined) {
-      clauses.push('text LIKE ?');
+      clauses.push('c.text LIKE ?');
       params.push(`%${filter.textContains}%`);
+    }
+    if (filter.tier !== undefined) {
+      clauses.push(`EXISTS (
+        SELECT 1
+        FROM routing_history rh
+        WHERE rh.chunkId = c.id
+          AND rh.id = (
+            SELECT rh2.id
+            FROM routing_history rh2
+            WHERE rh2.chunkId = c.id
+            ORDER BY rh2.timestamp DESC, rh2.id DESC
+            LIMIT 1
+          )
+          AND rh.tier = ?
+      )`);
+      params.push(filter.tier);
     }
 
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     const rows = this.db
-      .prepare(`SELECT * FROM chunks ${where}`)
+      .prepare(`SELECT c.* FROM chunks c ${where}`)
       .all(...params) as Row[];
     return rows.map(rowToChunk);
   }

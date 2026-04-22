@@ -43,9 +43,14 @@ export class ContextIngester {
     };
   }
 
-  ingestFile(filePath: string, content: string, language?: string): ContextChunk {
+  ingestFile(
+    filePath: string,
+    content: string,
+    language?: string,
+    overrideType?: ChunkType
+  ): ContextChunk {
     const lang = language ?? detectLanguage(filePath);
-    const type = classifyChunk(content, 'file') as ChunkType;
+    const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     return {
       id: randomUUID(),
       source: 'file',

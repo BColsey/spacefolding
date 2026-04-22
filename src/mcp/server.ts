@@ -40,6 +40,10 @@ const TOOL_DEFINITIONS = [
           items: { type: 'string' },
           description: 'Optional subset of chunk IDs to score',
         },
+        maxTokens: {
+          type: 'number',
+          description: 'Max token budget for hot tier',
+        },
       },
       required: ['task'],
     },
@@ -197,10 +201,21 @@ function createServer(pipeline: PipelineOrchestrator): Server {
     try {
       switch (name) {
         case 'score_context': {
-          const result = await pipeline.processContext(
-            args!.task as { text: string; type?: string; priority?: string }
-          );
-          return jsonResponse(result);
+          const chunkIds = (args!.chunkIds as string[] | undefined)?.slice(0, MAX_CHUNK_IDS);
+          const allowedChunkIds = chunkIds ? new Set(chunkIds) : undefined;
+          const result = await pipeline.processContext({
+            ...(args!.task as { text: string; type?: string; priority?: string }),
+            maxTokens: args!.maxTokens as number | undefined,
+          } as { text: string; type?: string; priority?: string; maxTokens?: number });
+          if (!allowedChunkIds) {
+            return jsonResponse(result);
+          }
+          return jsonResponse({
+            ...result,
+            hot: result.hot.filter((id) => allowedChunkIds.has(id)),
+            warm: result.warm.filter((id) => allowedChunkIds.has(id)),
+            cold: result.cold.filter((id) => allowedChunkIds.has(id)),
+          });
         }
 
         case 'compress_context': {
@@ -316,6 +331,12 @@ function validateArgs(args: Record<string, unknown> | undefined): string | undef
     }
     if (args.chunkIds.length > MAX_CHUNK_IDS) {
       return `chunkIds exceeds ${MAX_CHUNK_IDS} entries`;
+    }
+  }
+
+  if (args.maxTokens !== undefined) {
+    if (typeof args.maxTokens !== 'number' || !Number.isFinite(args.maxTokens) || args.maxTokens <= 0) {
+      return 'maxTokens must be a positive number';
     }
   }
 

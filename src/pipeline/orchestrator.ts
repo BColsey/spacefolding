@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  ChunkType,
   CompressionResult,
   ContextChunk,
   ContextFilter,
@@ -179,7 +180,7 @@ export class PipelineOrchestrator {
   ): ContextChunk {
     const chunk =
       path !== undefined
-        ? this.ingester.ingestFile(path, text, language)
+        ? this.ingester.ingestFile(path, text, language, type as ChunkType | undefined)
         : this.ingester.ingestText(source, text, type as ContextChunk['type']);
     this.storage.storeChunk(chunk);
     return chunk;
@@ -213,14 +214,8 @@ export class PipelineOrchestrator {
   }
 
   removeDependencies(links: DependencyLink[]): void {
-    const removeDependency = (
-      this.storage as SQLiteRepository & {
-        removeDependency?: (link: DependencyLink) => void;
-      }
-    ).removeDependency;
-
     for (const link of links) {
-      removeDependency?.call(this.storage, link);
+      this.storage.removeDependency(link.fromId, link.toId, link.type);
     }
   }
 }

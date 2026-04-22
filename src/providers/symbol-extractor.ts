@@ -7,20 +7,34 @@ export interface SymbolInfo {
   filePath?: string;
 }
 
+const CONTROL_FLOW_NAME = '(?!for\\b|if\\b|while\\b|switch\\b|catch\\b|return\\b|throw\\b|else\\b|try\\b|do\\b)';
+
 const JAVASCRIPT_PATTERNS: Array<{ regex: RegExp; kind: SymbolInfo['kind'] }> = [
-  { regex: /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm, kind: 'function' },
+  {
+    regex: new RegExp(
+      `^(?:export\\s+)?(?:async\\s+)?function\\s+${CONTROL_FLOW_NAME}([A-Za-z_$][\\w$]*)\\s*\\(`,
+      'gm'
+    ),
+    kind: 'function',
+  },
   { regex: /^(?:export\s+)?class\s+([A-Za-z_$][\w$]*)\b/gm, kind: 'class' },
   { regex: /^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\b/gm, kind: 'interface' },
   { regex: /^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*=/gm, kind: 'type' },
   { regex: /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/gm, kind: 'variable' },
   {
-    regex: /^\s*(?:public\s+|private\s+|protected\s+|static\s+|readonly\s+|async\s+)*([A-Za-z_$][\w$]*)\s*\([^\n;]*\)\s*\{/gm,
+    regex: new RegExp(
+      `^\\s*(?:public\\s+|private\\s+|protected\\s+|static\\s+|readonly\\s+|async\\s+|get\\s+|set\\s+)*${CONTROL_FLOW_NAME}([A-Za-z_$][\\w$]*)\\s*\\([^\\n;]*\\)\\s*\\{`,
+      'gm'
+    ),
     kind: 'method',
   },
 ];
 
 const PYTHON_PATTERNS: Array<{ regex: RegExp; kind: SymbolInfo['kind'] }> = [
-  { regex: /^\s*(?:async\s+)?def\s+([A-Za-z_][\w]*)\s*\(/gm, kind: 'function' },
+  {
+    regex: new RegExp(`^\\s*(?:async\\s+)?def\\s+${CONTROL_FLOW_NAME}([A-Za-z_][\\w]*)\\s*\\(`, 'gm'),
+    kind: 'function',
+  },
   { regex: /^\s*class\s+([A-Za-z_][\w]*)\b/gm, kind: 'class' },
 ];
 

@@ -9,7 +9,9 @@ const args = process.argv.slice(2);
 const knownCommands = ['serve', 'ingest', 'score', 'explain', 'graph', 'watch', 'export', 'import', 'symbols', 'health', 'download-model', 'help'];
 const hasCommand = args.some((a) => knownCommands.includes(a) || a === '--help' || a === '-h' || a === '-V' || a === '--version');
 
-if (!hasCommand) {
+if (args.length === 0) {
+  args.unshift('serve');
+} else if (!hasCommand && !args[0].startsWith('-')) {
   args.unshift('serve');
 }
 
