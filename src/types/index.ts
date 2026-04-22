@@ -220,3 +220,24 @@ export interface AppConfig {
   port: number;
   routing: RoutingConfig;
 }
+
+// --- Feature Types ---
+export interface SymbolInfo {
+  name: string;
+  kind: 'function' | 'class' | 'interface' | 'type' | 'variable' | 'method';
+  line: number;
+  filePath?: string;
+}
+
+export interface GitChange {
+  filePath: string;
+  changeType: 'added' | 'modified' | 'deleted';
+  hunks: number;
+}
+
+export interface ExportData {
+  version: number;
+  exportedAt: number;
+  chunks: ContextChunk[];
+  dependencies: DependencyLink[];
+}

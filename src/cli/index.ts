@@ -5,12 +5,15 @@ import { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import { ContextScorer } from '../core/scorer.js';
 import { ContextRouter, DEFAULT_ROUTING_CONFIG } from '../core/router.js';
 import { ContextIngester } from '../core/ingester.js';
+import { FileWatcher } from '../core/watcher.js';
 import { DeterministicTokenEstimator } from '../providers/token-estimator.js';
 import { DeterministicEmbeddingProvider } from '../providers/deterministic-embedding.js';
 import { DeterministicCompressionProvider } from '../providers/deterministic-compression.js';
 import { SimpleDependencyAnalyzer } from '../providers/dependency-analyzer.js';
+import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
+import { exportState, importState } from './commands/export-import.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
@@ -246,6 +249,69 @@ export function buildCLI(): Command {
     });
 
   program
+    .command('watch')
+    .description('Watch a path and ingest file changes automatically')
+    .argument('<path>', 'Path to watch')
+    .action((watchPath, _opts, cmd) => {
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+      const pipeline = createPipeline(dbPath);
+      const watcher = new FileWatcher(watchPath, pipeline);
+      watcher.start();
+      console.error(chalk.blue(`Watching ${watchPath} for changes...`));
+
+      let closed = false;
+      const shutdown = (signal: string) => {
+        if (closed) return;
+        closed = true;
+        console.error(chalk.yellow(`Received ${signal}, stopping watcher...`));
+        watcher.stop();
+        pipeline.close();
+        process.exit(0);
+      };
+
+      process.once('SIGTERM', () => shutdown('SIGTERM'));
+      process.once('SIGINT', () => shutdown('SIGINT'));
+    });
+
+  program
+    .command('export')
+    .description('Export memory state to a JSON file')
+    .argument('<output-path>', 'Output JSON path')
+    .action(async (outputPath, _opts, cmd) => {
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+      await exportState(dbPath, outputPath);
+      console.log(chalk.green(`Exported state to ${outputPath}`));
+    });
+
+  program
+    .command('import')
+    .description('Import memory state from a JSON file')
+    .argument('<input-path>', 'Input JSON path')
+    .action(async (inputPath, _opts, cmd) => {
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+      await importState(dbPath, inputPath);
+      console.log(chalk.green(`Imported state from ${inputPath}`));
+    });
+
+  program
+    .command('symbols')
+    .description('Extract symbols from a source file')
+    .argument('<path>', 'Source file path')
+    .action((inputPath) => {
+      const content = readFileSync(inputPath, 'utf-8');
+      const symbols = extractSymbols(content, detectLanguage(inputPath), inputPath);
+
+      if (symbols.length === 0) {
+        console.log(chalk.yellow('No symbols found'));
+        return;
+      }
+
+      for (const symbol of symbols) {
+        console.log(`${symbol.kind}\t${symbol.name}\tline ${symbol.line}`);
+      }
+    });
+
+  program
     .command('download-model')
     .description('Download a local embedding model for offline use')
     .option('--model <id>', 'HuggingFace model ID', process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
@@ -268,6 +334,14 @@ export function buildCLI(): Command {
     });
 
   return program;
+}
+
+function detectLanguage(filePath: string): string | undefined {
+  const extension = extname(filePath).toLowerCase();
+  if (extension === '.ts' || extension === '.tsx') return 'typescript';
+  if (extension === '.js' || extension === '.jsx') return 'javascript';
+  if (extension === '.py') return 'python';
+  return undefined;
 }
 
 function walkDir(dir: string): string[] {

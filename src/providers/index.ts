@@ -3,4 +3,5 @@ export { DeterministicEmbeddingProvider, cosineSimilarity } from './deterministi
 export { LocalEmbeddingProvider, downloadModel } from './local-embedding.js';
 export { DeterministicRerankerProvider } from './deterministic-reranker.js';
 export { DeterministicCompressionProvider } from './deterministic-compression.js';
+export { LocalCompressionProvider } from './local-compression.js';
 export { SimpleDependencyAnalyzer } from './dependency-analyzer.js';

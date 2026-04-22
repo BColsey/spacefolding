@@ -332,6 +332,9 @@ spacefolding download-model
 # Ingest files
 spacefolding ingest /workspace/src
 
+# Watch files for automatic ingestion
+spacefolding watch /workspace/src
+
 # Score context against a task
 spacefolding score --task "Fix the authentication bug"
 
@@ -340,6 +343,13 @@ spacefolding explain --task "Fix auth bug" --chunk abc123
 
 # View dependency graph
 spacefolding graph --chunk abc123
+
+# Extract symbols from a file
+spacefolding symbols src/core/scorer.ts
+
+# Export/import memory state
+spacefolding export backup.json
+spacefolding import backup.json
 
 # Health check
 spacefolding health
@@ -376,13 +386,17 @@ src/
 │   ├── classifier.ts    # Chunk type classification
 │   ├── scorer.ts        # Multi-factor scoring engine
 │   ├── router.ts        # Hot/Warm/Cold routing
-│   └── ingester.ts      # Context ingestion
+│   ├── ingester.ts      # Context ingestion
+│   ├── watcher.ts       # File watching (chokidar)
+│   └── git-aware.ts     # Git diff parsing and scoring
 ├── providers/       # Pluggable provider implementations
 │   ├── local-embedding.ts           # ONNX model embeddings (real ML)
+│   ├── local-compression.ts         # Enhanced deterministic compression
 │   ├── deterministic-embedding.ts   # Hash-based fallback
 │   ├── deterministic-reranker.ts    # Keyword overlap reranking
 │   ├── deterministic-compression.ts # Rule-based summarization
 │   ├── dependency-analyzer.ts       # Pattern-based dependency detection
+│   ├── symbol-extractor.ts          # Regex-based code symbol extraction
 │   └── token-estimator.ts           # Token count estimation
 ├── storage/         # SQLite persistence
 │   ├── schema.ts        # Database schema and migrations
@@ -391,8 +405,12 @@ src/
 │   └── orchestrator.ts  # Full pipeline: ingest→score→route→compress→persist
 ├── mcp/             # MCP server
 │   └── server.ts        # 6 MCP tools for Claude Code
+├── web/             # Web UI
+│   └── server.ts        # HTTP server + inline SPA
 ├── cli/             # CLI interface
-│   └── index.ts         # Commander-based CLI
+│   ├── index.ts         # Commander-based CLI
+│   └── commands/        # CLI subcommands
+│       └── export-import.ts
 └── main.ts          # Entry point
 tests/
 ├── classifier.test.ts    # 14 classification tests
@@ -428,23 +446,77 @@ The fold engine uses a blended routing strategy:
 6. **Explicit instructions** — Action verbs promoted to hot
 7. **Debug bias** — Recent error logs favored when task mentions debugging
 
+## Additional Features
+
+### File Watching
+
+Automatically ingest file changes:
+```bash
+spacefolding watch /workspace/src
+```
+Watches for file adds, changes, and unlinks using chokidar. Debounces rapid changes (300ms).
+
+### Git-Aware Diff Prioritization
+
+Parse git diffs and score changed files:
+```typescript
+import { parseGitDiff, getRecentGitChanges } from './core/git-aware.js';
+const changes = await getRecentGitChanges('/workspace');
+// [{filePath: 'src/auth.ts', changeType: 'modified'}]
+```
+
+### Symbol Extraction
+
+Extract code symbols (functions, classes, interfaces) from source files:
+```bash
+spacefolding symbols src/core/scorer.ts
+# class  ContextScorer  line 11
+# method  scoreChunks  line 20
+```
+Supports TypeScript, JavaScript, and Python via regex patterns.
+
+### Export/Import State
+
+Transfer memory state between instances:
+```bash
+spacefolding export backup.json
+spacefolding import backup.json
+```
+Exports all chunks and dependencies as JSON.
+
+### Enhanced Compression
+
+`LocalCompressionProvider` provides smarter summarization with:
+- Constraint text preserved verbatim
+- Fact extraction (first 2 sentences)
+- Code signature extraction (function/class headers)
+- Structured summary with sections
+
+### Web UI
+
+Inspect chunk routing in a browser:
+```bash
+# Start with web UI enabled
+docker compose up
+# Visit http://localhost:8080
+```
+Features: chunk table, task scoring, routing visualization, dependency inspection.
+
+### GPU Support
+
+For faster embeddings with a GPU:
+```yaml
+# docker-compose.yml
+environment:
+  - USE_GPU=1
+# Uncomment the deploy.resources section for NVIDIA GPU access
+```
+
 ## Limitations & Future Work
 
-- **CPU-only embeddings** — GPU not supported in container yet
-- **No streaming compression** — Summaries are generated synchronously
 - **Single-user** — Not designed for multi-user scenarios
-- **No file watching** — Ingestion is manual or API-driven
-- **Basic dependency analysis** — Pattern matching, not AST-based
-- **No web UI** — CLI and MCP only
-
-Planned improvements:
-- File watching for automatic incremental ingest
-- Git-aware diff prioritization
-- AST-based symbol extraction for code files
-- Small local instruct model for compression (not just embeddings)
-- GPU support for faster embeddings
-- Web UI for inspecting chunk routing
-- Export/import of memory state
+- **Symbol extraction is regex-based** — Not full AST parsing
+- **Local compression model** — Deterministic by default; real model integration is optional
 
 ## License
 

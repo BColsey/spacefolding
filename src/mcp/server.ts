@@ -6,15 +6,23 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 
+const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
 const MAX_TEXT_LENGTH = 100_000;
 const MAX_CHUNK_IDS = 1_000;
 
+function describeTool(description: string): string {
+  return USE_GPU
+    ? `${description} GPU acceleration is enabled when the runtime supports it.`
+    : description;
+}
+
 const TOOL_DEFINITIONS = [
   {
     name: 'score_context',
-    description:
-      'Score and route context chunks into hot/warm/cold tiers for a given task',
+    description: describeTool(
+      'Score and route context chunks into hot/warm/cold tiers for a given task'
+    ),
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -38,7 +46,7 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: 'compress_context',
-    description: 'Compress warm-context chunks into a structured summary',
+    description: describeTool('Compress warm-context chunks into a structured summary'),
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -62,8 +70,9 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_relevant_memory',
-    description:
-      'Retrieve context chunks from warm/cold storage that are relevant to a task',
+    description: describeTool(
+      'Retrieve context chunks from warm/cold storage that are relevant to a task'
+    ),
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -92,7 +101,7 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: 'ingest_context',
-    description: 'Ingest a new context item (text, code, diff, log, etc.)',
+    description: describeTool('Ingest a new context item (text, code, diff, log, etc.)'),
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -111,7 +120,7 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: 'update_context_graph',
-    description: 'Add or remove dependency links in the context graph',
+    description: describeTool('Add or remove dependency links in the context graph'),
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -143,8 +152,9 @@ const TOOL_DEFINITIONS = [
   },
   {
     name: 'explain_routing',
-    description:
-      'Explain why context chunks were routed to hot/warm/cold for a given task',
+    description: describeTool(
+      'Explain why context chunks were routed to hot/warm/cold for a given task'
+    ),
     inputSchema: {
       type: 'object' as const,
       properties: {

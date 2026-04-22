@@ -8,3 +8,5 @@ Chronological record of completed tasks. Recent entries are most relevant.
 [2026-04-21] [worker] task-1776736933530-fshdtl: Wrote SECURITY.md with a full audit. Confirmed no SQL injection, command injection, or npm audit advisories. Documented 
 [2026-04-21] [worker] task-1776737648846-bmfw2v: Modified only src/core/scorer.ts, src/core/router.ts, src/types/index.ts, and src/storage/repository.ts. Added scorer re
 [2026-04-21] [worker] task-1776737675865-07t9x6: Updated only src/cli/index.ts, src/mcp/server.ts, and src/pipeline/orchestrator.ts. Wired LocalEmbeddingProvider via EMB
+[2026-04-22] [worker] task-1776816653866-i427r2: Added src/providers/local-compression.ts and src/web/server.ts. Updated src/mcp/server.ts for USE_GPU-aware tool descrip
+[2026-04-22] [worker] task-1776816622568-vhn0iu: Added src/core/watcher.ts, src/core/git-aware.ts, src/cli/commands/export-import.ts, and src/providers/symbol-extractor.
