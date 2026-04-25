@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>Context compression &amp; routing for coding agents</strong><br />
-  Local-first · Docker · MCP · CLI · Web UI
+  Local-first · Docker · MCP · CLI · Web UI · LLM Compression
 </p>
 
 <p align="center">
@@ -49,6 +49,21 @@ Spacefolding is a **local-first context management service** for coding agents l
 When you're working in a codebase, context piles up fast — conversation history, source files, diffs, logs, constraints, earlier summaries. You can't fit it all into the next LLM call. Spacefolding **folds** that context space: it scores every piece, keeps what matters (hot), compresses what's useful (warm), and archives the rest (cold) — while keeping everything retrievable.
 
 It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude Code), and includes a **Web UI** for inspection. No cloud required.
+
+### Features at a Glance
+
+| Feature | Description |
+|---------|-------------|
+| 🧠 **Smart Routing** | Score + route context into hot/warm/cold tiers |
+| 📦 **LLM Compression** | Use OpenAI, Ollama, or any compatible API to compress warm context |
+| 🔌 **MCP Server** | 6 tools for Claude Code integration via stdio or SSE |
+| 🐳 **Docker-first** | One-command setup with persistent storage |
+| 🧊 **Local Embeddings** | ONNX models run in-process — no GPU or cloud needed |
+| 🔄 **File Watching** | Auto-ingest file changes with chokidar |
+| 🔀 **Git-Aware** | Parse diffs, score changed files higher |
+| 🔍 **Symbol Extraction** | Pull functions, classes, interfaces from source files |
+| 🌐 **Web UI** | Browser-based chunk inspection and routing visualization |
+| 📤 **Export/Import** | Transfer memory state between instances |
 
 ## How It Works
 
@@ -246,7 +261,8 @@ src/
 │
 ├── providers/             # Pluggable model/logic interfaces
 │   ├── local-embedding.ts     ONNX embeddings (HuggingFace)
-│   ├── local-compression.ts   Enhanced summarization
+│   ├── llm-compression.ts     LLM-powered compression (OpenAI-compatible API)
+│   ├── local-compression.ts   Enhanced deterministic summarization
 │   ├── deterministic-*.ts     Hash/keyword fallbacks (zero deps)
 │   ├── symbol-extractor.ts    Regex code symbol extraction
 │   └── token-estimator.ts     Token count estimation
