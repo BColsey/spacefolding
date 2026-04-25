@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>Context compression &amp; routing for coding agents</strong><br />
-  Local-first · Docker · MCP · CLI · Web UI · LLM Compression
+  Local-first · RAG · Docker · MCP · CLI · Web UI
 </p>
 
 <p align="center">
@@ -25,7 +25,8 @@
   <a href="#mcp-tools">MCP Tools</a> ·
   <a href="#cli-reference">CLI</a> ·
   <a href="docs/configuration.md">Config</a> ·
-  <a href="docs/integration-guide.md">Claude Code</a>
+  <a href="docs/integration-guide.md">Claude Code</a> ·
+  <a href="benchmarks/RESULTS.md">Benchmarks</a>
 </p>
 
 ---
@@ -55,8 +56,10 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
 | Feature | Description |
 |---------|-------------|
 | 🧠 **Smart Routing** | Score + route context into hot/warm/cold tiers |
+| 🔍 **Hybrid RAG** | Vector search + full-text search (FTS5) + graph traversal, fused with Reciprocal Rank Fusion |
 | 📦 **LLM Compression** | Use OpenAI, Ollama, or any compatible API to compress warm context |
-| 🔌 **MCP Server** | 6 tools for Claude Code integration via stdio or SSE |
+| 🔌 **MCP Server** | 7 tools for Claude Code integration via stdio or SSE |
+| ✂️ **Context Chunking** | Auto-split oversized files at code/markdown/paragraph boundaries |
 | 🐳 **Docker-first** | One-command setup with persistent storage |
 | 🧊 **Local Embeddings** | ONNX models run in-process — no GPU or cloud needed |
 | 🔄 **File Watching** | Auto-ingest file changes with chokidar |
@@ -76,7 +79,7 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
                              │
                     ┌────────▼────────┐
                     │   I N G E S T   │
-                    │   normalize +    │
+                    │   chunk → embed  │
                     │   classify       │
                     └────────┬────────┘
                              │
@@ -95,17 +98,25 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
               │     │       │        │     │
               └─────┼───────┼────────┼─────┘
                     │       │        │
-              ┌─────▼───────▼────────▼─────┐
-              │    PERSISTENT STORAGE       │
-              │    SQLite · Embeddings      │
-              │    Dependency Graph         │
-              └─────────────┬───────────────┘
-                            │
-              ┌─────────────▼───────────────┐
-              │    M C P   S E R V E R      │
-              │    C L I   T O O L S        │
-              │    W E B   U I              │
-              └─────────────────────────────┘
+         ┌──────────▼───────▼────────▼──────────┐
+         │          PERSISTENT STORAGE            │
+         │   SQLite · Vector Index · FTS5        │
+         │   Embeddings · Dependency Graph        │
+         └─────────────────┬─────────────────────┘
+                           │
+         ┌─────────────────▼─────────────────────┐
+         │          R E T R I E V A L            │
+         │                                       │
+         │   vector search + FTS5 + graph walk   │
+         │   → Reciprocal Rank Fusion            │
+         │   → budget fill (token limit)         │
+         └─────────────────┬─────────────────────┘
+                           │
+              ┌────────────▼────────────┐
+              │    M C P   S E R V E R  │
+              │    C L I   T O O L S    │
+              │    W E B   U I          │
+              └─────────────────────────┘
 ```
 
 ### The Three Tiers
@@ -168,6 +179,11 @@ node dist/main.js score --task "How does routing work?"
 # → === HOT ===    === WARM ===    === COLD ===
 # →                                abc12345 (0.35)
 
+# Hybrid RAG retrieval
+node dist/main.js retrieve --query "how does authentication work"
+# → Intent: explain | Strategy: vector | Budget: 600/100000 tokens (1%)
+# → [WARM] abc12345 src/auth.ts ~300 tokens (vector+fts)
+
 node dist/main.js symbols src/core/scorer.ts
 # → class  ContextScorer  line 11
 ```
@@ -176,7 +192,7 @@ node dist/main.js symbols src/core/scorer.ts
 
 ## MCP Tools
 
-Spacefolding exposes 6 MCP tools designed for Claude Code integration.
+Spacefolding exposes 7 MCP tools designed for Claude Code integration.
 
 ### Setup
 
@@ -203,10 +219,11 @@ See the [full integration guide](docs/integration-guide.md) for Docker setup and
 
 | Tool | What it does |
 |------|-------------|
-| `ingest_context` | Add text, code, diffs, logs, or constraints to the context store |
+| `ingest_context` | Add text, code, diffs, logs, or constraints — auto-chunks if oversized |
 | `score_context` | Score all chunks against a task and route into hot/warm/cold |
 | `compress_context` | Compress specified chunks into a structured summary |
 | `get_relevant_memory` | Search cold/warm storage for chunks relevant to a task |
+| `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget control |
 | `update_context_graph` | Add or remove dependency links between chunks |
 | `explain_routing` | Show exactly why each chunk was routed to its tier, with reasons |
 
@@ -225,6 +242,11 @@ User: "Fix the auth bug in login.ts"
   🔴 HOT:  [constraint "Must use JWT", code login.ts]
   🟡 WARM: [log "ERROR 401"]
   🔵 COLD: [background "Project was started in 2020"]
+
+→ retrieve_context(query="authentication flow", maxTokens=50000)
+
+  Returns: chunks ranked by fused vector+keyword+graph score,
+  selected to fit within the token budget, with retrieval sources.
 ```
 
 ---
@@ -237,6 +259,7 @@ spacefolding health                   # Health check
 spacefolding ingest <path>            # Ingest a file or directory
 spacefolding watch <path>             # Watch for file changes
 spacefolding score --task "..."       # Score context against a task
+spacefolding retrieve --query "..."   # Hybrid RAG retrieval
 spacefolding explain --task "..."     # Explain routing decisions
 spacefolding graph --chunk <id>       # View dependency graph
 spacefolding symbols <path>           # Extract code symbols
@@ -244,6 +267,58 @@ spacefolding export <file.json>       # Export memory state
 spacefolding import <file.json>       # Import memory state
 spacefolding download-model           # Download embedding model
 ```
+
+---
+
+## Context Chunking
+
+When you ingest a file larger than the configured token limit, Spacefolding **automatically splits it** into sub-chunks:
+
+- **Code files** — splits at function/class boundaries, preserves imports in each chunk
+- **Markdown** — splits at `##`/`###` headers, keeps sections intact
+- **Plain text** — recursive splitting at paragraph → sentence → word boundaries
+- **Overlap** — 200 tokens of overlap between chunks to prevent information loss at boundaries
+
+Split chunks are linked via parent-child relationships and dependency edges. Children are independently scored and routed — different parts of a large file can end up in different tiers.
+
+```bash
+# Configure chunking
+CHUNK_MAX_TOKENS=2000     # Max tokens per sub-chunk (default: 2000)
+CHUNK_OVERLAP_TOKENS=200  # Overlap between chunks (default: 200)
+CHUNK_STRATEGY=auto       # auto, recursive, code, markdown (default: auto)
+```
+
+---
+
+## Hybrid RAG Retrieval
+
+The `retrieve_context` tool runs a multi-strategy search pipeline:
+
+```
+Query → Intent Detection → [Vector + FTS5 + Graph] → RRF Fusion → Budget Fill → Results
+```
+
+1. **Vector search** — cosine similarity against stored embeddings
+2. **FTS5 full-text search** — BM25-ranked keyword matching
+3. **Graph traversal** — follow dependency links from seed results
+4. **Reciprocal Rank Fusion** — merge all results, items found by multiple strategies rank highest
+5. **Budget controller** — select top results that fit within your token limit
+
+### Query Planning
+
+The system automatically detects query intent and adjusts strategy:
+
+| Intent | Example | Strategy | Token budget |
+|--------|---------|----------|-------------|
+| **debug** | "fix the auth error" | hybrid + 2 hops | 60% |
+| **implement** | "add rate limiting" | hybrid + 1 hop | 40% |
+| **explain** | "how does routing work" | vector + 1 hop | 30% |
+| **code_search** | "where is the auth middleware" | text only | 35% |
+| **general** | anything else | hybrid + 1 hop | 50% |
+
+### Benchmarks
+
+We evaluated retrieval accuracy against ground-truth on 20 tasks. See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full results. Key takeaway: **use real ONNX embeddings for best results** — deterministic embeddings are a zero-dependency fallback but produce near-random vectors.
 
 ---
 
@@ -255,7 +330,11 @@ src/
 │   ├── classifier.ts          Type detection (constraint, code, log, etc.)
 │   ├── scorer.ts              Multi-factor relevance scoring
 │   ├── router.ts              Hot/warm/cold tier routing
-│   ├── ingester.ts            Normalize raw input into chunks
+│   ├── ingester.ts            Normalize + auto-chunk input
+│   ├── retriever.ts           Hybrid RAG: vector + FTS5 + graph + RRF fusion
+│   ├── budget.ts              Token-budget-aware result selection
+│   ├── query-planner.ts       Intent detection + query expansion
+│   ├── chunker.ts             Auto-split: recursive, code, markdown strategies
 │   ├── watcher.ts             File watching via chokidar
 │   └── git-aware.ts           Git diff parsing
 │
@@ -267,15 +346,15 @@ src/
 │   ├── symbol-extractor.ts    Regex code symbol extraction
 │   └── token-estimator.ts     Token count estimation
 │
-├── storage/               # Persistence
-│   ├── schema.ts              SQLite DDL + migrations
-│   └── repository.ts          CRUD for chunks, deps, routing history
+├── storage/               # Persistence + search
+│   ├── schema.ts              SQLite DDL + migrations (v1-v3)
+│   └── repository.ts          CRUD + vector store + FTS5
 │
 ├── pipeline/              # Orchestration
-│   └── orchestrator.ts        ingest→score→route→compress→persist
+│   └── orchestrator.ts        ingest→embed→score→route→compress→persist
 │
 ├── mcp/                   # Model Context Protocol server
-│   └── server.ts              6 tools, stdio + SSE transport
+│   └── server.ts              7 tools, stdio + SSE transport
 │
 ├── web/                   # Browser UI
 │   └── server.ts              HTTP server + inline SPA
@@ -289,7 +368,7 @@ src/
     └── index.ts
 ```
 
-**42 tests** across 6 test files covering scoring, routing, classification, symbol extraction, and integration.
+**60 tests** across 8 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, and integration.
 
 ---
 
@@ -304,6 +383,9 @@ All configuration is via environment variables:
 | `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX) or `deterministic` (hash) |
 | `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID |
 | `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
+| `CHUNK_MAX_TOKENS` | `2000` | Max tokens per sub-chunk |
+| `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between chunks |
+| `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, `markdown` |
 | `WEB_PORT` | `0` (off) | Port for web UI (e.g. `8080`) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | SSE transport port |
@@ -331,7 +413,7 @@ node dist/main.js download-model --model Xenova/bge-small-en-v1.5
 | `Xenova/bge-small-en-v1.5` | ~130MB | Higher accuracy |
 | `Xenova/gte-small` | ~130MB | General-purpose alternative |
 
-If no model is downloaded, Spacefolding uses **deterministic hash-based embeddings** as a zero-dependency fallback. It always works.
+If no model is downloaded, Spacefolding uses **deterministic hash-based embeddings** as a zero-dependency fallback. It always works — but real embeddings produce meaningfully better retrieval.
 
 ---
 

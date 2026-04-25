@@ -2,7 +2,7 @@
 
 > **Fold infinite context space into what fits in your prompt window.**
 
-Spacefolding is an MCP server that manages context for coding agents. It scores, routes, and compresses context into three tiers: hot (verbatim), warm (compressed), cold (archived).
+Spacefolding is an MCP server that manages context for coding agents. It ingests, scores, routes, and compresses context into three tiers: hot (verbatim), warm (compressed), cold (archived). Includes hybrid RAG retrieval (vector + FTS5 + graph) and auto-chunking for oversized files.
 
 ## Quick Setup
 
@@ -30,10 +30,11 @@ First-time: run `node dist/main.js download-model` to get the embedding model.
 
 | Tool | What it does |
 |------|-------------|
-| `ingest_context` | Add context (text, code, diffs, logs, constraints) |
+| `ingest_context` | Add context (text, code, diffs, logs, constraints) — auto-chunks if oversized |
 | `score_context` | Score + route chunks into hot/warm/cold |
 | `compress_context` | Compress chunks into structured summary |
 | `get_relevant_memory` | Search archived context by relevance |
+| `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget |
 | `update_context_graph` | Add/remove dependency links |
 | `explain_routing` | Show why each chunk was routed to its tier |
 

@@ -5,10 +5,11 @@ Spacefolding is designed as an MCP (Model Context Protocol) server that Claude C
 ## What this enables
 
 When connected, Claude Code can:
-- **Ingest** files, diffs, and conversation context
+- **Ingest** files, diffs, and conversation context (auto-chunks if oversized)
 - **Score** all context against the current task
 - **Route** into hot (verbatim), warm (compressed), cold (archived)
-- **Retrieve** cold context when needed
+- **Retrieve** context using hybrid RAG (vector + full-text + graph search)
+- **Compress** warm context using LLM or deterministic providers
 - **Explain** why routing decisions were made
 
 ## Setup
@@ -145,6 +146,39 @@ Show why chunks were routed the way they were.
 {
   "task": { "text": "Fix auth bug" },
   "chunkId": "optional-specific-chunk"
+}
+```
+
+### `retrieve_context`
+
+Hybrid RAG retrieval with token budget control. Runs vector search + FTS5 + graph traversal, fuses results, and returns chunks that fit within a token budget.
+
+```json
+{
+  "query": "How does JWT authentication work?",
+  "maxTokens": 50000,
+  "strategy": "hybrid",
+  "topK": 50,
+  "maxHops": 2
+}
+```
+
+**Parameters:**
+- `query` (required) — What you're looking for
+- `maxTokens` — Max token budget (default: auto based on query intent)
+- `strategy` — `hybrid`, `vector`, `text`, or `graph`
+- `topK` — Max results to consider (default: 50)
+- `maxHops` — Max dependency graph hops (default: auto based on intent)
+
+**Returns:**
+```json
+{
+  "chunks": [{ "id": "...", "text": "...", "tier": "warm", "retrievalSources": ["vector", "fts"] }],
+  "totalTokens": 48500,
+  "budget": 50000,
+  "utilization": 0.97,
+  "omittedCount": 3,
+  "plan": { "intent": "explain", "strategy": "vector" }
 }
 ```
 

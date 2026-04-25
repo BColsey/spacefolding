@@ -9,6 +9,9 @@
 | `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX model) or `deterministic` (hash-based) |
 | `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID |
 | `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
+| `CHUNK_MAX_TOKENS` | `2000` | Max tokens per sub-chunk when splitting |
+| `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between consecutive chunks |
+| `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, `markdown` |
 | `WEB_PORT` | `0` | Port for web UI (set to `8080` to enable) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | Port for SSE transport |
