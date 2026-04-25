@@ -1,5 +1,9 @@
 # Spacefolding
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub issues](https://img.shields.io/github/issues/BColsey/spacefolding)](https://github.com/BColsey/spacefolding/issues)
+[![Docker](https://img.shields.io/badge/Docker-ready-blue)](https://github.com/BColsey/spacefolding/blob/main/Dockerfile)
+
 **Intelligent Context Compression and Routing for Coding Agents**
 
 ```
