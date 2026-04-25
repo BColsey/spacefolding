@@ -205,6 +205,20 @@ export class SQLiteRepository {
     return row.count;
   }
 
+  /** Find a chunk by a key-value pair in its JSON metadata */
+  findChunkByMetadata(key: string, value: string): ContextChunk | null {
+    const rows = this.db
+      .prepare('SELECT * FROM chunks')
+      .all() as Row[];
+    for (const row of rows) {
+      try {
+        const meta = JSON.parse(row.metadata);
+        if (meta[key] === value) return rowToChunk(row);
+      } catch { continue; }
+    }
+    return null;
+  }
+
   // ── Vector Store ──────────────────────────────────────────
 
   storeEmbedding(chunkId: string, embedding: number[], model: string): void {

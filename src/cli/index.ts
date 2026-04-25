@@ -194,14 +194,16 @@ export function buildCLI(): Command {
         const files = walkDir(inputPath);
         for (const filePath of files) {
           const content = readFileSync(filePath, 'utf-8');
-          const chunk = pipeline.ingest('file', content, opts.type, filePath);
-          console.log(chalk.green('✓'), chunk.id, filePath);
+          const chunk = await pipeline.ingest('file', content, opts.type, filePath);
+          const splitInfo = chunk.metadata?.childCount ? ` (split into ${chunk.metadata.childCount} chunks)` : '';
+          console.log(chalk.green('✓'), chunk.id.slice(0, 8), filePath, splitInfo);
         }
         console.log(chalk.blue(`Ingested ${files.length} files`));
       } else {
         const content = readFileSync(inputPath, 'utf-8');
-        const chunk = pipeline.ingest(opts.source, content, opts.type, inputPath);
-        console.log(chalk.green('✓'), chunk.id, inputPath);
+        const chunk = await pipeline.ingest(opts.source, content, opts.type, inputPath);
+        const splitInfo = chunk.metadata?.childCount ? ` (split into ${chunk.metadata.childCount} chunks)` : '';
+        console.log(chalk.green('✓'), chunk.id.slice(0, 8), inputPath, splitInfo);
       }
     });
 

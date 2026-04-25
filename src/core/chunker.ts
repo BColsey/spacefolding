@@ -53,7 +53,7 @@ export function maybeSplit(
     timestamp: Date.now(),
     path: overrides.path,
     language: overrides.language,
-    tokensEstimate,
+    tokensEstimate: pieces.reduce((sum, p) => sum + tokenEstimator.estimate(p), 0),
     childrenIds: [],
     metadata: { split: true, childCount: pieces.length, strategy },
   };

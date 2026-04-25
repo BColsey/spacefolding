@@ -274,14 +274,20 @@ function createServer(pipeline: PipelineOrchestrator): Server {
         }
 
         case 'ingest_context': {
-          const chunk = pipeline.ingest(
+          const chunk = await pipeline.ingest(
             args!.source as string,
             args!.text as string,
             args!.type as string | undefined,
             args!.path as string | undefined,
             args!.language as string | undefined
           );
-          return jsonResponse({ chunkId: chunk.id });
+          const result: { chunkId: string; split?: { childCount: number; childIds: string[] } } = {
+            chunkId: chunk.id,
+          };
+          if (chunk.childrenIds.length > 0) {
+            result.split = { childCount: chunk.childrenIds.length, childIds: chunk.childrenIds };
+          }
+          return jsonResponse(result);
         }
 
         case 'update_context_graph': {

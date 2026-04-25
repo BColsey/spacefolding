@@ -28,30 +28,40 @@ function detectLanguage(filePath: string): string | undefined {
   return EXT_TO_LANG[extname(filePath).toLowerCase()];
 }
 
+export interface IngestResult {
+  /** The primary chunk (parent if split, otherwise the chunk itself) */
+  primary: ContextChunk;
+  /** Full split result if chunking occurred, null otherwise */
+  split: SplitResult | null;
+}
+
 export class ContextIngester {
   constructor(
     private tokenEstimator: TokenEstimator,
     private chunkingConfig = DEFAULT_CHUNKING_CONFIG
   ) {}
 
-  /** Ingest text, auto-splitting if oversized. Returns the primary chunk + any sub-chunks. */
-  ingestText(source: string, text: string, type?: ChunkType): ContextChunk {
+  /** Ingest text, auto-splitting if oversized. Returns primary chunk + split info. */
+  ingestText(source: string, text: string, type?: ChunkType): IngestResult {
     const resolvedType = type ?? classifyChunk(text, source);
     const tokensEstimate = this.tokenEstimator.estimate(text);
     const split = maybeSplit(text, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
       source,
       type: resolvedType,
     });
-    if (split) return split.parent; // caller should check children via getSplitResult()
+    if (split) return { primary: split.parent, split };
     return {
-      id: randomUUID(),
-      source,
-      type: resolvedType,
-      text,
-      timestamp: Date.now(),
-      tokensEstimate,
-      childrenIds: [],
-      metadata: {},
+      primary: {
+        id: randomUUID(),
+        source,
+        type: resolvedType,
+        text,
+        timestamp: Date.now(),
+        tokensEstimate,
+        childrenIds: [],
+        metadata: {},
+      },
+      split: null,
     };
   }
 
@@ -60,7 +70,7 @@ export class ContextIngester {
     content: string,
     language?: string,
     overrideType?: ChunkType
-  ): ContextChunk {
+  ): IngestResult {
     const lang = language ?? detectLanguage(filePath);
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
@@ -70,36 +80,22 @@ export class ContextIngester {
       path: filePath,
       language: lang,
     });
-    if (split) return split.parent;
+    if (split) return { primary: split.parent, split };
     return {
-      id: randomUUID(),
-      source: 'file',
-      type,
-      text: content,
-      timestamp: Date.now(),
-      path: filePath,
-      language: lang,
-      tokensEstimate,
-      childrenIds: [],
-      metadata: {},
+      primary: {
+        id: randomUUID(),
+        source: 'file',
+        type,
+        text: content,
+        timestamp: Date.now(),
+        path: filePath,
+        language: lang,
+        tokensEstimate,
+        childrenIds: [],
+        metadata: {},
+      },
+      split: null,
     };
-  }
-
-  /** Get the full split result (parent + children) if chunking occurred */
-  getSplitResult(
-    text: string,
-    source: string,
-    type?: ChunkType,
-    path?: string,
-    language?: string
-  ): SplitResult | null {
-    const tokensEstimate = this.tokenEstimator.estimate(text);
-    return maybeSplit(text, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
-      source,
-      type: type ?? classifyChunk(text, source),
-      path,
-      language,
-    });
   }
 
   ingestDiff(diffText: string): ContextChunk {
@@ -137,7 +133,7 @@ export class ContextIngester {
   ingestDirectory(
     basePath: string,
     files: { path: string; content: string }[]
-  ): ContextChunk[] {
+  ): IngestResult[] {
     return files.map((f) =>
       this.ingestFile(`${basePath}/${f.path}`, f.content)
     );

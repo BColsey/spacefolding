@@ -63,10 +63,10 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
-  it('preserves explicit type override when ingesting a file path', () => {
+  it('preserves explicit type override when ingesting a file path', async () => {
     const { pipeline } = createTestPipeline();
 
-    const chunk = pipeline.ingest(
+    const chunk = await pipeline.ingest(
       'file',
       'Plain text that should not be auto-classified as code',
       'reference',

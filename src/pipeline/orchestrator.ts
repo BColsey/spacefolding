@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type {
   ChunkType,
   CompressionResult,
@@ -14,6 +15,7 @@ import { SQLiteRepository } from '../storage/repository.js';
 import { ContextScorer } from '../core/scorer.js';
 import { ContextRouter } from '../core/router.js';
 import { ContextIngester } from '../core/ingester.js';
+import type { IngestResult } from '../core/ingester.js';
 import type { CompressionProvider } from '../types/index.js';
 import type { DependencyAnalyzer } from '../types/index.js';
 import { HybridRetriever } from '../core/retriever.js';
@@ -48,7 +50,7 @@ export class PipelineOrchestrator {
   ): Promise<ScoreResult> {
     if (newChunks) {
       for (const chunk of newChunks) {
-        this.storeChunkWithEmbedding(chunk);
+        await this.storeChunkWithEmbedding(chunk);
       }
     }
 
@@ -111,9 +113,13 @@ export class PipelineOrchestrator {
     task: TaskDescription,
     type?: string
   ): Promise<{ chunk: ContextChunk; result: ScoreResult }> {
-    const chunk = this.ingester.ingestText(source, text, type as ContextChunk['type']);
-    const result = await this.processContext(task, [chunk]);
-    return { chunk, result };
+    const result = this.ingester.ingestText(source, text, type as ContextChunk['type']);
+    const chunk = result.split ? result.split.parent : result.primary;
+    const chunks = result.split
+      ? [result.split.parent, ...result.split.children]
+      : [result.primary];
+    const pipelineResult = await this.processContext(task, chunks);
+    return { chunk, result: pipelineResult };
   }
 
   /** Retrieve chunks relevant to a task from warm/cold storage */
@@ -186,37 +192,44 @@ export class PipelineOrchestrator {
   }
 
   /** Ingest a single context item, auto-splitting and storing embeddings */
-  ingest(
+  async ingest(
     source: string,
     text: string,
     type?: string,
     path?: string,
     language?: string
-  ): ContextChunk {
-    const chunk =
+  ): Promise<ContextChunk> {
+    // Deduplication: check if we've already ingested this exact content
+    const contentHash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const existing = this.storage.findChunkByMetadata('contentHash', contentHash);
+    if (existing) return existing;
+
+    const result: IngestResult =
       path !== undefined
         ? this.ingester.ingestFile(path, text, language, type as ChunkType | undefined)
         : this.ingester.ingestText(source, text, type as ContextChunk['type']);
 
-    this.storeChunkWithEmbedding(chunk);
+    const chunk = result.primary;
+    chunk.metadata.contentHash = contentHash;
 
-    // If this chunk was split, also store children
-    if (chunk.childrenIds.length > 0) {
-      const splitResult = this.ingester.getSplitResult(text, source, type as ChunkType | undefined, path, language);
-      if (splitResult) {
-        for (const child of splitResult.children) {
-          this.storeChunkWithEmbedding(child);
-          // Store contains dependency from parent to child
-          this.storage.storeDependency({
-            fromId: chunk.id,
-            toId: child.id,
-            type: 'contains',
-            weight: 1.0,
-          });
-        }
+    // If split occurred, store parent (metadata-only) + children (with embeddings)
+    if (result.split) {
+      result.split.parent.metadata.contentHash = contentHash;
+      this.storage.storeChunk(result.split.parent); // No embedding for parent
+      for (const child of result.split.children) {
+        child.metadata.contentHash = createHash('sha256').update(child.text).digest('hex').slice(0, 16);
+        await this.storeChunkWithEmbedding(child);
+        this.storage.storeDependency({
+          fromId: result.split.parent.id,
+          toId: child.id,
+          type: 'contains',
+          weight: 1.0,
+        });
       }
+      return result.split.parent;
     }
 
+    await this.storeChunkWithEmbedding(chunk);
     return chunk;
   }
 
@@ -253,21 +266,18 @@ export class PipelineOrchestrator {
     }
   }
 
-  /** Store a chunk with its embedding */
-  private storeChunkWithEmbedding(chunk: ContextChunk): void {
+  /** Store a chunk and await its embedding */
+  private async storeChunkWithEmbedding(chunk: ContextChunk): Promise<void> {
     this.storage.storeChunk(chunk);
     if (this.embeddingProvider) {
-      this.embeddingProvider.embed(chunk.text).then((embedding) => {
+      try {
+        const embedding = await this.embeddingProvider.embed(chunk.text);
         if (embedding.length > 0) {
-          try {
-            this.storage.storeEmbedding(chunk.id, embedding, this.embeddingModel);
-          } catch {
-            // Embedding storage failure is non-fatal
-          }
+          this.storage.storeEmbedding(chunk.id, embedding, this.embeddingModel);
         }
-      }).catch(() => {
-        // Embedding computation failure is non-fatal
-      });
+      } catch {
+        // Embedding failure is non-fatal — chunk is still stored
+      }
     }
   }
 
@@ -302,12 +312,16 @@ export class PipelineOrchestrator {
       if (chunk) chunkMap.set(result.chunkId, chunk);
     }
 
-    // Get current hot chunk IDs from recent routing
-    const allChunks = this.storage.getAllChunks();
+    // Get current hot chunk IDs from recent routing history
     const hotIds = new Set<string>();
-    for (const chunk of allChunks) {
-      const routing = this.storage.getDependencies(chunk.id);
-      // Simple heuristic: recently scored high chunks are hot candidates
+    for (const result of retrieval.slice(0, retrieval.length)) {
+      // Check if this chunk was recently routed to hot tier
+      const chunk = chunkMap.get(result.chunkId);
+      if (chunk) {
+        const deps = this.storage.getDependencies(chunk.id);
+        // A chunk with many inbound dependency links is likely important
+        if (deps.length >= 3) hotIds.add(chunk.id);
+      }
     }
 
     const budgetResult = fillBudget(retrieval, chunkMap, budget, {

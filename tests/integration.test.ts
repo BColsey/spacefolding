@@ -50,24 +50,24 @@ describe('Integration: full pipeline', () => {
     const { pipeline } = createTestPipeline();
     const task = { text: 'Fix the authentication bug causing 401 errors in login.ts' };
 
-    const constraintChunk = pipeline.ingest(
+    const constraintChunk = await pipeline.ingest(
       'conversation',
       'Must use JWT tokens for all API authentication. No session cookies.',
       'constraint'
     );
-    const codeChunk = pipeline.ingest(
+    const codeChunk = await pipeline.ingest(
       'file',
       'function authenticate(token: string) {\n  return false; // broken\n}',
       'code',
       'src/auth/login.ts',
       'typescript'
     );
-    const logChunk = pipeline.ingest(
+    const logChunk = await pipeline.ingest(
       'log',
       '2024-01-15 10:30:00 ERROR 401 Unauthorized at /api/login',
       'log'
     );
-    const backgroundChunk = pipeline.ingest(
+    const backgroundChunk = await pipeline.ingest(
       'background',
       'The project was started in 2020 as a simple CRUD app. It uses Express and PostgreSQL.',
       'background'
@@ -104,11 +104,11 @@ describe('Integration: full pipeline', () => {
     const { pipeline } = createTestPipeline();
     const task = { text: 'Fix auth bug' };
 
-    const chunk1 = pipeline.ingest('conversation', 'Fix the login bug', 'instruction');
+    const chunk1 = await pipeline.ingest('conversation', 'Fix the login bug', 'instruction');
     const result1 = await pipeline.processContext(task);
     expect(result1.hot.length + result1.warm.length + result1.cold.length).toBe(1);
 
-    const chunk2 = pipeline.ingest('file', 'function login() {}', 'code', 'login.ts', 'typescript');
+    const chunk2 = await pipeline.ingest('file', 'function login() {}', 'code', 'login.ts', 'typescript');
     const result2 = await pipeline.processContext(task);
     expect(result2.hot.length + result2.warm.length + result2.cold.length).toBe(2);
   });
