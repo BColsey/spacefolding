@@ -1,0 +1,186 @@
+{
+  "codebase": "spacefolding",
+  "description": "Benchmark dataset for evaluating Spacefolding's retrieval accuracy against its own codebase",
+  "tasks": [
+    {
+      "id": "T01",
+      "task": "Fix the authentication bug causing 401 errors in the login flow",
+      "intent": "debug",
+      "relevant_files": ["src/core/scorer.ts", "src/core/router.ts", "src/mcp/server.ts"],
+      "relevant_types": ["constraint", "code", "log"],
+      "relevant_keywords": ["scoring", "routing", "hot", "warm", "cold", "threshold"],
+      "irrelevant_files": ["src/core/watcher.ts", "src/web/server.ts", "docs/logo.svg"]
+    },
+    {
+      "id": "T02",
+      "task": "How does the scoring engine weight different factors?",
+      "intent": "explain",
+      "relevant_files": ["src/core/scorer.ts", "src/core/router.ts"],
+      "relevant_types": ["code", "fact"],
+      "relevant_keywords": ["semantic", "constraint", "recency", "redundancy", "dependency", "weight"],
+      "irrelevant_files": ["src/web/server.ts", "src/cli/commands/export-import.ts"]
+    },
+    {
+      "id": "T03",
+      "task": "Add a new embedding provider that uses OpenAI embeddings",
+      "intent": "implement",
+      "relevant_files": ["src/providers/deterministic-embedding.ts", "src/providers/local-embedding.ts", "src/types/index.ts", "src/providers/index.ts"],
+      "relevant_types": ["code", "reference"],
+      "relevant_keywords": ["EmbeddingProvider", "embed", "embedBatch", "interface", "provider"],
+      "irrelevant_files": ["src/core/watcher.ts", "src/storage/schema.ts"]
+    },
+    {
+      "id": "T04",
+      "task": "Where is the context chunking logic that splits large files?",
+      "intent": "code_search",
+      "relevant_files": ["src/core/chunker.ts", "src/core/ingester.ts", "src/pipeline/orchestrator.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["chunker", "split", "maybeSplit", "maxTokens", "overlap"],
+      "irrelevant_files": ["src/providers/token-estimator.ts", "src/mcp/server.ts"]
+    },
+    {
+      "id": "T05",
+      "task": "Why is a constraint chunk being routed to cold instead of hot?",
+      "intent": "debug",
+      "relevant_files": ["src/core/router.ts", "src/core/scorer.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["constraint", "promoted", "demoted", "threshold", "hot", "routing"],
+      "irrelevant_files": ["src/core/watcher.ts", "src/web/server.ts"]
+    },
+    {
+      "id": "T06",
+      "task": "Implement a new MCP tool for deleting chunks",
+      "intent": "implement",
+      "relevant_files": ["src/mcp/server.ts", "src/types/index.ts", "src/storage/repository.ts"],
+      "relevant_types": ["code", "reference"],
+      "relevant_keywords": ["MCP", "tool", "CallToolRequestSchema", "deleteChunk", "server"],
+      "irrelevant_files": ["src/core/chunker.ts", "src/providers/deterministic-embedding.ts"]
+    },
+    {
+      "id": "T07",
+      "task": "How does the hybrid retriever combine vector search with full-text search?",
+      "intent": "explain",
+      "relevant_files": ["src/core/retriever.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["HybridRetriever", "reciprocalRankFusion", "vector", "fts", "searchByVector", "searchByText"],
+      "irrelevant_files": ["src/core/watcher.ts", "src/providers/symbol-extractor.ts"]
+    },
+    {
+      "id": "T08",
+      "task": "Fix the compression provider falling back to deterministic when it shouldn't",
+      "intent": "debug",
+      "relevant_files": ["src/providers/llm-compression.ts", "src/providers/local-compression.ts", "src/providers/deterministic-compression.ts"],
+      "relevant_types": ["code", "log"],
+      "relevant_keywords": ["compression", "fallback", "compress", "summary", "LLM"],
+      "irrelevant_files": ["src/core/watcher.ts", "src/web/server.ts"]
+    },
+    {
+      "id": "T09",
+      "task": "What database schema migrations exist and how are they applied?",
+      "intent": "explain",
+      "relevant_files": ["src/storage/schema.ts", "src/storage/repository.ts", "src/storage/current-version.ts"],
+      "relevant_types": ["code", "reference"],
+      "relevant_keywords": ["migration", "schema", "user_version", "MIGRATIONS", "CURRENT_VERSION"],
+      "irrelevant_files": ["src/core/scorer.ts", "src/mcp/server.ts"]
+    },
+    {
+      "id": "T10",
+      "task": "Find all the CLI commands and their descriptions",
+      "intent": "code_search",
+      "relevant_files": ["src/cli/index.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["command", "description", "program", "Commander"],
+      "irrelevant_files": ["src/core/chunker.ts", "src/providers/token-estimator.ts"]
+    },
+    {
+      "id": "T11",
+      "task": "Add support for Python code chunking in the context splitter",
+      "intent": "implement",
+      "relevant_files": ["src/core/chunker.ts", "src/core/ingester.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["splitCode", "findCodeBoundaries", "python", "def ", "class "],
+      "irrelevant_files": ["src/mcp/server.ts", "src/web/server.ts"]
+    },
+    {
+      "id": "T12",
+      "task": "How does the budget controller decide which chunks to include?",
+      "intent": "explain",
+      "relevant_files": ["src/core/budget.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["fillBudget", "maxTokens", "hotIds", "collapseSiblings", "omitted"],
+      "irrelevant_files": ["src/core/watcher.ts", "src/providers/symbol-extractor.ts"]
+    },
+    {
+      "id": "T13",
+      "task": "Fix the token estimator underestimating token counts for code",
+      "intent": "debug",
+      "relevant_files": ["src/providers/token-estimator.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["estimate", "tokens", "length", "charsPerToken"],
+      "irrelevant_files": ["src/core/scorer.ts", "src/mcp/server.ts"]
+    },
+    {
+      "id": "T14",
+      "task": "Where are dependency links stored and queried?",
+      "intent": "code_search",
+      "relevant_files": ["src/storage/repository.ts", "src/types/index.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["storeDependency", "getDependencies", "DependencyLink", "dependencies"],
+      "irrelevant_files": ["src/core/chunker.ts", "src/providers/local-embedding.ts"]
+    },
+    {
+      "id": "T15",
+      "task": "Add a reranking step after hybrid retrieval using a cross-encoder",
+      "intent": "implement",
+      "relevant_files": ["src/core/retriever.ts", "src/providers/deterministic-reranker.ts", "src/types/index.ts"],
+      "relevant_types": ["code", "reference"],
+      "relevant_keywords": ["RerankerProvider", "rerank", "HybridRetriever", "retrieval"],
+      "irrelevant_files": ["src/core/watcher.ts", "src/web/server.ts"]
+    },
+    {
+      "id": "T16",
+      "task": "How does the classifier detect chunk types?",
+      "intent": "explain",
+      "relevant_files": ["src/core/classifier.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["classifyChunk", "ChunkType", "constraint", "instruction", "code", "log"],
+      "irrelevant_files": ["src/core/chunker.ts", "src/web/server.ts"]
+    },
+    {
+      "id": "T17",
+      "task": "Fix the SSE transport not properly cleaning up sessions",
+      "intent": "debug",
+      "relevant_files": ["src/mcp/server.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["SSE", "transport", "sessionId", "onclose", "transports"],
+      "irrelevant_files": ["src/core/scorer.ts", "src/providers/deterministic-embedding.ts"]
+    },
+    {
+      "id": "T18",
+      "task": "What environment variables control the system behavior?",
+      "intent": "explain",
+      "relevant_files": ["src/cli/index.ts", ".env.example"],
+      "relevant_types": ["reference"],
+      "relevant_keywords": ["DB_PATH", "MODEL_PATH", "EMBEDDING_PROVIDER", "COMPRESSION_PROVIDER", "CHUNK"],
+      "irrelevant_files": ["src/core/scorer.ts", "src/providers/symbol-extractor.ts"]
+    },
+    {
+      "id": "T19",
+      "task": "Add export/import support for the dependency graph",
+      "intent": "implement",
+      "relevant_files": ["src/cli/commands/export-import.ts", "src/storage/repository.ts", "src/types/index.ts"],
+      "relevant_types": ["code", "reference"],
+      "relevant_keywords": ["export", "import", "ExportData", "DependencyLink"],
+      "irrelevant_files": ["src/core/scorer.ts", "src/providers/local-embedding.ts"]
+    },
+    {
+      "id": "T20",
+      "task": "How does the web UI display chunk routing information?",
+      "intent": "explain",
+      "relevant_files": ["src/web/server.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["web", "HTML", "chunk", "routing", "tier", "SPA"],
+      "irrelevant_files": ["src/core/scorer.ts", "src/providers/deterministic-embedding.ts"]
+    }
+  ]
+}
