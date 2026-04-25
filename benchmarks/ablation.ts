@@ -13,7 +13,7 @@
  *   6. keyword          — Keyword grep baseline (for comparison)
  *
  * Usage:
- *   npx tsx benchmarks/ablation.ts
+ *   npx tsx benchmarks/ablation.ts [--local-embeddings]
  */
 
 import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
@@ -125,12 +125,23 @@ async function runAblation() {
   const { ContextIngester } = await import('../dist/core/ingester.js');
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
 
+  const useLocalEmbeddings = process.argv.includes('--local-embeddings');
+  let embeddingProvider;
+  if (useLocalEmbeddings) {
+    const { LocalEmbeddingProvider } = await import('../dist/providers/local-embedding.js');
+    const modelId = process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
+    console.log(`Using LOCAL embeddings: ${modelId}`);
+    embeddingProvider = new LocalEmbeddingProvider(modelId);
+  } else {
+    console.log('Using DETERMINISTIC embeddings (hash-based, near-random)');
+    embeddingProvider = new DeterministicEmbeddingProvider();
+  }
+
   const dbPath = join(benchDir, 'ablation-eval.db');
   try { unlinkSync(dbPath); } catch {}
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
-  const embeddingProvider = new DeterministicEmbeddingProvider();
   const pipeline = new PipelineOrchestrator(
     storage,
     new ContextScorer(DEFAULT_ROUTING_CONFIG, embeddingProvider, tokenEstimator),

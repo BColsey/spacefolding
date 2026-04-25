@@ -1,9 +1,11 @@
 # Benchmark Results — Spacefolding Retrieval Evaluation
 
-**Date:** 2026-04-20
+**Date:** 2026-04-20 (updated with real embeddings)
 **Codebase:** Spacefolding itself (34 source files, 44 chunks)
 **Tasks:** 20 (5 debug, 7 explain, 5 implement, 3 code_search)
 **Dataset:** `benchmarks/dataset.json`
+
+> **See also:** [Ablation Study (Deterministic)](ABLATION.md) | [Ablation Study (Real Embeddings)](ABLATION-REAL-EMBEDDINGS.md)
 
 ## Summary
 
