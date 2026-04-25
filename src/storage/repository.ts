@@ -286,9 +286,22 @@ export class SQLiteRepository {
 
   /** BM25-ranked text search using FTS5 */
   searchByText(query: string, topK: number = 50): { chunkId: string; score: number }[] {
-    // Escape special FTS5 characters
-    const escaped = query.replace(/"/g, '""').replace(/[{}()\[\]:;]/g, ' ').trim();
-    if (!escaped) return [];
+    // Tokenize: lowercase, strip punctuation, remove stop words
+    const stopWords = new Set([
+      'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her',
+      'was', 'one', 'our', 'out', 'has', 'have', 'from', 'been', 'were', 'will',
+      'would', 'could', 'should', 'than', 'then', 'into', 'when', 'where', 'which',
+      'their', 'that', 'this', 'with', 'does', 'how', 'what', 'why', 'who', 'its',
+    ]);
+    const words = query
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !stopWords.has(w));
+    if (words.length === 0) return [];
+
+    // Build safe FTS5 OR query with quoted terms
+    const ftsQuery = words.map((w) => `"${w}"`).join(' OR ');
 
     try {
       const rows = this.db
@@ -299,7 +312,7 @@ export class SQLiteRepository {
            ORDER BY rank
            LIMIT ?`
         )
-        .all(escaped, topK) as Array<{ rowid: number; rank: number }>;
+        .all(ftsQuery, topK) as Array<{ rowid: number; rank: number }>;
 
       // Convert FTS5 rowid back to chunk ID
       const chunkRows = this.db
