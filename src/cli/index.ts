@@ -11,6 +11,7 @@ import { DeterministicTokenEstimator } from '../providers/token-estimator.js';
 import { DeterministicEmbeddingProvider } from '../providers/deterministic-embedding.js';
 import { DeterministicCompressionProvider } from '../providers/deterministic-compression.js';
 import { LocalCompressionProvider } from '../providers/local-compression.js';
+import { LLMCompressionProvider } from '../providers/llm-compression.js';
 import { SimpleDependencyAnalyzer } from '../providers/dependency-analyzer.js';
 import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
@@ -20,15 +21,46 @@ import { exportState, importState } from './commands/export-import.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
+function createCompressionProvider() {
+  const provider = process.env.COMPRESSION_PROVIDER ?? 'deterministic';
+
+  if (provider === 'llm') {
+    const endpoint = process.env.LLM_COMPRESSION_ENDPOINT;
+    const apiKey = process.env.LLM_COMPRESSION_API_KEY;
+    const model = process.env.LLM_COMPRESSION_MODEL;
+    if (!endpoint || !apiKey || !model) {
+      console.error(
+        chalk.yellow('Warning: COMPRESSION_PROVIDER=llm but missing LLM_COMPRESSION_ENDPOINT, LLM_COMPRESSION_API_KEY, or LLM_COMPRESSION_MODEL. Falling back to deterministic.')
+      );
+      return new DeterministicCompressionProvider();
+    }
+    return new LLMCompressionProvider({
+      endpoint,
+      apiKey,
+      model,
+      maxTokens: process.env.LLM_COMPRESSION_MAX_TOKENS
+        ? parseInt(process.env.LLM_COMPRESSION_MAX_TOKENS, 10)
+        : undefined,
+      headers: process.env.LLM_COMPRESSION_HEADERS
+        ? JSON.parse(process.env.LLM_COMPRESSION_HEADERS)
+        : undefined,
+    });
+  }
+
+  if (provider === 'local') {
+    return new LocalCompressionProvider(process.env.COMPRESSION_MODEL ?? 'Xenova/all-MiniLM-L6-v2');
+  }
+
+  return new DeterministicCompressionProvider();
+}
+
 function createPipeline(dbPath: string): PipelineOrchestrator {
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
   const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'local'
     ? new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
     : new DeterministicEmbeddingProvider();
-  const compressionProvider = process.env.COMPRESSION_PROVIDER === 'local'
-    ? new LocalCompressionProvider(process.env.COMPRESSION_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
-    : new DeterministicCompressionProvider();
+  const compressionProvider = createCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
 
   const scorer = new ContextScorer(DEFAULT_ROUTING_CONFIG, embeddingProvider, tokenEstimator);

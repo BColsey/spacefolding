@@ -8,7 +8,7 @@
 | `MODEL_PATH` | `./data/models` | Local model cache directory |
 | `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX model) or `deterministic` (hash-based) |
 | `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID |
-| `COMPRESSION_PROVIDER` | `deterministic` | `local` or `deterministic` |
+| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
 | `WEB_PORT` | `0` | Port for web UI (set to `8080` to enable) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | Port for SSE transport |
@@ -84,6 +84,25 @@ Rule-based: extracts constraints verbatim, first sentences of facts, code signat
 COMPRESSION_PROVIDER=local
 ```
 Smarter extraction with structured sections. Degrades to deterministic if no model is available.
+
+**LLM-powered (API):**
+```
+COMPRESSION_PROVIDER=llm
+LLM_COMPRESSION_ENDPOINT=https://api.openai.com/v1/chat/completions
+LLM_COMPRESSION_API_KEY=sk-...
+LLM_COMPRESSION_MODEL=gpt-4o-mini
+```
+Uses any OpenAI-compatible API to compress warm context with a real LLM. Produces much higher-quality summaries than deterministic or local providers.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LLM_COMPRESSION_ENDPOINT` | ✅ | API endpoint URL (any OpenAI-compatible) |
+| `LLM_COMPRESSION_API_KEY` | ✅ | API key |
+| `LLM_COMPRESSION_MODEL` | ✅ | Model name (e.g. `gpt-4o-mini`, `claude-3-haiku-20240307`) |
+| `LLM_COMPRESSION_MAX_TOKENS` | | Max response tokens (default: 500) |
+| `LLM_COMPRESSION_HEADERS` | | JSON string of extra headers |
+
+Works with OpenAI, Anthropic (via proxy), Azure OpenAI, Ollama, LM Studio, or any OpenAI-compatible endpoint. Falls back to deterministic if the API call fails.
 
 ## Docker Compose Configuration
 

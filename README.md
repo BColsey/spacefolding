@@ -287,7 +287,7 @@ All configuration is via environment variables:
 | `MODEL_PATH` | `./data/models` | Where embedding models are cached |
 | `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX) or `deterministic` (hash) |
 | `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID |
-| `COMPRESSION_PROVIDER` | `deterministic` | `local` or `deterministic` |
+| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
 | `WEB_PORT` | `0` (off) | Port for web UI (e.g. `8080`) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | SSE transport port |
@@ -316,6 +316,33 @@ node dist/main.js download-model --model Xenova/bge-small-en-v1.5
 | `Xenova/gte-small` | ~130MB | General-purpose alternative |
 
 If no model is downloaded, Spacefolding uses **deterministic hash-based embeddings** as a zero-dependency fallback. It always works.
+
+---
+
+## LLM Compression
+
+Use any OpenAI-compatible API to compress warm context with a real language model:
+
+```bash
+COMPRESSION_PROVIDER=llm \
+LLM_COMPRESSION_ENDPOINT=https://api.openai.com/v1/chat/completions \
+LLM_COMPRESSION_API_KEY=sk-... \
+LLM_COMPRESSION_MODEL=gpt-4o-mini \
+node dist/main.js serve
+```
+
+Works with **any** OpenAI-compatible endpoint: OpenAI, Anthropic (via proxy), Azure OpenAI, Ollama, LM Studio, vLLM, etc.
+
+The LLM receives a structured prompt asking it to extract constraints, facts, and code signatures — producing much higher-quality summaries than the deterministic or local providers.
+
+If the API call fails (network, rate limit, invalid key), it **falls back to deterministic compression** automatically.
+
+| Variable | Description |
+|----------|-------------|
+| `LLM_COMPRESSION_ENDPOINT` | API URL (e.g. `https://api.openai.com/v1/chat/completions`) |
+| `LLM_COMPRESSION_API_KEY` | Your API key |
+| `LLM_COMPRESSION_MODEL` | Model name (e.g. `gpt-4o-mini`) |
+| `LLM_COMPRESSION_MAX_TOKENS` | Max response tokens (default: 500) |
 
 ---
 
