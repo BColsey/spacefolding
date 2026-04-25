@@ -2,6 +2,15 @@
   "name": "spacefolding",
   "version": "0.1.0",
   "description": "Spacefolding — intelligent context compression and routing for coding agents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BColsey/spacefolding.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BColsey/spacefolding/issues"
+  },
+  "homepage": "https://github.com/BColsey/spacefolding#readme",
   "type": "module",
   "main": "dist/main.js",
   "bin": {
