@@ -6,9 +6,9 @@
   <img src="https://img.shields.io/badge/Status-Public-brightgreen?style=flat-square" />
 </p>
 
-<h1 align="center">
-  ✦ S P A C E F O L D I N G ✦
-</h1>
+<p align="center">
+  <img width="600" src="https://raw.githubusercontent.com/BColsey/spacefolding/main/docs/logo.svg" alt="Spacefolding" />
+</p>
 
 <p align="center">
   <em>Fold infinite context space into what fits in your prompt window.</em>

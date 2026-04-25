@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6E40C9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2496ED;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="fold1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2496ED;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#2496ED;stop-opacity:0.08" />
+    </linearGradient>
+    <linearGradient id="fold2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#6E40C9;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#6E40C9;stop-opacity:0.05" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background grid (subtle) -->
+  <g opacity="0.06">
+    <line x1="50" y1="30" x2="50" y2="170" stroke="#6E40C9" stroke-width="0.5"/>
+    <line x1="100" y1="20" x2="100" y2="180" stroke="#6E40C9" stroke-width="0.5"/>
+    <line x1="150" y1="25" x2="150" y2="175" stroke="#6E40C9" stroke-width="0.5"/>
+    <line x1="200" y1="15" x2="200" y2="185" stroke="#6E40C9" stroke-width="0.5"/>
+    <line x1="250" y1="20" x2="250" y2="180" stroke="#6E40C9" stroke-width="0.5"/>
+    <line x1="300" y1="30" x2="300" y2="170" stroke="#6E40C9" stroke-width="0.5"/>
+  </g>
+
+  <!-- Stars -->
+  <circle cx="60" cy="35" r="1.5" fill="#2496ED" opacity="0.6"/>
+  <circle cx="180" cy="25" r="1" fill="#6E40C9" opacity="0.5"/>
+  <circle cx="320" cy="40" r="1.2" fill="#2496ED" opacity="0.4"/>
+  <circle cx="480" cy="30" r="1.8" fill="#6E40C9" opacity="0.6"/>
+  <circle cx="550" cy="22" r="1" fill="#2496ED" opacity="0.5"/>
+  <circle cx="700" cy="28" r="1.5" fill="#6E40C9" opacity="0.4"/>
+  <circle cx="750" cy="45" r="1" fill="#2496ED" opacity="0.3"/>
+  <circle cx="130" cy="170" r="1.2" fill="#2496ED" opacity="0.4"/>
+  <circle cx="620" cy="165" r="1" fill="#6E40C9" opacity="0.5"/>
+  <circle cx="780" cy="155" r="1.5" fill="#2496ED" opacity="0.3"/>
+
+  <!-- Large unfolded plane (top) -->
+  <polygon points="50,30 250,15 250,85 50,100" fill="url(#fold1)" stroke="#2496ED" stroke-width="1" opacity="0.8"/>
+  
+  <!-- Fold line -->
+  <line x1="250" y1="50" x2="320" y2="100" stroke="url(#grad)" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Mid fold (compressed) -->
+  <polygon points="320,60 500,50 500,110 320,120" fill="url(#fold2)" stroke="#6E40C9" stroke-width="1" opacity="0.7"/>
+  
+  <!-- Fold line 2 -->
+  <line x1="500" y1="80" x2="560" y2="110" stroke="url(#grad)" stroke-width="2" stroke-dasharray="4,3"/>
+
+  <!-- Small folded plane (bottom) -->
+  <polygon points="560,85 700,80 700,120 560,125" fill="url(#fold1)" stroke="#2496ED" stroke-width="1" opacity="0.6"/>
+
+  <!-- Arrow converging to a point -->
+  <polygon points="700,100 740,85 740,95 780,100 740,105 740,115" fill="url(#grad)" opacity="0.5"/>
+
+  <!-- Title -->
+  <text x="400" y="170" font-family="'SF Mono', 'Fira Code', 'Cascadia Code', monospace" font-size="38" font-weight="bold" text-anchor="middle" fill="url(#grad)" letter-spacing="12">SPACEFOLDING</text>
+
+  <!-- Subtitle -->
+  <text x="400" y="192" font-family="'SF Mono', 'Fira Code', monospace" font-size="11" text-anchor="middle" fill="#8B949E" letter-spacing="3">CONTEXT COMPRESSION &amp; ROUTING FOR CODING AGENTS</text>
+</svg>
