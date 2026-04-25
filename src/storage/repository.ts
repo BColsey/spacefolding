@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { MIGRATIONS, CURRENT_VERSION } from './schema.js';
+import { cosineSimilarity } from '../providers/deterministic-embedding.js';
 
 export class SQLiteRepository {
   private db: Database.Database;
@@ -204,6 +205,107 @@ export class SQLiteRepository {
     return row.count;
   }
 
+  // ── Vector Store ──────────────────────────────────────────
+
+  storeEmbedding(chunkId: string, embedding: number[], model: string): void {
+    const buffer = new Float32Array(embedding).buffer;
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO chunk_embeddings (chunkId, embedding, model, dimensions, timestamp)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(chunkId, Buffer.from(buffer), model, embedding.length, Date.now());
+  }
+
+  getEmbedding(chunkId: string): { embedding: number[]; model: string } | null {
+    const row = this.db
+      .prepare('SELECT embedding, model, dimensions FROM chunk_embeddings WHERE chunkId = ?')
+      .get(chunkId) as EmbRow | undefined;
+    if (!row) return null;
+    const float32 = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.dimensions);
+    return { embedding: Array.from(float32), model: row.model };
+  }
+
+  /** Brute-force vector search — returns topK chunk IDs ranked by cosine similarity */
+  searchByVector(queryEmbedding: number[], topK: number = 50): { chunkId: string; score: number }[] {
+    const rows = this.db
+      .prepare('SELECT chunkId, embedding, dimensions FROM chunk_embeddings')
+      .all() as Array<{ chunkId: string; embedding: Buffer; dimensions: number }>;
+
+    const results: { chunkId: string; score: number }[] = [];
+    for (const row of rows) {
+      const vec = Array.from(new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.dimensions));
+      const score = cosineSimilarity(queryEmbedding, vec);
+      results.push({ chunkId: row.chunkId, score });
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, topK);
+  }
+
+  /** Check if embeddings exist for a model */
+  hasEmbeddings(model?: string): boolean {
+    if (model) {
+      const row = this.db
+        .prepare('SELECT COUNT(*) as count FROM chunk_embeddings WHERE model = ?')
+        .get(model) as { count: number };
+      return row.count > 0;
+    }
+    const row = this.db.prepare('SELECT COUNT(*) as count FROM chunk_embeddings').get() as { count: number };
+    return row.count > 0;
+  }
+
+  /** Get chunk IDs that are missing embeddings for a given model */
+  getChunksWithoutEmbeddings(model: string): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id FROM chunks c
+         WHERE NOT EXISTS (
+           SELECT 1 FROM chunk_embeddings e WHERE e.chunkId = c.id AND e.model = ?
+         )`
+      )
+      .all(model) as Array<{ id: string }>;
+    return rows.map((r) => r.id);
+  }
+
+  // ── Full-Text Search ───────────────────────────────────────
+
+  /** BM25-ranked text search using FTS5 */
+  searchByText(query: string, topK: number = 50): { chunkId: string; score: number }[] {
+    // Escape special FTS5 characters
+    const escaped = query.replace(/"/g, '""').replace(/[{}()\[\]:;]/g, ' ').trim();
+    if (!escaped) return [];
+
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT rowid, text, path, source, type, rank
+           FROM chunks_fts
+           WHERE chunks_fts MATCH ?
+           ORDER BY rank
+           LIMIT ?`
+        )
+        .all(escaped, topK) as Array<{ rowid: number; rank: number }>;
+
+      // Convert FTS5 rowid back to chunk ID
+      const chunkRows = this.db
+        .prepare('SELECT id, rowid FROM chunks WHERE rowid IN (' + rows.map(() => '?').join(',') + ')')
+        .all(...rows.map((r) => r.rowid)) as Array<{ id: string; rowid: number }>;
+
+      const rowidToId = new Map(chunkRows.map((r) => [r.rowid, r.id]));
+
+      return rows
+        .map((r) => ({
+          chunkId: rowidToId.get(r.rowid) ?? '',
+          score: -r.rank, // FTS5 rank is negative BM25, negate for positive score
+        }))
+        .filter((r) => r.chunkId !== '');
+    } catch {
+      // FTS5 might not support the query syntax
+      return [];
+    }
+  }
+
   close(): void {
     this.db.close();
   }
@@ -238,6 +340,13 @@ interface CompRow {
   retainedConstraints: string;
   sourceChunkIds: string;
   timestamp: number;
+}
+
+interface EmbRow {
+  chunkId: string;
+  embedding: Buffer;
+  model: string;
+  dimensions: number;
 }
 
 function rowToChunk(row: Row): ContextChunk {

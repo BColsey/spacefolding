@@ -60,6 +60,57 @@ CREATE INDEX IF NOT EXISTS idx_deps_from ON dependencies(fromId)`;
 export const CREATE_INDEX_DEPS_TO = `
 CREATE INDEX IF NOT EXISTS idx_deps_to ON dependencies(toId)`;
 
+// Phase 1: Vector persistence
+export const CREATE_TABLE_EMBEDDINGS = `
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
+  chunkId TEXT PRIMARY KEY,
+  embedding BLOB NOT NULL,
+  model TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  timestamp INTEGER NOT NULL,
+  FOREIGN KEY (chunkId) REFERENCES chunks(id) ON DELETE CASCADE
+)`;
+
+export const CREATE_INDEX_EMBEDDINGS_MODEL = `
+CREATE INDEX IF NOT EXISTS idx_embeddings_model ON chunk_embeddings(model)`;
+
+// Phase 2: Full-text search
+export const CREATE_FTS_TABLE = `
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+  text,
+  path UNINDEXED,
+  source UNINDEXED,
+  type UNINDEXED,
+  content='chunks',
+  content_rowid='rowid'
+)`;
+
+export const CREATE_FTS_INSERT_TRIGGER = `
+CREATE TRIGGER IF NOT EXISTS chunks_fts_ai AFTER INSERT ON chunks BEGIN
+  INSERT INTO chunks_fts(rowid, text, path, source, type)
+  VALUES (new.rowid, new.text, new.path, new.source, new.type);
+END`;
+
+export const CREATE_FTS_DELETE_TRIGGER = `
+CREATE TRIGGER IF NOT EXISTS chunks_fts_ad AFTER DELETE ON chunks BEGIN
+  INSERT INTO chunks_fts(chunks_fts, rowid, text, path, source, type)
+  VALUES ('delete', old.rowid, old.text, old.path, old.source, old.type);
+END`;
+
+export const CREATE_FTS_UPDATE_TRIGGER = `
+CREATE TRIGGER IF NOT EXISTS chunks_fts_au AFTER UPDATE ON chunks BEGIN
+  INSERT INTO chunks_fts(chunks_fts, rowid, text, path, source, type)
+  VALUES ('delete', old.rowid, old.text, old.path, old.source, old.type);
+  INSERT INTO chunks_fts(rowid, text, path, source, type)
+  VALUES (new.rowid, new.text, new.path, new.source, new.type);
+END`;
+
+export const CREATE_INDEX_ROUTING_CHUNK = `
+CREATE INDEX IF NOT EXISTS idx_routing_chunk ON routing_history(chunkId)`;
+
+export const CREATE_INDEX_ROUTING_TIMESTAMP = `
+CREATE INDEX IF NOT EXISTS idx_routing_timestamp ON routing_history(timestamp)`;
+
 export interface Migration {
   version: number;
   up: string[];
@@ -78,6 +129,24 @@ export const MIGRATIONS: Migration[] = [
       CREATE_INDEX_CHUNKS_PATH,
       CREATE_INDEX_DEPS_FROM,
       CREATE_INDEX_DEPS_TO,
+    ],
+  },
+  {
+    version: 2,
+    up: [
+      CREATE_TABLE_EMBEDDINGS,
+      CREATE_INDEX_EMBEDDINGS_MODEL,
+    ],
+  },
+  {
+    version: 3,
+    up: [
+      CREATE_FTS_TABLE,
+      CREATE_FTS_INSERT_TRIGGER,
+      CREATE_FTS_DELETE_TRIGGER,
+      CREATE_FTS_UPDATE_TRIGGER,
+      CREATE_INDEX_ROUTING_CHUNK,
+      CREATE_INDEX_ROUTING_TIMESTAMP,
     ],
   },
 ];

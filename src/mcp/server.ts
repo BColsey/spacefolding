@@ -179,6 +179,39 @@ const TOOL_DEFINITIONS = [
       required: ['task'],
     },
   },
+  {
+    name: 'retrieve_context',
+    description: describeTool(
+      'Retrieve relevant context using hybrid search (vector + full-text + dependency graph) with automatic budget control'
+    ),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query describing what context you need',
+        },
+        maxTokens: {
+          type: 'number',
+          description: 'Maximum token budget for results (default: auto based on query intent)',
+        },
+        strategy: {
+          type: 'string',
+          enum: ['hybrid', 'vector', 'text', 'graph'],
+          description: 'Retrieval strategy (default: hybrid)',
+        },
+        topK: {
+          type: 'number',
+          description: 'Max results to return (default: 50)',
+        },
+        maxHops: {
+          type: 'number',
+          description: 'Max dependency graph traversal hops (default: auto)',
+        },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 function createServer(pipeline: PipelineOrchestrator): Server {
@@ -278,6 +311,32 @@ function createServer(pipeline: PipelineOrchestrator): Server {
             args!.chunkId as string | undefined
           );
           return jsonResponse(result);
+        }
+
+        case 'retrieve_context': {
+          const query = args!.query as string;
+          const maxTokens = args!.maxTokens as number | undefined;
+          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? 'hybrid';
+          const topK = (args!.topK as number | undefined) ?? 50;
+          const maxHops = args!.maxHops as number | undefined;
+
+          const result = await pipeline.retrieve(query, maxTokens, { strategy, topK, maxHops });
+          return jsonResponse({
+            chunks: result.chunks.map((c) => ({
+              id: c.id,
+              type: c.type,
+              text: c.text,
+              path: c.path,
+              tokensEstimate: c.tokensEstimate,
+              tier: result.tiers.get(c.id) ?? 'warm',
+              retrievalSources: result.retrieval.find((r) => r.chunkId === c.id)?.sources ?? [],
+            })),
+            totalTokens: result.totalTokens,
+            budget: result.budget,
+            utilization: result.utilization,
+            omittedCount: result.omitted.length,
+            plan: result.plan,
+          });
         }
 
         default:

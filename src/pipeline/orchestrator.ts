@@ -5,6 +5,7 @@ import type {
   ContextChunk,
   ContextFilter,
   DependencyLink,
+  EmbeddingProvider,
   RoutingDecision,
   ScoreResult,
   TaskDescription,
@@ -15,16 +16,30 @@ import { ContextRouter } from '../core/router.js';
 import { ContextIngester } from '../core/ingester.js';
 import type { CompressionProvider } from '../types/index.js';
 import type { DependencyAnalyzer } from '../types/index.js';
+import { HybridRetriever } from '../core/retriever.js';
+import type { RetrievalOptions, RetrievalResult } from '../core/retriever.js';
+import { fillBudget } from '../core/budget.js';
+import { planQuery } from '../core/query-planner.js';
 
 export class PipelineOrchestrator {
+  private retriever: HybridRetriever;
+  private embeddingModel: string;
+
   constructor(
     private storage: SQLiteRepository,
     private scorer: ContextScorer,
     private router: ContextRouter,
     private compressionProvider: CompressionProvider,
     private dependencyAnalyzer: DependencyAnalyzer,
-    private ingester: ContextIngester
-  ) {}
+    private ingester: ContextIngester,
+    private embeddingProvider?: EmbeddingProvider
+  ) {
+    this.embeddingModel = process.env.EMBEDDING_MODEL ?? 'deterministic';
+    this.retriever = new HybridRetriever(storage, embeddingProvider ?? {
+      embed: async () => [],
+      embedBatch: async () => [],
+    });
+  }
 
   /** Run the full pipeline: score, route, compress, persist */
   async processContext(
@@ -33,7 +48,7 @@ export class PipelineOrchestrator {
   ): Promise<ScoreResult> {
     if (newChunks) {
       for (const chunk of newChunks) {
-        this.storage.storeChunk(chunk);
+        this.storeChunkWithEmbedding(chunk);
       }
     }
 
@@ -170,7 +185,7 @@ export class PipelineOrchestrator {
     return { routing, summary };
   }
 
-  /** Ingest a single context item and store it */
+  /** Ingest a single context item, auto-splitting and storing embeddings */
   ingest(
     source: string,
     text: string,
@@ -182,7 +197,26 @@ export class PipelineOrchestrator {
       path !== undefined
         ? this.ingester.ingestFile(path, text, language, type as ChunkType | undefined)
         : this.ingester.ingestText(source, text, type as ContextChunk['type']);
-    this.storage.storeChunk(chunk);
+
+    this.storeChunkWithEmbedding(chunk);
+
+    // If this chunk was split, also store children
+    if (chunk.childrenIds.length > 0) {
+      const splitResult = this.ingester.getSplitResult(text, source, type as ChunkType | undefined, path, language);
+      if (splitResult) {
+        for (const child of splitResult.children) {
+          this.storeChunkWithEmbedding(child);
+          // Store contains dependency from parent to child
+          this.storage.storeDependency({
+            fromId: chunk.id,
+            toId: child.id,
+            type: 'contains',
+            weight: 1.0,
+          });
+        }
+      }
+    }
+
     return chunk;
   }
 
@@ -217,5 +251,79 @@ export class PipelineOrchestrator {
     for (const link of links) {
       this.storage.removeDependency(link.fromId, link.toId, link.type);
     }
+  }
+
+  /** Store a chunk with its embedding */
+  private storeChunkWithEmbedding(chunk: ContextChunk): void {
+    this.storage.storeChunk(chunk);
+    if (this.embeddingProvider) {
+      this.embeddingProvider.embed(chunk.text).then((embedding) => {
+        if (embedding.length > 0) {
+          try {
+            this.storage.storeEmbedding(chunk.id, embedding, this.embeddingModel);
+          } catch {
+            // Embedding storage failure is non-fatal
+          }
+        }
+      }).catch(() => {
+        // Embedding computation failure is non-fatal
+      });
+    }
+  }
+
+  /** Retrieve context for a query using hybrid search + budget control */
+  async retrieve(
+    query: string,
+    maxTokens?: number,
+    options?: RetrievalOptions
+  ): Promise<{
+    chunks: ContextChunk[];
+    tiers: Map<string, import('../types/index.js').ContextTier>;
+    totalTokens: number;
+    budget: number;
+    utilization: number;
+    omitted: { chunkId: string; tokensEstimate: number; reason: string }[];
+    plan: ReturnType<typeof planQuery>;
+    retrieval: RetrievalResult[];
+  }> {
+    const plan = planQuery(query);
+    const budget = maxTokens ?? Math.floor(200_000 * plan.tokenBudgetRatio);
+    const retrieval = await this.retriever.retrieve(query, {
+      ...options,
+      topK: options?.topK ?? 100,
+      maxHops: options?.maxHops ?? plan.maxHops,
+      strategy: options?.strategy ?? plan.strategy,
+    });
+
+    // Load chunks for retrieved IDs
+    const chunkMap = new Map<string, ContextChunk>();
+    for (const result of retrieval) {
+      const chunk = this.storage.getChunk(result.chunkId);
+      if (chunk) chunkMap.set(result.chunkId, chunk);
+    }
+
+    // Get current hot chunk IDs from recent routing
+    const allChunks = this.storage.getAllChunks();
+    const hotIds = new Set<string>();
+    for (const chunk of allChunks) {
+      const routing = this.storage.getDependencies(chunk.id);
+      // Simple heuristic: recently scored high chunks are hot candidates
+    }
+
+    const budgetResult = fillBudget(retrieval, chunkMap, budget, {
+      hotChunkIds: hotIds,
+      collapseSiblings: true,
+    });
+
+    return {
+      chunks: budgetResult.selected,
+      tiers: budgetResult.tiers,
+      totalTokens: budgetResult.totalTokens,
+      budget: budgetResult.budget,
+      utilization: budgetResult.utilization,
+      omitted: budgetResult.omitted,
+      plan,
+      retrieval,
+    };
   }
 }

@@ -73,7 +73,8 @@ function createPipeline(dbPath: string): PipelineOrchestrator {
     router,
     compressionProvider,
     dependencyAnalyzer,
-    ingester
+    ingester,
+    embeddingProvider
   );
 }
 
@@ -263,6 +264,50 @@ export function buildCLI(): Command {
           console.log(chalk.gray(`  → ${reason}`));
         }
       }
+    });
+
+  program
+    .command('retrieve')
+    .description('Retrieve relevant context using hybrid search (vector + FTS + graph)')
+    .requiredOption('--query <text>', 'Search query')
+    .option('--max-tokens <number>', 'Max token budget', '100000')
+    .option('--strategy <type>', 'Search strategy: hybrid, vector, text, graph', 'hybrid')
+    .option('--top-k <number>', 'Max results to return', '50')
+    .option('--max-hops <number>', 'Max graph traversal hops', '2')
+    .action(async (opts, cmd) => {
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+      const pipeline = createPipeline(dbPath);
+
+      const result = await pipeline.retrieve(opts.query, parseInt(opts.maxTokens ?? opts.maxTokens, 10), {
+        strategy: opts.strategy as 'hybrid' | 'vector' | 'text' | 'graph',
+        topK: parseInt(opts.topK, 10),
+        maxHops: parseInt(opts.maxHops, 10),
+      });
+
+      console.log(chalk.bold(`Query: ${opts.query}`));
+      console.log(chalk.gray(`Intent: ${result.plan.intent} | Strategy: ${result.plan.strategy} | Budget: ${result.totalTokens}/${result.budget} tokens (${(result.utilization * 100).toFixed(0)}%)`));
+      console.log();
+
+      for (const chunk of result.chunks) {
+        const tier = result.tiers.get(chunk.id) ?? 'warm';
+        const tierColor = tier === 'hot' ? chalk.red : tier === 'warm' ? chalk.yellow : chalk.blue;
+        const retrieval = result.retrieval.find((r) => r.chunkId === chunk.id);
+        console.log(
+          tierColor(`[${tier.toUpperCase()}]`),
+          chunk.id.slice(0, 8),
+          chunk.path ?? chunk.type,
+          `~${chunk.tokensEstimate} tokens`,
+          retrieval ? `(${retrieval.sources.join('+')})` : ''
+        );
+        const preview = chunk.text.slice(0, 120).replace(/\n/g, ' ');
+        console.log(chalk.gray(`  ${preview}${chunk.text.length > 120 ? '…' : ''}`));
+      }
+
+      if (result.omitted.length > 0) {
+        console.log(chalk.yellow(`\n${result.omitted.length} chunks omitted (budget full)`));
+      }
+
+      pipeline.close();
     });
 
   program
