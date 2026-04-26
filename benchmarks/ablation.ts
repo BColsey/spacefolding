@@ -126,8 +126,15 @@ async function runAblation() {
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
 
   const useLocalEmbeddings = process.argv.includes('--local-embeddings');
+  const useGpu = process.argv.includes('--gpu');
   let embeddingProvider;
-  if (useLocalEmbeddings) {
+  if (useGpu) {
+    const { GpuEmbeddingProvider } = await import('../dist/providers/gpu-embedding.js');
+    const modelId = process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2';
+    const device = process.env.GPU_EMBEDDING_DEVICE ?? 'cuda';
+    console.log(`Using GPU embeddings: ${modelId} on ${device}`);
+    embeddingProvider = new GpuEmbeddingProvider(modelId, device);
+  } else if (useLocalEmbeddings) {
     const { LocalEmbeddingProvider } = await import('../dist/providers/local-embedding.js');
     const modelId = process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
     console.log(`Using LOCAL embeddings: ${modelId}`);
@@ -345,6 +352,9 @@ async function runAblation() {
 
   // Cleanup
   pipeline.close();
+  if ('close' in embeddingProvider && typeof (embeddingProvider as any).close === 'function') {
+    (embeddingProvider as any).close();
+  }
   try { unlinkSync(dbPath); } catch {}
 
   console.log(`\n${'═'.repeat(70)}`);

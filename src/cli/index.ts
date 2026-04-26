@@ -15,6 +15,7 @@ import { LLMCompressionProvider } from '../providers/llm-compression.js';
 import { SimpleDependencyAnalyzer } from '../providers/dependency-analyzer.js';
 import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
+import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
 import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
@@ -57,9 +58,14 @@ function createCompressionProvider() {
 function createPipeline(dbPath: string): PipelineOrchestrator {
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
-  const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'local'
-    ? new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
-    : new DeterministicEmbeddingProvider();
+  const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'gpu'
+    ? new GpuEmbeddingProvider(
+        process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2',
+        process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
+      )
+    : process.env.EMBEDDING_PROVIDER === 'local'
+      ? new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
+      : new DeterministicEmbeddingProvider();
   const compressionProvider = createCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
 

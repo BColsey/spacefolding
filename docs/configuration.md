@@ -6,8 +6,11 @@
 |----------|---------|-------------|
 | `DB_PATH` | `./data/spacefolding.db` | SQLite database path |
 | `MODEL_PATH` | `./data/models` | Local model cache directory |
-| `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX model) or `deterministic` (hash-based) |
-| `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID |
+| `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash-based) |
+| `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID (for `local` provider) |
+| `GPU_EMBEDDING_MODEL` | `all-mpnet-base-v2` | sentence-transformer model (for `gpu` provider) |
+| `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
+| `PYTHON_PATH` | `python3` | Python executable for GPU embedder |
 | `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
 | `CHUNK_MAX_TOKENS` | `2000` | Max tokens per sub-chunk when splitting |
 | `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between consecutive chunks |
@@ -17,6 +20,19 @@
 | `PORT` | `3000` | Port for SSE transport |
 | `USE_GPU` | `0` | Set to `1` to enable GPU for embeddings |
 | `NODE_ENV` | `production` | Node environment |
+
+## GPU Embeddings (CUDA)
+
+Requires: `pip install sentence-transformers torch`
+
+```bash
+EMBEDDING_PROVIDER=gpu
+GPU_EMBEDDING_MODEL=all-mpnet-base-v2  # 768-dim, best quality
+GPU_EMBEDDING_DEVICE=cuda              # or 'cpu' for fallback
+```
+
+The GPU provider runs a Python subprocess (`scripts/gpu-embedder.py`) that uses
+PyTorch with CUDA for fast inference. It communicates via JSON-RPC over stdin/stdout.
 
 ## Routing Weights
 
