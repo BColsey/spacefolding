@@ -57,8 +57,9 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
 |---------|-------------|
 | 🧠 **Smart Routing** | Score + route context into hot/warm/cold tiers |
 | 🔍 **Hybrid RAG** | Vector search + full-text search (FTS5) + graph traversal, fused with Reciprocal Rank Fusion |
+| ⚡ **GPU Embeddings** | CUDA-accelerated embeddings via Python subprocess — 12x faster than CPU |
 | 📦 **LLM Compression** | Use OpenAI, Ollama, or any compatible API to compress warm context |
-| 🔌 **MCP Server** | 7 tools for Claude Code integration via stdio or SSE |
+| 🔌 **MCP Server** | 8 tools for Claude Code integration via stdio or SSE |
 | ✂️ **Context Chunking** | Auto-split oversized files at code/markdown/paragraph boundaries |
 | 🐳 **Docker-first** | One-command setup with persistent storage |
 | 🧊 **Local Embeddings** | ONNX models run in-process — no GPU or cloud needed |
@@ -318,7 +319,16 @@ The system automatically detects query intent and adjusts strategy:
 
 ### Benchmarks
 
-We evaluated retrieval accuracy against ground-truth on 20 tasks. See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full results. Key takeaway: **use real ONNX embeddings for best results** — deterministic embeddings are a zero-dependency fallback but produce near-random vectors.
+We evaluated retrieval accuracy against ground-truth on 20 tasks across 6 embedding models and 6 strategies. **With GTE-ModernBERT on GPU, Spacefolding beats keyword grep on every metric:**
+
+| Metric | Keyword Grep | Spacefolding (GPU) | Δ |
+|--------|:-----------:|:------------------:|:-:|
+| Recall@10 | 0.787 | **0.846** | +7.5% |
+| NDCG@10 | 0.674 | **0.787** | +16.8% |
+| MRR | 0.692 | **0.823** | +18.9% |
+| Recall@20 | 0.850 | **0.942** | +10.8% |
+
+See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full results, [benchmarks/MODEL-COMPARISON.md](benchmarks/MODEL-COMPARISON.md) for model comparisons, and [benchmarks/ABLATION.md](benchmarks/ABLATION.md) for the ablation study.
 
 ---
 
@@ -340,6 +350,7 @@ src/
 │
 ├── providers/             # Pluggable model/logic interfaces
 │   ├── local-embedding.ts     ONNX embeddings (HuggingFace)
+│   ├── gpu-embedding.ts       CUDA embeddings via Python subprocess (GTE-ModernBERT)
 │   ├── llm-compression.ts     LLM-powered compression (OpenAI-compatible API)
 │   ├── local-compression.ts   Enhanced deterministic summarization
 │   ├── deterministic-*.ts     Hash/keyword fallbacks (zero deps)
@@ -370,6 +381,8 @@ src/
 
 **60 tests** across 8 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, and integration.
 
+**Benchmarks** in `benchmarks/` — 6 documents covering retrieval evaluation, ablation studies across 6 embedding models, and model comparison.
+
 ---
 
 ## Configuration
@@ -380,8 +393,11 @@ All configuration is via environment variables:
 |----------|---------|-----------------|
 | `DB_PATH` | `./data/spacefolding.db` | SQLite database location |
 | `MODEL_PATH` | `./data/models` | Where embedding models are cached |
-| `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX) or `deterministic` (hash) |
-| `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID |
+| `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash) |
+| `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID (for `local`) |
+| `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu`) |
+| `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
+| `PYTHON_PATH` | `python3` | Python executable for GPU embedder |
 | `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
 | `CHUNK_MAX_TOKENS` | `2000` | Max tokens per sub-chunk |
 | `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between chunks |
@@ -395,9 +411,30 @@ See [config.example.json](config.example.json) for routing weight tuning.
 
 ---
 
-## Local Models
+## Embedding Models
 
-Spacefolding can use **real local embedding models** that run in-process on CPU — no API keys, no cloud.
+Spacefolding supports three embedding providers:
+
+### GPU Embeddings (recommended)
+
+For best retrieval quality, use GPU-accelerated embeddings with a CUDA-capable GPU:
+
+```bash
+pip install sentence-transformers torch
+EMBEDDING_PROVIDER=gpu node dist/main.js serve
+```
+
+The GPU provider spawns a Python subprocess (`scripts/gpu-embedder.py`) that uses sentence-transformers with PyTorch CUDA. It communicates via JSON-RPC over stdin/stdout.
+
+| Model | Dims | Size | Speed | R@10 |
+|-------|:----:|:----:|:-----:|:----:|
+| `Alibaba-NLP/gte-modernbert-base` | 768 | 560MB | 16ms | **0.846** |
+| `BAAI/bge-m3` | 1024 | 560MB | 11ms | 0.796 |
+| `all-mpnet-base-v2` | 768 | 420MB | 7ms | 0.729 |
+
+### Local CPU Embeddings
+
+Spacefolding can also use **real local embedding models** that run in-process on CPU — no API keys, no cloud, no GPU.
 
 ```bash
 # Download the default model (~80MB)
@@ -413,7 +450,9 @@ node dist/main.js download-model --model Xenova/bge-small-en-v1.5
 | `Xenova/bge-small-en-v1.5` | ~130MB | Higher accuracy |
 | `Xenova/gte-small` | ~130MB | General-purpose alternative |
 
-If no model is downloaded, Spacefolding uses **deterministic hash-based embeddings** as a zero-dependency fallback. It always works — but real embeddings produce meaningfully better retrieval.
+### Deterministic Fallback
+
+If no model is downloaded, Spacefolding uses **deterministic hash-based embeddings** as a zero-dependency fallback. It always works — but produces near-random vectors (R@10 = 0.362). Real embeddings are strongly recommended.
 
 ---
 
