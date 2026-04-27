@@ -92,7 +92,7 @@ index abc1234..def5678 100644
       id: randomUUID(),
       source: 'file',
       type: 'background',
-      text: 'Context Steward is a Node.js/TypeScript application that manages context for coding agents. It uses SQLite for local storage and implements hot/warm/cold routing to optimize LLM context windows. The project started in 2024.',
+      text: 'Spacefolding is a Node.js/TypeScript application that manages context for coding agents. It uses SQLite for local storage and implements hot/warm/cold routing to optimize LLM context windows. The project started in 2024.',
       timestamp: now - 86400000, // 1 day ago
       tokensEstimate: 45,
       path: 'README.md',

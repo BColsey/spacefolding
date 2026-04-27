@@ -142,7 +142,7 @@ async function startServe(
   await startMCPServer(pipeline, { transport, port });
   console.error(
     chalk.green(
-      `Spacefolding MCP server running on ${transport === 'sse' ? `SSE port ${port}` : 'stdio'}`
+      `MCP server running (Spacefolding) on ${transport === 'sse' ? `SSE port ${port}` : 'stdio'}`
     )
   );
   if (webServer) {

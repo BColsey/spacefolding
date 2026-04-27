@@ -12,7 +12,7 @@ import { createInterface } from 'node:readline';
  * Each request gets a unique ID; responses are matched by ID.
  *
  * Environment variables:
- *   GPU_EMBEDDING_MODEL  - Model name (default: all-mpnet-base-v2)
+ *   GPU_EMBEDDING_MODEL  - Model name (default: Alibaba-NLP/gte-modernbert-base)
  *   GPU_EMBEDDING_DEVICE - Device: cuda, cpu (default: cuda)
  *   PYTHON_PATH          - Python executable (default: python3)
  */
@@ -30,7 +30,7 @@ export class GpuEmbeddingProvider implements EmbeddingProvider {
   private initPromise: Promise<void> | null = null;
 
   constructor(
-    private modelId: string = process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2',
+    private modelId: string = process.env.GPU_EMBEDDING_MODEL ?? 'Alibaba-NLP/gte-modernbert-base',
     private device: string = process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
     private pythonPath: string = process.env.PYTHON_PATH ?? 'python3',
   ) {}

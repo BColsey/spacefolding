@@ -14,3 +14,6 @@ Chronological record of completed tasks. Recent entries are most relevant.
 [2026-04-22] [worker] task-1776819286124-cw5pn3: Reviewed every TypeScript file under src/ and tests/, plus Dockerfile, docker-compose.yml, .env.example, and README.md. 
 [2026-04-22] [worker] task-1776823239944-05qz3r: Updated only src/cli/index.ts, src/mcp/server.ts, and src/main.ts. Wired LocalCompressionProvider via COMPRESSION_PROVID
 [2026-04-22] [worker] task-1776823179716-mionrd: Fixed removeDependencies in src/pipeline/orchestrator.ts, added file type override support in src/core/ingester.ts and i
+[2026-04-26] [worker] task-1776736213763-rsoeat: Finished Spacefolding rebrand cleanup in CLI logs, core type banner, and seed data text; validated with tsc --noEmit
+[2026-04-27] [worker] task-1776736242672-ws0jtu: Finished the remaining Spacefolding rebrand cleanup: updated the CLI running log to use the requested Spacefolding wordi
+[2026-04-27] [worker] task-1776736213763-rsoeat: Verified the requested Spacefolding rebrand updates in package.json, src/cli/index.ts, src/mcp/server.ts, Dockerfile, do

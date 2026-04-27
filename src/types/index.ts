@@ -1,5 +1,5 @@
 // ============================================================
-// Context Steward - Core Types & Interfaces
+// Spacefolding - Core Types & Interfaces
 // ============================================================
 
 // --- Chunk Types ---

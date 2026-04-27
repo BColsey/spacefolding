@@ -8,7 +8,7 @@
 | `MODEL_PATH` | `./data/models` | Local model cache directory |
 | `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash-based) |
 | `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID (for `local` provider) |
-| `GPU_EMBEDDING_MODEL` | `all-mpnet-base-v2` | sentence-transformer model (for `gpu` provider) |
+| `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu` provider) |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
 | `PYTHON_PATH` | `python3` | Python executable for GPU embedder |
 | `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
@@ -27,7 +27,7 @@ Requires: `pip install sentence-transformers torch`
 
 ```bash
 EMBEDDING_PROVIDER=gpu
-GPU_EMBEDDING_MODEL=all-mpnet-base-v2  # 768-dim, best quality
+GPU_EMBEDDING_MODEL=Alibaba-NLP/gte-modernbert-base  # Best: R@10=0.846, beats keyword
 GPU_EMBEDDING_DEVICE=cuda              # or 'cpu' for fallback
 ```
 
