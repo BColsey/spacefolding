@@ -20,7 +20,7 @@ import type { CompressionProvider } from '../types/index.js';
 import type { DependencyAnalyzer } from '../types/index.js';
 import { HybridRetriever } from '../core/retriever.js';
 import type { RetrievalOptions, RetrievalResult } from '../core/retriever.js';
-import { fillBudget } from '../core/budget.js';
+import { fillBudget, compressOmitted } from '../core/budget.js';
 import { planQuery } from '../core/query-planner.js';
 
 export class PipelineOrchestrator {
@@ -293,6 +293,7 @@ export class PipelineOrchestrator {
     budget: number;
     utilization: number;
     omitted: { chunkId: string; tokensEstimate: number; reason: string }[];
+    compressed: { chunkId: string; summary: string; tokensEstimate: number }[];
     plan: ReturnType<typeof planQuery>;
     retrieval: RetrievalResult[];
   }> {
@@ -329,6 +330,28 @@ export class PipelineOrchestrator {
       collapseSiblings: true,
     });
 
+    // Compress omitted chunks that could fit as summaries
+    if (budgetResult.omitted.length > 0) {
+      await compressOmitted(budgetResult, retrieval, chunkMap, {
+        estimateCompressed: (tokens) => Math.max(50, Math.floor(tokens * 0.1)),
+        compress: async (chunkId) => {
+          const chunk = chunkMap.get(chunkId);
+          if (!chunk) return null;
+          try {
+            const result = await this.compressionProvider.compress(
+              { text: query },
+              [chunk]
+            );
+            const tokensEstimate = Math.ceil(result.summary.split(/\s+/).length * 1.3);
+            return { summary: result.summary, tokensEstimate };
+          } catch {
+            return null;
+          }
+        },
+        maxCompress: 5,
+      });
+    }
+
     return {
       chunks: budgetResult.selected,
       tiers: budgetResult.tiers,
@@ -336,6 +359,7 @@ export class PipelineOrchestrator {
       budget: budgetResult.budget,
       utilization: budgetResult.utilization,
       omitted: budgetResult.omitted,
+      compressed: budgetResult.compressed,
       plan,
       retrieval,
     };

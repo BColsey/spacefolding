@@ -335,12 +335,18 @@ function createServer(pipeline: PipelineOrchestrator): Server {
               path: c.path,
               tokensEstimate: c.tokensEstimate,
               tier: result.tiers.get(c.id) ?? 'warm',
-              retrievalSources: result.retrieval.find((r) => r.chunkId === c.id)?.sources ?? [],
+              compressedFrom: c.metadata?.compressedFrom ?? undefined,
+              retrievalSources: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.sources ?? [],
             })),
             totalTokens: result.totalTokens,
             budget: result.budget,
             utilization: result.utilization,
             omittedCount: result.omitted.length,
+            compressedCount: result.compressed.length,
+            compressedSummaries: result.compressed.map((c) => ({
+              originalChunkId: c.chunkId,
+              tokensEstimate: c.tokensEstimate,
+            })),
             plan: result.plan,
           });
         }

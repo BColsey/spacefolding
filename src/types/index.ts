@@ -17,7 +17,7 @@ export type ChunkType =
   | 'reference';
 
 /** Routing tier assignment */
-export type ContextTier = 'hot' | 'warm' | 'cold';
+export type ContextTier = 'hot' | 'warm' | 'cold' | 'compressed';
 
 /** How two chunks relate */
 export type DependencyType =

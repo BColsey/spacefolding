@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { reciprocalRankFusion } from '../src/core/retriever.js';
 import type { RetrievalResult } from '../src/core/retriever.js';
 import { detectIntent, expandQuery, planQuery } from '../src/core/query-planner.js';
-import { fillBudget } from '../src/core/budget.js';
+import { fillBudget, compressOmitted } from '../src/core/budget.js';
 import type { ContextChunk } from '../src/types/index.js';
 
 describe('QueryPlanner', () => {
@@ -127,5 +127,60 @@ describe('BudgetController', () => {
     const result = fillBudget([], new Map(), 1000);
     expect(result.selected).toEqual([]);
     expect(result.totalTokens).toBe(0);
+  });
+
+  it('compresses omitted chunks that fit when compressed', async () => {
+    const ranked: RetrievalResult[] = [
+      { chunkId: 'fits', score: 0.9, sources: ['vector'], reasons: [] },
+      { chunkId: 'too-big', score: 0.8, sources: ['vector'], reasons: [] },
+    ];
+
+    const chunks = new Map<string, ContextChunk>();
+    chunks.set('fits', makeChunk('fits', 80));
+    chunks.set('too-big', makeChunk('too-big', 200));
+
+    const result = fillBudget(ranked, chunks, 100);
+    expect(result.selected.map((c) => c.id)).toEqual(['fits']);
+    expect(result.omitted.length).toBe(1);
+
+    // Now compress the omitted chunk
+    await compressOmitted(result, ranked, chunks, {
+      estimateCompressed: (tokens) => Math.max(10, Math.floor(tokens * 0.05)),
+      compress: async (chunkId) => {
+        const chunk = chunks.get(chunkId);
+        if (!chunk) return null;
+        return { summary: `Summary of ${chunk.id}`, tokensEstimate: 10 };
+      },
+    });
+
+    // Should have compressed 'too-big' and added it
+    expect(result.compressed.length).toBe(1);
+    expect(result.compressed[0].chunkId).toBe('too-big');
+    expect(result.selected.length).toBe(2);
+    expect(result.selected[1].text).toBe('Summary of too-big');
+    expect(result.tiers.get(result.selected[1].id)).toBe('compressed');
+    expect(result.totalTokens).toBe(90); // 80 + 10
+  });
+
+  it('skips compression when even compressed chunks exceed budget', async () => {
+    const ranked: RetrievalResult[] = [
+      { chunkId: 'fits', score: 0.9, sources: ['vector'], reasons: [] },
+      { chunkId: 'too-big', score: 0.8, sources: ['vector'], reasons: [] },
+    ];
+
+    const chunks = new Map<string, ContextChunk>();
+    chunks.set('fits', makeChunk('fits', 95));
+    chunks.set('too-big', makeChunk('too-big', 200));
+
+    const result = fillBudget(ranked, chunks, 100);
+    await compressOmitted(result, ranked, chunks, {
+      estimateCompressed: () => 10, // Even 10 tokens would exceed
+      compress: async (chunkId) => {
+        return { summary: `Summary of ${chunkId}`, tokensEstimate: 10 };
+      },
+    });
+
+    // No compression should happen — only 5 tokens remaining
+    expect(result.compressed.length).toBe(0);
   });
 });
