@@ -80,6 +80,36 @@ function computeMetrics(retrieved: string[], relevant: Set<string>, totalRelevan
   };
 }
 
+/** Bootstrap confidence intervals for a metric across tasks */
+function bootstrapCI(
+  taskResults: { metrics: Metrics }[],
+  metricKey: keyof Metrics,
+  nBoot = 10_000,
+  ci = 0.95
+): { mean: number; low: number; high: number; std: number } {
+  const n = taskResults.length;
+  const values = taskResults.map((r) => r.metrics[metricKey]);
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const std = Math.sqrt(values.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1));
+
+  // Bootstrap resampling
+  const bootMeans: number[] = [];
+  for (let b = 0; b < nBoot; b++) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      sum += values[Math.floor(Math.random() * n)];
+    }
+    bootMeans.push(sum / n);
+  }
+  bootMeans.sort((a, b) => a - b);
+
+  const alpha = (1 - ci) / 2;
+  const low = bootMeans[Math.floor(nBoot * alpha)];
+  const high = bootMeans[Math.ceil(nBoot * (1 - alpha))];
+
+  return { mean, low, high, std };
+}
+
 // ── Walk dir ──
 
 function walkDir(dir: string): string[] {
@@ -348,6 +378,53 @@ async function runAblation() {
       return avg.toFixed(3).padEnd(16);
     });
     console.log(`  ${intent.padEnd(16)}${row.join('')}`);
+  }
+
+  // ── Statistical Significance (Bootstrap 95% CI) ──
+
+  console.log(`\n\n${'═'.repeat(70)}`);
+  console.log(`  STATISTICAL SIGNIFICANCE — Bootstrap 95% CI (10,000 resamples)`);
+  console.log(`${'═'.repeat(70)}\n`);
+
+  const sigMetrics: (keyof Metrics)[] = ['recallAt10', 'ndcgAt10', 'mrr'];
+  const sigLabels: Record<string, string> = { recallAt10: 'R@10', ndcgAt10: 'NDCG@10', mrr: 'MRR' };
+
+  for (const metricKey of sigMetrics) {
+    console.log(`  ${sigLabels[metricKey]}:`);
+    for (const strat of strategies) {
+      const ci = bootstrapCI(allResults[strat], metricKey);
+      const ciStr = `[${ci.low.toFixed(3)}, ${ci.high.toFixed(3)}]`;
+      console.log(`    ${strat.padEnd(18)} ${ci.mean.toFixed(3)} ${ciStr} (σ=${ci.std.toFixed(3)})`);
+    }
+    console.log();
+  }
+
+  // Pairwise significance test (vector-only vs others)
+  console.log(`  Pairwise: vector-only vs others (significant if CI of difference excludes 0):\n`);
+  for (const metricKey of sigMetrics) {
+    console.log(`    ${sigLabels[metricKey]}:`);
+    const baselineValues = allResults['vector-only'].map((r) => r.metrics[metricKey]);
+    for (const strat of strategies.filter((s) => s !== 'vector-only')) {
+      const otherValues = allResults[strat].map((r) => r.metrics[metricKey]);
+      const diffs = baselineValues.map((v, i) => v - otherValues[i]);
+      const meanDiff = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+      // Bootstrap CI of difference
+      const bootDiffs: number[] = [];
+      for (let b = 0; b < 10_000; b++) {
+        let sum = 0;
+        for (let i = 0; i < diffs.length; i++) {
+          sum += diffs[Math.floor(Math.random() * diffs.length)];
+        }
+        bootDiffs.push(sum / diffs.length);
+      }
+      bootDiffs.sort((a, b) => a - b);
+      const low = bootDiffs[250];
+      const high = bootDiffs[9750];
+      const significant = (low > 0 || high < 0) ? '✓ SIGNIFICANT' : '✗ not significant';
+      const direction = meanDiff > 0 ? 'wins' : 'loses';
+      console.log(`      vs ${strat.padEnd(18)} Δ=${meanDiff >= 0 ? '+' : ''}${meanDiff.toFixed(3)} [${low.toFixed(3)}, ${high.toFixed(3)}] ${significant} (vector ${direction})`);
+    }
+    console.log();
   }
 
   // Cleanup

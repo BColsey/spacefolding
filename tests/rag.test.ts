@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { reciprocalRankFusion } from '../src/core/retriever.js';
 import type { RetrievalResult } from '../src/core/retriever.js';
-import { detectIntent, expandQuery, planQuery } from '../src/core/query-planner.js';
+import { detectIntent, expandQuery, planQuery, estimateComplexity } from '../src/core/query-planner.js';
 import { fillBudget, compressOmitted } from '../src/core/budget.js';
 import type { ContextChunk } from '../src/types/index.js';
 
@@ -41,12 +41,25 @@ describe('QueryPlanner', () => {
     expect(terms).not.toContain('does');
   });
 
-  it('debug plan uses vector-only with high budget', () => {
+  it('debug plan uses vector-only with moderate budget', () => {
     const plan = planQuery('fix the error in login');
     expect(plan.intent).toBe('debug');
     expect(plan.strategy).toBe('vector');
     expect(plan.maxHops).toBe(0);
+    expect(plan.complexity).toBe('moderate');
     expect(plan.tokenBudgetRatio).toBe(0.6);
+  });
+
+  it('narrow queries get reduced budget', () => {
+    const plan = planQuery('find the exact function that handles authentication in src/auth/login.ts');
+    expect(plan.complexity).toBe('narrow');
+    expect(plan.tokenBudgetRatio).toBeLessThan(0.5);
+  });
+
+  it('broad queries get increased budget', () => {
+    const plan = planQuery('explain the overall architecture and how all the various modules interact');
+    expect(plan.complexity).toBe('broad');
+    expect(plan.tokenBudgetRatio).toBeGreaterThan(0.35);
   });
 });
 

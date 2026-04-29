@@ -6,6 +6,7 @@ export interface QueryPlan {
   strategy: 'hybrid' | 'vector' | 'text' | 'graph';
   maxHops: number;
   tokenBudgetRatio: number; // fraction of max tokens to use
+  complexity: 'narrow' | 'moderate' | 'broad'; // query scope estimate
 }
 
 const INTENT_KEYWORDS: Record<QueryIntent, string[]> = {
@@ -15,6 +16,19 @@ const INTENT_KEYWORDS: Record<QueryIntent, string[]> = {
   code_search: ['where', 'find', 'locate', 'search', 'show', 'grep', 'file', 'function', 'class', 'module'],
   general: [],
 };
+
+// Broadening signals: queries mentioning "all", "entire", "everything", "whole" suggest wider scope
+const BROADENING_TERMS = new Set([
+  'all', 'entire', 'everything', 'whole', 'comprehensive', 'complete',
+  'full', 'overall', 'architecture', 'system', 'overview', 'every',
+  'and', 'multiple', 'various', 'several',
+]);
+
+// Narrowing signals: queries with specific file paths, function names, or "exact" language
+const NARROWING_TERMS = new Set([
+  'exact', 'specific', 'only', 'just', 'single', 'one', 'this',
+  'exact', 'precise', 'particular',
+]);
 
 /** Detect the primary intent of a query */
 export function detectIntent(query: string): QueryIntent {
@@ -60,55 +74,75 @@ export function expandQuery(query: string): string[] {
   return [...new Set(words)];
 }
 
+/** Estimate query complexity/scope for adaptive budget sizing */
+export function estimateComplexity(query: string, expandedTerms: string[]): 'narrow' | 'moderate' | 'broad' {
+  const lower = query.toLowerCase();
+  const words = lower.split(/\s+/);
+  const termCount = expandedTerms.length;
+
+  // Count broadening vs narrowing signals
+  let broadSignals = 0;
+  let narrowSignals = 0;
+  for (const word of words) {
+    if (BROADENING_TERMS.has(word)) broadSignals++;
+    if (NARROWING_TERMS.has(word)) narrowSignals++;
+  }
+
+  // Path-like patterns (src/foo/bar.ts) indicate narrow targeting
+  if (/[a-z]+\/[a-z]+/.test(lower) || /\.(ts|js|py|rs|go)$/.test(lower)) {
+    narrowSignals += 2;
+  }
+
+  // Many terms = broader query
+  if (termCount >= 6) broadSignals++;
+  if (termCount <= 2) narrowSignals++;
+
+  if (narrowSignals > broadSignals + 1) return 'narrow';
+  if (broadSignals > narrowSignals + 1) return 'broad';
+  return 'moderate';
+}
+
+/** Compute adaptive budget ratio based on intent + complexity */
+function adaptiveBudgetRatio(intent: QueryIntent, complexity: 'narrow' | 'moderate' | 'broad'): number {
+  // Base ratios per intent
+  const baseRatio: Record<QueryIntent, number> = {
+    debug: 0.6,
+    implement: 0.4,
+    explain: 0.3,
+    code_search: 0.35,
+    general: 0.5,
+  };
+
+  const base = baseRatio[intent];
+
+  // Complexity adjustment:
+  // - narrow: reduce budget (fewer, more targeted results needed)
+  // - broad: increase budget (wider context needed)
+  switch (complexity) {
+    case 'narrow': return Math.max(0.15, base * 0.7);
+    case 'broad': return Math.min(0.8, base * 1.3);
+    default: return base;
+  }
+}
+
 /** Create a retrieval plan from a query */
 export function planQuery(query: string): QueryPlan {
   const intent = detectIntent(query);
   const expandedTerms = expandQuery(query);
+  const complexity = estimateComplexity(query, expandedTerms);
 
   // All intents default to vector-only retrieval.
   // Ablation testing showed vector-only with strong embeddings (GTE-ModernBERT)
   // beats hybrid (vector+FTS5+graph) on all metrics: R@10 +7.5%, NDCG +16.8%, MRR +18.9%.
   // Graph traversal degrades NDCG/MRR by ~22% across all models.
-  switch (intent) {
-    case 'debug':
-      return {
-        intent,
-        expandedTerms,
-        strategy: 'vector',
-        maxHops: 0,
-        tokenBudgetRatio: 0.6,
-      };
-    case 'implement':
-      return {
-        intent,
-        expandedTerms,
-        strategy: 'vector',
-        maxHops: 0,
-        tokenBudgetRatio: 0.4,
-      };
-    case 'explain':
-      return {
-        intent,
-        expandedTerms,
-        strategy: 'vector',
-        maxHops: 0,
-        tokenBudgetRatio: 0.3,
-      };
-    case 'code_search':
-      return {
-        intent,
-        expandedTerms,
-        strategy: 'vector',
-        maxHops: 0,
-        tokenBudgetRatio: 0.35,
-      };
-    default:
-      return {
-        intent,
-        expandedTerms,
-        strategy: 'vector',
-        maxHops: 0,
-        tokenBudgetRatio: 0.5,
-      };
-  }
+  const tokenBudgetRatio = adaptiveBudgetRatio(intent, complexity);
+
+  return {
+    intent,
+    expandedTerms,
+    strategy: 'vector',
+    maxHops: 0,
+    tokenBudgetRatio,
+    complexity,
+  };
 }
