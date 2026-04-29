@@ -41,11 +41,11 @@ describe('QueryPlanner', () => {
     expect(terms).not.toContain('does');
   });
 
-  it('debug plan uses hybrid with high budget', () => {
+  it('debug plan uses vector-only with high budget', () => {
     const plan = planQuery('fix the error in login');
     expect(plan.intent).toBe('debug');
-    expect(plan.strategy).toBe('hybrid');
-    expect(plan.maxHops).toBe(2);
+    expect(plan.strategy).toBe('vector');
+    expect(plan.maxHops).toBe(0);
     expect(plan.tokenBudgetRatio).toBe(0.6);
   });
 });

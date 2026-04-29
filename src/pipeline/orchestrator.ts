@@ -301,7 +301,7 @@ export class PipelineOrchestrator {
     const budget = maxTokens ?? Math.floor(200_000 * plan.tokenBudgetRatio);
     const retrieval = await this.retriever.retrieve(query, {
       ...options,
-      topK: options?.topK ?? 100,
+      topK: options?.topK ?? 15,
       maxHops: options?.maxHops ?? plan.maxHops,
       strategy: options?.strategy ?? plan.strategy,
     });

@@ -184,17 +184,18 @@ No other system combines:
 
 ### For the Paper/Documentation
 
-1. **Publish the compress-overflow technique** as a named pattern. Call it "Budget-Aware Compressive Overflow" or similar.
-2. **Publish the "graph hurts code retrieval" finding** — this is a counter-intuitive result that would interest the RAG community.
+1. ✅ **Publish the compress-overflow technique** as a named pattern → `docs/PATTERN-compress-overflow.md`
+2. ✅ **Publish the "graph hurts code retrieval" finding** → implemented as default maxHops=0, documented in query-planner.ts
 3. **Benchmark against LLMLingua** on the same code retrieval task to compare compression approaches.
 4. **Test with MTEB code retrieval benchmarks** (CodeSearchNet, CoSQA) for standardized comparison.
 
 ### For the Product
 
-1. **Default to vector-only retrieval** — our ablation proves hybrid hurts with strong models.
+1. ✅ **Default to vector-only retrieval** — all query intents now default to `strategy='vector'`
 2. **Consider LLMLingua-style token-level compression** as an alternative to chunk-level summarization.
 3. **Adaptive budget sizing** based on query difficulty (inspired by adaptive RAG research).
 4. **Iterative retrieval** (like RepoCoder) for complex tasks — retrieve → generate → re-retrieve.
+5. ✅ **Result capping at 15** — default topK changed from 50→15 to prevent precision dilution
 
 ### For Academic Credibility
 

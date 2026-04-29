@@ -182,7 +182,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'retrieve_context',
     description: describeTool(
-      'Retrieve relevant context using hybrid search (vector + full-text + dependency graph) with automatic budget control'
+      'Retrieve relevant context using semantic vector search with automatic budget control and compress-overflow'
     ),
     inputSchema: {
       type: 'object' as const,
@@ -198,11 +198,11 @@ const TOOL_DEFINITIONS = [
         strategy: {
           type: 'string',
           enum: ['hybrid', 'vector', 'text', 'graph'],
-          description: 'Retrieval strategy (default: hybrid)',
+          description: 'Retrieval strategy (default: vector. Use hybrid for keyword fallback, text for pure FTS5)',
         },
         topK: {
           type: 'number',
-          description: 'Max results to return (default: 50)',
+          description: 'Max results to retrieve before budget filtering (default: 15)',
         },
         maxHops: {
           type: 'number',
@@ -322,8 +322,8 @@ function createServer(pipeline: PipelineOrchestrator): Server {
         case 'retrieve_context': {
           const query = args!.query as string;
           const maxTokens = args!.maxTokens as number | undefined;
-          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? 'hybrid';
-          const topK = (args!.topK as number | undefined) ?? 50;
+          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? 'vector';
+          const topK = (args!.topK as number | undefined) ?? 15;
           const maxHops = args!.maxHops as number | undefined;
 
           const result = await pipeline.retrieve(query, maxTokens, { strategy, topK, maxHops });

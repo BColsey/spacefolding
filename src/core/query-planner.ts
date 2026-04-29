@@ -65,21 +65,25 @@ export function planQuery(query: string): QueryPlan {
   const intent = detectIntent(query);
   const expandedTerms = expandQuery(query);
 
+  // All intents default to vector-only retrieval.
+  // Ablation testing showed vector-only with strong embeddings (GTE-ModernBERT)
+  // beats hybrid (vector+FTS5+graph) on all metrics: R@10 +7.5%, NDCG +16.8%, MRR +18.9%.
+  // Graph traversal degrades NDCG/MRR by ~22% across all models.
   switch (intent) {
     case 'debug':
       return {
         intent,
         expandedTerms,
-        strategy: 'hybrid',
-        maxHops: 2,
+        strategy: 'vector',
+        maxHops: 0,
         tokenBudgetRatio: 0.6,
       };
     case 'implement':
       return {
         intent,
         expandedTerms,
-        strategy: 'hybrid',
-        maxHops: 1,
+        strategy: 'vector',
+        maxHops: 0,
         tokenBudgetRatio: 0.4,
       };
     case 'explain':
@@ -87,14 +91,14 @@ export function planQuery(query: string): QueryPlan {
         intent,
         expandedTerms,
         strategy: 'vector',
-        maxHops: 1,
+        maxHops: 0,
         tokenBudgetRatio: 0.3,
       };
     case 'code_search':
       return {
         intent,
         expandedTerms,
-        strategy: 'text',
+        strategy: 'vector',
         maxHops: 0,
         tokenBudgetRatio: 0.35,
       };
@@ -102,8 +106,8 @@ export function planQuery(query: string): QueryPlan {
       return {
         intent,
         expandedTerms,
-        strategy: 'hybrid',
-        maxHops: 1,
+        strategy: 'vector',
+        maxHops: 0,
         tokenBudgetRatio: 0.5,
       };
   }
