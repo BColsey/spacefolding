@@ -212,6 +212,35 @@ const TOOL_DEFINITIONS = [
       required: ['query'],
     },
   },
+  {
+    name: 'iterative_retrieve',
+    description: describeTool(
+      'Multi-round iterative retrieval: retrieves context, expands query from results, re-retrieves for broader coverage'
+    ),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Initial search query',
+        },
+        maxTokens: {
+          type: 'number',
+          description: 'Maximum total token budget across all rounds (default: 100000)',
+        },
+        rounds: {
+          type: 'number',
+          description: 'Number of retrieval iterations (default: 2)',
+        },
+        strategy: {
+          type: 'string',
+          enum: ['hybrid', 'vector', 'text', 'graph'],
+          description: 'Retrieval strategy per round (default: vector)',
+        },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 function createServer(pipeline: PipelineOrchestrator): Server {
@@ -348,6 +377,33 @@ function createServer(pipeline: PipelineOrchestrator): Server {
               tokensEstimate: c.tokensEstimate,
             })),
             plan: result.plan,
+          });
+        }
+
+        case 'iterative_retrieve': {
+          const query = args!.query as string;
+          const maxTokens = (args!.maxTokens as number | undefined) ?? 100_000;
+          const rounds = (args!.rounds as number | undefined) ?? 2;
+          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? 'vector';
+
+          const result = await pipeline.iterativeRetrieve(query, rounds, maxTokens, { strategy });
+          return jsonResponse({
+            rounds: result.rounds.map((r) => ({
+              round: r.round,
+              query: r.query,
+              newChunkCount: r.newChunkCount,
+              chunks: r.chunks.map((c) => ({
+                id: c.id,
+                type: c.type,
+                text: c.text,
+                path: c.path,
+                tokensEstimate: c.tokensEstimate,
+                tier: result.finalTiers.get(c.id) ?? 'warm',
+              })),
+            })),
+            totalChunks: result.finalChunks.length,
+            totalTokens: result.totalTokens,
+            budget: result.budget,
           });
         }
 

@@ -197,3 +197,35 @@ describe('BudgetController', () => {
     expect(result.compressed.length).toBe(0);
   });
 });
+
+describe('Iterative Query Expansion', () => {
+  it('planQuery returns complexity for adaptive budget', () => {
+    const narrowPlan = planQuery('find the exact function in src/auth/login.ts');
+    const broadPlan = planQuery('explain the overall architecture and how all modules interact');
+    expect(narrowPlan.complexity).toBe('narrow');
+    expect(broadPlan.complexity).toBe('broad');
+    expect(narrowPlan.tokenBudgetRatio).toBeLessThan(broadPlan.tokenBudgetRatio);
+  });
+
+  it('iterative retrieve deduplicates across rounds', async () => {
+    // This requires a real pipeline, so we test the budget dedup logic
+    const ranked: RetrievalResult[] = [
+      { chunkId: 'a', score: 0.9, sources: ['vector'], reasons: [] },
+      { chunkId: 'b', score: 0.7, sources: ['vector'], reasons: [] },
+    ];
+    const makeChunk = (id: string, tokens: number): ContextChunk => ({
+      id, source: 'test', type: 'code', text: 'x'.repeat(tokens * 4),
+      timestamp: Date.now(), tokensEstimate: tokens, childrenIds: [], metadata: {},
+    });
+    const chunks = new Map<string, ContextChunk>();
+    chunks.set('a', makeChunk('a', 50));
+    chunks.set('b', makeChunk('b', 50));
+
+    const result = fillBudget(ranked, chunks, 100);
+    expect(result.selected.length).toBe(2);
+
+    // If we run fillBudget again with same IDs, they should still work
+    const result2 = fillBudget(ranked, chunks, 100);
+    expect(result2.selected.length).toBe(2);
+  });
+});

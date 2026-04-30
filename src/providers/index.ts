@@ -7,4 +7,5 @@ export { DeterministicCompressionProvider } from './deterministic-compression.js
 export { LocalCompressionProvider } from './local-compression.js';
 export { LLMCompressionProvider } from './llm-compression.js';
 export type { LLMCompressionConfig } from './llm-compression.js';
+export { LlmLinguaCompressionProvider } from './llmlingua-compression.js';
 export { SimpleDependencyAnalyzer } from './dependency-analyzer.js';

@@ -364,4 +364,91 @@ export class PipelineOrchestrator {
       retrieval,
     };
   }
+
+  /** Iterative retrieval: retrieve → expand query from results → re-retrieve */
+  async iterativeRetrieve(
+    query: string,
+    maxRounds = 2,
+    maxTokens?: number,
+    options?: RetrievalOptions
+  ): Promise<{
+    rounds: Array<{
+      round: number;
+      query: string;
+      chunks: ContextChunk[];
+      newChunkCount: number;
+    }>;
+    finalChunks: ContextChunk[];
+    finalTiers: Map<string, import('../types/index.js').ContextTier>;
+    totalTokens: number;
+    budget: number;
+  }> {
+    const seenChunkIds = new Set<string>();
+    const rounds: Array<{
+      round: number;
+      query: string;
+      chunks: ContextChunk[];
+      newChunkCount: number;
+    }> = new Array();
+    const allChunks: ContextChunk[] = [];
+    const allTiers = new Map<string, import('../types/index.js').ContextTier>();
+    let totalTokens = 0;
+    const budget = maxTokens ?? 100_000;
+    let currentQuery = query;
+
+    for (let round = 0; round < maxRounds; round++) {
+      const result = await this.retrieve(currentQuery, budget - totalTokens, options);
+
+      // Filter to only new chunks
+      const newChunks = result.chunks.filter(c => !seenChunkIds.has(c.id));
+      const newTokens = newChunks.reduce((s, c) => s + c.tokensEstimate, 0);
+
+      // Stop if no new chunks found
+      if (newChunks.length === 0) break;
+
+      // Track what we've seen
+      for (const chunk of newChunks) {
+        seenChunkIds.add(chunk.id);
+        allChunks.push(chunk);
+        allTiers.set(chunk.id, result.tiers.get(chunk.id) ?? 'warm');
+      }
+      totalTokens += newTokens;
+
+      rounds.push({
+        round,
+        query: currentQuery,
+        chunks: newChunks,
+        newChunkCount: newChunks.length,
+      });
+
+      // Expand query for next round using keywords from retrieved chunks
+      // Extract meaningful identifiers from chunk text and paths
+      const expandedTerms = newChunks
+        .flatMap(c => {
+          const pathTerms = (c.path ?? '').split(/[/.]/).filter((s: string) => s.length > 2 && s !== 'ts' && s !== 'src');
+          const codeTerms = c.text
+            .split(/\s+/)
+            .filter((w: string) => /^[a-zA-Z_]{4,}$/.test(w))
+            .slice(0, 5);
+          return [...pathTerms, ...codeTerms];
+        })
+        .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+        .slice(0, 10);
+
+      currentQuery = expandedTerms.length > 0
+        ? `${query} ${expandedTerms.join(' ')}`
+        : query;
+
+      // Stop if we've filled the budget
+      if (totalTokens >= budget * 0.9) break;
+    }
+
+    return {
+      rounds,
+      finalChunks: allChunks,
+      finalTiers: allTiers,
+      totalTokens,
+      budget,
+    };
+  }
 }

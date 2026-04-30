@@ -30,6 +30,8 @@ interface BenchmarkTask {
   relevant_types: string[];
   relevant_keywords: string[];
   irrelevant_files: string[];
+  difficulty?: 'easy' | 'medium' | 'hard';
+  source?: 'expert' | 'generated';
 }
 
 interface Metrics {
@@ -128,7 +130,9 @@ function walkDir(dir: string): string[] {
 
 async function runAblation() {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const dataset: { tasks: BenchmarkTask[] } = JSON.parse(readFileSync(join(benchDir, 'dataset.json'), 'utf-8'));
+  const datasetFlag = process.argv.find((a, i) => process.argv[i - 1] === '--dataset');
+  const datasetFile = datasetFlag ?? 'dataset.json';
+  const dataset: { tasks: BenchmarkTask[] } = JSON.parse(readFileSync(join(benchDir, datasetFile), 'utf-8'));
 
   const strategies = [
     'keyword',      // Baseline: keyword grep
@@ -378,6 +382,44 @@ async function runAblation() {
       return avg.toFixed(3).padEnd(16);
     });
     console.log(`  ${intent.padEnd(16)}${row.join('')}`);
+  }
+
+  // ── By difficulty ──
+
+  const difficulties = [...new Set(dataset.tasks.map((t) => t.difficulty).filter(Boolean))] as string[];
+  if (difficulties.length > 0) {
+    console.log(`\n  Recall@10 by difficulty:\n`);
+    const diffHeader = 'Difficulty       ' + strategies.map((s) => s.padEnd(16)).join('');
+    console.log(`  ${diffHeader}`);
+    console.log(`  ${'─'.repeat(diffHeader.length)}`);
+    for (const diff of difficulties) {
+      const row = strategies.map((strat) => {
+        const diffResults = allResults[strat].filter((r) => r.task.difficulty === diff);
+        if (diffResults.length === 0) return 'N/A             ';
+        const avg = diffResults.reduce((s, r) => s + r.metrics.recallAt10, 0) / diffResults.length;
+        return avg.toFixed(3).padEnd(16);
+      });
+      console.log(`  ${(diff as string).padEnd(16)}${row.join('')}`);
+    }
+  }
+
+  // ── By source (expert vs generated) ──
+
+  const sources = [...new Set(dataset.tasks.map((t) => t.source).filter(Boolean))] as string[];
+  if (sources.length > 1) {
+    console.log(`\n  Recall@10 by source:\n`);
+    const srcHeader = 'Source           ' + strategies.map((s) => s.padEnd(16)).join('');
+    console.log(`  ${srcHeader}`);
+    console.log(`  ${'─'.repeat(srcHeader.length)}`);
+    for (const src of sources) {
+      const row = strategies.map((strat) => {
+        const srcResults = allResults[strat].filter((r) => r.task.source === src);
+        if (srcResults.length === 0) return 'N/A             ';
+        const avg = srcResults.reduce((s, r) => s + r.metrics.recallAt10, 0) / srcResults.length;
+        return avg.toFixed(3).padEnd(16);
+      });
+      console.log(`  ${(src as string).padEnd(16)}${row.join('')}`);
+    }
   }
 
   // ── Statistical Significance (Bootstrap 95% CI) ──
