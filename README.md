@@ -315,11 +315,16 @@ The system automatically detects query intent and adjusts strategy:
 
 | Intent | Example | Strategy | Token budget |
 |--------|---------|----------|-------------|
-| **debug** | "fix the auth error" | hybrid + 2 hops | 60% |
-| **implement** | "add rate limiting" | hybrid + 1 hop | 40% |
-| **explain** | "how does routing work" | vector + 1 hop | 30% |
-| **code_search** | "where is the auth middleware" | text only | 35% |
-| **general** | anything else | hybrid + 1 hop | 50% |
+| **debug** | "fix the auth error" | adaptive + 2 hops | 60% |
+| **implement** | "add rate limiting" | adaptive + 1 hop | 40% |
+| **explain** | "how does routing work" | adaptive + 1 hop | 30% |
+| **code_search** | "where is the auth middleware" | adaptive + 1 hop | 35% |
+| **general** | anything else | adaptive + 1 hop | 50% |
+
+Strategy adapts to embedding model quality:
+- **`gpu`** (GTE-ModernBERT) → `vector` only (ablation: +7-19% over hybrid with strong embeddings)
+- **`local`** (all-MiniLM-L6-v2) → `hybrid` (vector + FTS5, weaker embeddings benefit from keyword search)
+- **`deterministic`** (hash-based) → `text` (near-random vectors, FTS5/BM25 is more reliable)
 
 ### Benchmarks
 

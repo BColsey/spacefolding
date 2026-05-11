@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
+import { getAdaptiveStrategy } from '../core/query-planner.js';
 
 const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
@@ -198,7 +199,7 @@ const TOOL_DEFINITIONS = [
         strategy: {
           type: 'string',
           enum: ['hybrid', 'vector', 'text', 'graph'],
-          description: 'Retrieval strategy (default: vector. Use hybrid for keyword fallback, text for pure FTS5)',
+          description: 'Retrieval strategy (default: adaptive based on embedding provider. hybrid for local, vector for gpu, text for deterministic)',
         },
         topK: {
           type: 'number',
@@ -235,7 +236,7 @@ const TOOL_DEFINITIONS = [
         strategy: {
           type: 'string',
           enum: ['hybrid', 'vector', 'text', 'graph'],
-          description: 'Retrieval strategy per round (default: vector)',
+          description: 'Retrieval strategy per round (default: adaptive based on embedding provider)',
         },
       },
       required: ['query'],
@@ -398,7 +399,7 @@ function createServer(pipeline: PipelineOrchestrator): Server {
         case 'retrieve_context': {
           const query = args!.query as string;
           const maxTokens = args!.maxTokens as number | undefined;
-          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? 'vector';
+          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? getAdaptiveStrategy();
           const topK = (args!.topK as number | undefined) ?? 15;
           const maxHops = args!.maxHops as number | undefined;
 
@@ -431,7 +432,7 @@ function createServer(pipeline: PipelineOrchestrator): Server {
           const query = args!.query as string;
           const maxTokens = (args!.maxTokens as number | undefined) ?? 100_000;
           const rounds = (args!.rounds as number | undefined) ?? 2;
-          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? 'vector';
+          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? getAdaptiveStrategy();
 
           const result = await pipeline.iterativeRetrieve(query, rounds, maxTokens, { strategy });
           return jsonResponse({

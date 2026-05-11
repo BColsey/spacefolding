@@ -1,11 +1,57 @@
 import { describe, it, expect } from 'vitest';
 import { reciprocalRankFusion } from '../src/core/retriever.js';
 import type { RetrievalResult } from '../src/core/retriever.js';
-import { detectIntent, expandQuery, planQuery, estimateComplexity } from '../src/core/query-planner.js';
+import { detectIntent, expandQuery, planQuery, estimateComplexity, getAdaptiveStrategy } from '../src/core/query-planner.js';
 import { fillBudget, compressOmitted } from '../src/core/budget.js';
 import type { ContextChunk } from '../src/types/index.js';
 
 describe('QueryPlanner', () => {
+  describe('getAdaptiveStrategy', () => {
+    const originalProvider = process.env.EMBEDDING_PROVIDER;
+
+    afterEach(() => {
+      if (originalProvider === undefined) {
+        delete process.env.EMBEDDING_PROVIDER;
+      } else {
+        process.env.EMBEDDING_PROVIDER = originalProvider;
+      }
+    });
+
+    it('returns hybrid for local provider (default)', () => {
+      delete process.env.EMBEDDING_PROVIDER;
+      expect(getAdaptiveStrategy()).toBe('hybrid');
+    });
+
+    it('returns hybrid for explicit local provider', () => {
+      process.env.EMBEDDING_PROVIDER = 'local';
+      expect(getAdaptiveStrategy()).toBe('hybrid');
+    });
+
+    it('returns vector for gpu provider', () => {
+      process.env.EMBEDDING_PROVIDER = 'gpu';
+      expect(getAdaptiveStrategy()).toBe('vector');
+    });
+
+    it('returns text for deterministic provider', () => {
+      process.env.EMBEDDING_PROVIDER = 'deterministic';
+      expect(getAdaptiveStrategy()).toBe('text');
+    });
+
+    it('planQuery uses adaptive strategy based on EMBEDDING_PROVIDER', () => {
+      process.env.EMBEDDING_PROVIDER = 'gpu';
+      const gpuPlan = planQuery('test query');
+      expect(gpuPlan.strategy).toBe('vector');
+
+      process.env.EMBEDDING_PROVIDER = 'local';
+      const localPlan = planQuery('test query');
+      expect(localPlan.strategy).toBe('hybrid');
+
+      process.env.EMBEDDING_PROVIDER = 'deterministic';
+      const detPlan = planQuery('test query');
+      expect(detPlan.strategy).toBe('text');
+    });
+  });
+
   it('detects debug intent', () => {
     expect(detectIntent('fix the error in login')).toBe('debug');
     expect(detectIntent('the app crashes with an exception')).toBe('debug');
@@ -41,10 +87,10 @@ describe('QueryPlanner', () => {
     expect(terms).not.toContain('does');
   });
 
-  it('debug plan uses vector-only with moderate budget', () => {
+  it('debug plan uses adaptive strategy with moderate budget', () => {
     const plan = planQuery('fix the error in login');
     expect(plan.intent).toBe('debug');
-    expect(plan.strategy).toBe('vector');
+    expect(plan.strategy).toBe(getAdaptiveStrategy());
     expect(plan.maxHops).toBe(0);
     expect(plan.complexity).toBe('moderate');
     expect(plan.tokenBudgetRatio).toBe(0.6);

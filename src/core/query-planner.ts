@@ -102,6 +102,31 @@ export function estimateComplexity(query: string, expandedTerms: string[]): 'nar
   return 'moderate';
 }
 
+export type RetrievalStrategy = 'hybrid' | 'vector' | 'text' | 'graph';
+
+/**
+ * Determine the optimal retrieval strategy based on the embedding provider.
+ *
+ * - `gpu` (GTE-ModernBERT, etc.): vector-only is best — ablation testing showed
+ *   vector-only beats hybrid by 7.5-19% on R@10, NDCG, and MRR with strong GPU embeddings.
+ * - `local` (all-MiniLM-L6-v2, etc.): hybrid (vector + FTS5) is better — weaker local
+ *   ONNX embeddings benefit from keyword search as a complement.
+ * - `deterministic` (hash-based): text-only is best — deterministic embeddings produce
+ *   near-random vectors (R@10 = 0.362), so FTS5/BM25 keyword search is far more reliable.
+ */
+export function getAdaptiveStrategy(): RetrievalStrategy {
+  const provider = process.env.EMBEDDING_PROVIDER ?? 'local';
+  switch (provider) {
+    case 'gpu':
+      return 'vector';
+    case 'deterministic':
+      return 'text';
+    case 'local':
+    default:
+      return 'hybrid';
+  }
+}
+
 /** Compute adaptive budget ratio based on intent + complexity */
 function adaptiveBudgetRatio(intent: QueryIntent, complexity: 'narrow' | 'moderate' | 'broad'): number {
   // Base ratios per intent
@@ -131,16 +156,16 @@ export function planQuery(query: string): QueryPlan {
   const expandedTerms = expandQuery(query);
   const complexity = estimateComplexity(query, expandedTerms);
 
-  // All intents default to vector-only retrieval.
-  // Ablation testing showed vector-only with strong embeddings (GTE-ModernBERT)
-  // beats hybrid (vector+FTS5+graph) on all metrics: R@10 +7.5%, NDCG +16.8%, MRR +18.9%.
-  // Graph traversal degrades NDCG/MRR by ~22% across all models.
+  // Strategy is adaptive based on embedding model quality:
+  // - GPU embeddings (GTE-ModernBERT): vector-only is optimal
+  // - Local ONNX (all-MiniLM-L6-v2): hybrid (vector + FTS5) compensates for weaker vectors
+  // - Deterministic (hash-based): text-only since vectors are near-random
   const tokenBudgetRatio = adaptiveBudgetRatio(intent, complexity);
 
   return {
     intent,
     expandedTerms,
-    strategy: 'vector',
+    strategy: getAdaptiveStrategy(),
     maxHops: 0,
     tokenBudgetRatio,
     complexity,
