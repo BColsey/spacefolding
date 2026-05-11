@@ -7,7 +7,7 @@
 | `DB_PATH` | `./data/spacefolding.db` | SQLite database path |
 | `MODEL_PATH` | `./data/models` | Local model cache directory |
 | `EMBEDDING_PROVIDER` | `local` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash-based) |
-| `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID (for `local` provider) |
+| `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID (for `local` provider) |
 | `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu` provider) |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
 | `PYTHON_PATH` | `python3` | Python executable for GPU embedder |
@@ -81,9 +81,9 @@ The hot tier is capped at **60% of total chunks** to prevent runaway promotion. 
 **Local ONNX model (default):**
 ```
 EMBEDDING_PROVIDER=local
-EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
+EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
 ```
-Real sentence embeddings running in-process. Auto-downloads the model on first use (~80MB). Good semantic matching with zero external deps.
+Real sentence embeddings running in-process. Auto-downloads the model on first use (~130MB). BGE-small achieves MTEB retrieval score of 51.68, significantly outperforming the previous default (all-MiniLM-L6-v2 at 42).
 
 **Deterministic fallback:**
 ```
@@ -138,6 +138,6 @@ services:
       - "8080:8080"               # Web UI
     environment:
       - EMBEDDING_PROVIDER=local
-      - EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
+      - EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
       - WEB_PORT=8080
 ```

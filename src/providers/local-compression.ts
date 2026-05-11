@@ -56,7 +56,7 @@ export class LocalCompressionProvider implements CompressionProvider {
   private modelPipeline: unknown | null = null;
   private loading: Promise<unknown> | null = null;
 
-  constructor(private modelId: string = process.env.COMPRESSION_MODEL ?? 'Xenova/all-MiniLM-L6-v2') {}
+  constructor(private modelId: string = process.env.COMPRESSION_MODEL ?? 'Xenova/bge-small-en-v1.5') {}
 
   private async getPipeline(): Promise<unknown> {
     if (this.modelPipeline) return this.modelPipeline;
