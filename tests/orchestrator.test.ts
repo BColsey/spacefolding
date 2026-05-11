@@ -33,7 +33,8 @@ function createTestPipeline(): { pipeline: PipelineOrchestrator; dbPath: string 
       new ContextRouter(DEFAULT_ROUTING_CONFIG),
       new DeterministicCompressionProvider(),
       new SimpleDependencyAnalyzer(),
-      new ContextIngester(tokenEstimator)
+      new ContextIngester(tokenEstimator),
+      embeddingProvider
     ),
   };
 }

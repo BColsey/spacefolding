@@ -63,9 +63,9 @@ function createPipeline(dbPath: string): PipelineOrchestrator {
         process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2',
         process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
       )
-    : process.env.EMBEDDING_PROVIDER === 'local'
-      ? new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
-      : new DeterministicEmbeddingProvider();
+    : process.env.EMBEDDING_PROVIDER === 'deterministic'
+      ? new DeterministicEmbeddingProvider()
+      : new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2');
   const compressionProvider = createCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
 

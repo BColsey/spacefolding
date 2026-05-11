@@ -193,7 +193,7 @@ node dist/main.js symbols src/core/scorer.ts
 
 ## MCP Tools
 
-Spacefolding exposes 7 MCP tools designed for Claude Code integration.
+Spacefolding exposes 8 MCP tools designed for Claude Code integration.
 
 ### Setup
 
@@ -221,12 +221,13 @@ See the [full integration guide](docs/integration-guide.md) for Docker setup and
 | Tool | What it does |
 |------|-------------|
 | `ingest_context` | Add text, code, diffs, logs, or constraints — auto-chunks if oversized |
-| `score_context` | Score all chunks against a task and route into hot/warm/cold |
+| `score_context` | Score chunks against a task and route into hot/warm/cold (vector-filtered for large stores) |
 | `compress_context` | Compress specified chunks into a structured summary |
-| `get_relevant_memory` | Search cold/warm storage for chunks relevant to a task |
+| `get_relevant_memory` | Search storage for chunks relevant to a task (hybrid retrieval) |
 | `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget control |
 | `update_context_graph` | Add or remove dependency links between chunks |
 | `explain_routing` | Show exactly why each chunk was routed to its tier, with reasons |
+| `iterative_retrieve` | Multi-round retrieval with automatic query expansion |
 
 ### Quick Example
 
@@ -365,7 +366,7 @@ src/
 │   └── orchestrator.ts        ingest→embed→score→route→compress→persist
 │
 ├── mcp/                   # Model Context Protocol server
-│   └── server.ts              7 tools, stdio + SSE transport
+│   └── server.ts              8 tools, stdio + SSE transport
 │
 ├── web/                   # Browser UI
 │   └── server.ts              HTTP server + inline SPA
@@ -379,7 +380,7 @@ src/
     └── index.ts
 ```
 
-**60 tests** across 8 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, and integration.
+**66 tests** across 8 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, and integration.
 
 **Benchmarks** in `benchmarks/` — 6 documents covering retrieval evaluation, ablation studies across 6 embedding models, and model comparison.
 
@@ -393,7 +394,7 @@ All configuration is via environment variables:
 |----------|---------|-----------------|
 | `DB_PATH` | `./data/spacefolding.db` | SQLite database location |
 | `MODEL_PATH` | `./data/models` | Where embedding models are cached |
-| `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash) |
+| `EMBEDDING_PROVIDER` | `local` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash) |
 | `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID (for `local`) |
 | `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu`) |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |

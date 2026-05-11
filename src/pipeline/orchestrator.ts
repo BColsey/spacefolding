@@ -59,26 +59,45 @@ export class PipelineOrchestrator {
       return { hot: [], warm: [], cold: [], scores: {}, reasons: {} };
     }
 
-    const dependencies = this.dependencyAnalyzer.analyze(allChunks);
+    // For large chunk counts, use vector search as a first-pass filter
+    // instead of brute-force scoring everything
+    let candidateChunks = allChunks;
+    if (allChunks.length > 50) {
+      const retrieval = await this.retriever.retrieve(task.text, {
+        topK: Math.min(allChunks.length, 50),
+        strategy: 'vector',
+        maxHops: 0,
+      });
+      const candidateIds = new Set(retrieval.map(r => r.chunkId));
+      candidateChunks = allChunks.filter(c => candidateIds.has(c.id));
+      // Always include newly ingested chunks
+      if (newChunks) {
+        for (const nc of newChunks) {
+          if (!candidateIds.has(nc.id)) candidateChunks.push(nc);
+        }
+      }
+    }
+
+    const dependencies = this.dependencyAnalyzer.analyze(candidateChunks);
     for (const dep of dependencies) {
       this.storage.storeDependency(dep);
     }
 
     const { scores, reasons } = await this.scorer.scoreChunks(
       task,
-      allChunks,
+      candidateChunks,
       dependencies
     );
 
     const result = this.router.route(
       scores,
       reasons,
-      allChunks,
+      candidateChunks,
       dependencies,
       (task as TaskDescription & { maxTokens?: number }).maxTokens
     );
 
-    const warmChunks = allChunks.filter((chunk) => result.warm.includes(chunk.id));
+    const warmChunks = candidateChunks.filter((chunk) => result.warm.includes(chunk.id));
     if (warmChunks.length > 0) {
       const compression = await this.compressChunks(task, warmChunks);
       this.storage.storeCompression({
@@ -88,7 +107,7 @@ export class PipelineOrchestrator {
       });
     }
 
-    for (const chunk of allChunks) {
+    for (const chunk of candidateChunks) {
       const tier = result.hot.includes(chunk.id)
         ? 'hot'
         : result.warm.includes(chunk.id)
@@ -127,25 +146,32 @@ export class PipelineOrchestrator {
     task: TaskDescription,
     filters?: ContextFilter
   ): Promise<{ chunks: ContextChunk[]; explanations: string[] }> {
-    const queryFilter: ContextFilter = filters ?? {};
-    const chunks = this.storage.queryChunks(queryFilter);
+    // Use hybrid retrieval instead of brute-force scoring all chunks
+    const result = await this.retrieve(task.text, undefined, {
+      topK: 10,
+      strategy: 'vector',
+      maxHops: 0,
+    });
 
-    if (chunks.length === 0) {
-      return { chunks: [], explanations: [] };
+    let chunks = result.chunks;
+
+    // Apply filters if provided
+    if (filters) {
+      if (filters.type) chunks = chunks.filter(c => c.type === filters.type);
+      if (filters.source) chunks = chunks.filter(c => c.source === filters.source);
+      if (filters.path) chunks = chunks.filter(c => c.path?.includes(filters.path!));
+      if (filters.textContains) chunks = chunks.filter(c => c.text.includes(filters.textContains!));
+      if (filters.tier) chunks = chunks.filter(c => result.tiers.get(c.id) === filters.tier);
     }
 
-    const { scores, reasons } = await this.scorer.scoreChunks(task, chunks);
-    const sorted = [...chunks].sort(
-      (a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0)
+    const explanations = chunks.map(
+      (chunk) => {
+        const tier = result.tiers.get(chunk.id) ?? 'warm';
+        return `chunk ${chunk.id.slice(0, 8)} (${tier}, type: ${chunk.type}, ~${chunk.tokensEstimate} tokens): ${chunk.text.slice(0, 100)}`;
+      }
     );
 
-    const topChunks = sorted.slice(0, 10);
-    const explanations = topChunks.map(
-      (chunk) =>
-        `chunk ${chunk.id.slice(0, 8)} (score: ${(scores[chunk.id] ?? 0).toFixed(3)}, type: ${chunk.type}): ${(reasons[chunk.id] ?? []).join(', ')}`
-    );
-
-    return { chunks: topChunks, explanations };
+    return { chunks, explanations };
   }
 
   /** Explain routing decisions for a task */

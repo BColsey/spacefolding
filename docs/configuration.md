@@ -6,7 +6,7 @@
 |----------|---------|-------------|
 | `DB_PATH` | `./data/spacefolding.db` | SQLite database path |
 | `MODEL_PATH` | `./data/models` | Local model cache directory |
-| `EMBEDDING_PROVIDER` | `deterministic` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash-based) |
+| `EMBEDDING_PROVIDER` | `local` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash-based) |
 | `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID (for `local` provider) |
 | `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu` provider) |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
@@ -77,18 +77,18 @@ The hot tier is capped at **60% of total chunks** to prevent runaway promotion. 
 
 ### Embedding Provider
 
-**Deterministic (default):**
-```
-EMBEDDING_PROVIDER=deterministic
-```
-Hash-based pseudo-vectors. No model download needed. Works offline. Less accurate semantic matching.
-
-**Local ONNX model:**
+**Local ONNX model (default):**
 ```
 EMBEDDING_PROVIDER=local
 EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
 ```
-Real sentence embeddings running in-process. Requires model download (~80MB). Much better semantic matching.
+Real sentence embeddings running in-process. Auto-downloads the model on first use (~80MB). Good semantic matching with zero external deps.
+
+**Deterministic fallback:**
+```
+EMBEDDING_PROVIDER=deterministic
+```
+Hash-based pseudo-vectors. No model download needed. Works offline. Near-random accuracy — only use as a last resort.
 
 ### Compression Provider
 
