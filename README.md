@@ -193,7 +193,7 @@ node dist/main.js symbols src/core/scorer.ts
 
 ## MCP Tools
 
-Spacefolding exposes 8 MCP tools designed for Claude Code integration.
+Spacefolding exposes 11 MCP tools designed for Claude Code integration.
 
 ### Setup
 
@@ -221,13 +221,16 @@ See the [full integration guide](docs/integration-guide.md) for Docker setup and
 | Tool | What it does |
 |------|-------------|
 | `ingest_context` | Add text, code, diffs, logs, or constraints — auto-chunks if oversized |
+| `ingest_directory` | Bulk-ingest all files in a directory tree (skips node_modules, .git, binaries) |
 | `score_context` | Score chunks against a task and route into hot/warm/cold (vector-filtered for large stores) |
 | `compress_context` | Compress specified chunks into a structured summary |
 | `get_relevant_memory` | Search storage for chunks relevant to a task (hybrid retrieval) |
 | `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget control |
+| `iterative_retrieve` | Multi-round retrieval with automatic query expansion |
 | `update_context_graph` | Add or remove dependency links between chunks |
 | `explain_routing` | Show exactly why each chunk was routed to its tier, with reasons |
-| `iterative_retrieve` | Multi-round retrieval with automatic query expansion |
+| `list_context` | Show what's been ingested: chunk counts, token totals, per-file breakdown |
+| `delete_context` | Delete specific context chunks by ID |
 
 ### Quick Example
 
@@ -366,7 +369,7 @@ src/
 │   └── orchestrator.ts        ingest→embed→score→route→compress→persist
 │
 ├── mcp/                   # Model Context Protocol server
-│   └── server.ts              8 tools, stdio + SSE transport
+│   └── server.ts              11 tools, stdio + SSE transport
 │
 ├── web/                   # Browser UI
 │   └── server.ts              HTTP server + inline SPA
@@ -380,7 +383,7 @@ src/
     └── index.ts
 ```
 
-**66 tests** across 8 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, and integration.
+**74 tests** across 9 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, integration, and usability features.
 
 **Benchmarks** in `benchmarks/` — 6 documents covering retrieval evaluation, ablation studies across 6 embedding models, and model comparison.
 

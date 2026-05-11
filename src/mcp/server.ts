@@ -241,6 +241,53 @@ const TOOL_DEFINITIONS = [
       required: ['query'],
     },
   },
+  {
+    name: 'ingest_directory',
+    description: describeTool(
+      'Ingest all files in a directory tree. Skips node_modules, .git, dist, and binary files.'
+    ),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path to directory to ingest',
+        },
+        type: {
+          type: 'string',
+          description: 'Optional chunk type override for all files',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'list_context',
+    description: describeTool(
+      'Show what context has been ingested: chunk counts, token totals, per-file breakdown'
+    ),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+    },
+  },
+  {
+    name: 'delete_context',
+    description: describeTool(
+      'Delete specific context chunks by ID'
+    ),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        chunkIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Chunk IDs to delete',
+        },
+      },
+      required: ['chunkIds'],
+    },
+  },
 ];
 
 function createServer(pipeline: PipelineOrchestrator): Server {
@@ -407,6 +454,29 @@ function createServer(pipeline: PipelineOrchestrator): Server {
           });
         }
 
+        case 'ingest_directory': {
+          const dirPath = args!.path as string;
+          if (typeof dirPath !== 'string' || dirPath.length === 0) {
+            return errorResponse('path must be a non-empty string');
+          }
+          const result = await pipeline.ingestDirectory(dirPath, args!.type as string | undefined);
+          return jsonResponse(result);
+        }
+
+        case 'list_context': {
+          const stats = pipeline.getStats();
+          return jsonResponse(stats);
+        }
+
+        case 'delete_context': {
+          const chunkIds = ((args!.chunkIds as string[]) ?? []).slice(0, MAX_CHUNK_IDS);
+          if (chunkIds.length === 0) {
+            return errorResponse('chunkIds must be a non-empty array');
+          }
+          const deleted = pipeline.deleteChunks(chunkIds);
+          return jsonResponse({ deleted });
+        }
+
         default:
           return errorResponse(`Unknown tool: ${name}`);
       }
@@ -450,6 +520,10 @@ function validateArgs(args: Record<string, unknown> | undefined): string | undef
 
   if (typeof args.text === 'string' && args.text.length > MAX_TEXT_LENGTH) {
     return `text exceeds ${MAX_TEXT_LENGTH} characters`;
+  }
+
+  if (typeof args.path === 'string' && args.path.length > 4096) {
+    return `path exceeds 4096 characters`;
   }
 
   if (args.chunkIds !== undefined) {

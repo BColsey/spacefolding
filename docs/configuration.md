@@ -19,6 +19,7 @@
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | Port for SSE transport |
 | `USE_GPU` | `0` | Set to `1` to enable GPU for embeddings |
+| `MAX_CHUNKS` | `10000` | Max chunk count before auto-eviction of oldest chunks |
 | `NODE_ENV` | `production` | Node environment |
 
 ## GPU Embeddings (CUDA)

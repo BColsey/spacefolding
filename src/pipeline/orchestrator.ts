@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { createHash } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, extname } from 'node:path';
 import type {
   ChunkType,
   CompressionResult,
@@ -256,11 +257,110 @@ export class PipelineOrchestrator {
     }
 
     await this.storeChunkWithEmbedding(chunk);
+    this.enforceMaxChunks();
     return chunk;
   }
 
   getAllChunks(): ContextChunk[] {
     return this.storage.getAllChunks();
+  }
+
+  /** Ingest all files in a directory tree */
+  async ingestDirectory(
+    dirPath: string,
+    type?: string
+  ): Promise<{ files: number; chunks: string[]; skipped: number }> {
+    const files = walkDir(dirPath);
+    const chunks: string[] = [];
+    let skipped = 0;
+
+    for (const filePath of files) {
+      try {
+        const content = readFileSync(filePath, 'utf-8');
+        const chunk = await this.ingest('file', content, type, filePath);
+        chunks.push(chunk.id);
+        this.enforceMaxChunks();
+      } catch {
+        skipped++;
+      }
+    }
+
+    return { files: files.length, chunks, skipped };
+  }
+
+  /** Get storage stats: chunk counts, token totals, per-file breakdown */
+  getStats(): {
+    totalChunks: number;
+    totalTokensEstimate: number;
+    files: Array<{ path: string; chunkCount: number; tokensEstimate: number }>;
+    oldestTimestamp: number | null;
+    newestTimestamp: number | null;
+  } {
+    const allChunks = this.storage.getAllChunks();
+    if (allChunks.length === 0) {
+      return { totalChunks: 0, totalTokensEstimate: 0, files: [], oldestTimestamp: null, newestTimestamp: null };
+    }
+
+    const fileMap = new Map<string, { chunkCount: number; tokensEstimate: number }>();
+    let totalTokens = 0;
+    let oldest = Infinity;
+    let newest = 0;
+
+    for (const chunk of allChunks) {
+      const key = chunk.path ?? chunk.source;
+      const entry = fileMap.get(key) ?? { chunkCount: 0, tokensEstimate: 0 };
+      entry.chunkCount++;
+      entry.tokensEstimate += chunk.tokensEstimate;
+      fileMap.set(key, entry);
+      totalTokens += chunk.tokensEstimate;
+      if (chunk.timestamp < oldest) oldest = chunk.timestamp;
+      if (chunk.timestamp > newest) newest = chunk.timestamp;
+    }
+
+    const files = Array.from(fileMap.entries())
+      .map(([path, { chunkCount, tokensEstimate }]) => ({ path, chunkCount, tokensEstimate }))
+      .sort((a, b) => b.tokensEstimate - a.tokensEstimate);
+
+    return {
+      totalChunks: allChunks.length,
+      totalTokensEstimate: totalTokens,
+      files,
+      oldestTimestamp: oldest === Infinity ? null : oldest,
+      newestTimestamp: newest === 0 ? null : newest,
+    };
+  }
+
+  /** Delete chunks by ID, cleaning up embeddings and dependencies */
+  deleteChunks(chunkIds: string[]): number {
+    let deleted = 0;
+    for (const id of chunkIds) {
+      this.storage.removeAllDependenciesForChunk(id);
+      this.storage.deleteChunk(id);
+      deleted++;
+    }
+    return deleted;
+  }
+
+  /** Enforce max chunk count by evicting oldest non-hot chunks */
+  private enforceMaxChunks(): void {
+    const maxChunks = parseInt(process.env.MAX_CHUNKS ?? '10000', 10);
+    const current = this.storage.getChunkCount();
+    if (current <= maxChunks) return;
+
+    const toEvict = current - maxChunks;
+    const allChunks = this.storage.getAllChunks();
+    // Sort by timestamp ascending (oldest first), skip chunks with dependency links (likely important)
+    const candidates = allChunks
+      .filter(c => this.storage.getDependencies(c.id).length === 0)
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    let evicted = 0;
+    for (const chunk of candidates) {
+      if (evicted >= toEvict) break;
+      this.storage.removeAllDependenciesForChunk(chunk.id);
+      this.storage.deleteChunk(chunk.id);
+      evicted++;
+    }
   }
 
   async compressChunks(
@@ -477,4 +577,26 @@ export class PipelineOrchestrator {
       budget,
     };
   }
+}
+
+const BINARY_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.svg', '.webp', '.mp3', '.mp4', '.zip', '.gz', '.tar', '.db']);
+
+function walkDir(dir: string): string[] {
+  const results: string[] = [];
+  const entries = readdirSync(dir);
+  for (const entry of entries) {
+    const fullPath = join(dir, entry);
+    const stat = statSync(fullPath);
+    if (stat.isDirectory()) {
+      if (entry !== 'node_modules' && entry !== '.git' && entry !== 'dist' && entry !== '.next' && entry !== '.cache') {
+        results.push(...walkDir(fullPath));
+      }
+    } else {
+      const ext = extname(entry);
+      if (!BINARY_EXTENSIONS.has(ext)) {
+        results.push(fullPath);
+      }
+    }
+  }
+  return results;
 }

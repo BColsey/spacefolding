@@ -31,20 +31,25 @@ First-time: run `node dist/main.js download-model` to get the embedding model.
 | Tool | What it does |
 |------|-------------|
 | `ingest_context` | Add context (text, code, diffs, logs, constraints) — auto-chunks if oversized |
+| `ingest_directory` | Bulk-ingest all files in a directory tree |
 | `score_context` | Score + route chunks into hot/warm/cold |
 | `compress_context` | Compress chunks into structured summary |
 | `get_relevant_memory` | Search archived context by relevance |
 | `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget |
+| `iterative_retrieve` | Multi-round retrieval with automatic query expansion |
 | `update_context_graph` | Add/remove dependency links |
 | `explain_routing` | Show why each chunk was routed to its tier |
+| `list_context` | Show what's been ingested: counts, tokens, per-file breakdown |
+| `delete_context` | Delete specific chunks by ID |
 
 ## Recommended Flow
 
 ```
-1. ingest_context for each source (conversation, files, diffs, logs)
-2. score_context against the current task
-3. Use hot chunks verbatim, warm as summaries, cold for on-demand retrieval
-4. get_relevant_memory when you need something from cold storage
+1. ingest_directory to index the codebase (or ingest_context for individual items)
+2. list_context to verify what's been ingested
+3. retrieve_context for hybrid RAG retrieval with token budget control
+4. score_context against the current task to route into hot/warm/cold
+5. get_relevant_memory when you need something from cold storage
 ```
 
 ## Context Types
