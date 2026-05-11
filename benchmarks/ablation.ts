@@ -170,7 +170,7 @@ async function runAblation() {
     embeddingProvider = new GpuEmbeddingProvider(modelId, device);
   } else if (useLocalEmbeddings) {
     const { LocalEmbeddingProvider } = await import('../dist/providers/local-embedding.js');
-    const modelId = process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
+    const modelId = process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
     console.log(`Using LOCAL embeddings: ${modelId}`);
     embeddingProvider = new LocalEmbeddingProvider(modelId);
   } else {

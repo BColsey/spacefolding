@@ -49,7 +49,7 @@ function createCompressionProvider() {
   }
 
   if (provider === 'local') {
-    return new LocalCompressionProvider(process.env.COMPRESSION_MODEL ?? 'Xenova/all-MiniLM-L6-v2');
+    return new LocalCompressionProvider(process.env.COMPRESSION_MODEL ?? 'Xenova/bge-small-en-v1.5');
   }
 
   return new DeterministicCompressionProvider();
@@ -65,7 +65,7 @@ function createPipeline(dbPath: string): PipelineOrchestrator {
       )
     : process.env.EMBEDDING_PROVIDER === 'deterministic'
       ? new DeterministicEmbeddingProvider()
-      : new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2');
+      : new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5');
   const compressionProvider = createCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
 
@@ -100,7 +100,7 @@ function getDownloadModelId(): string {
   if (modelIndex >= 0 && rawArgs[modelIndex + 1]) {
     return rawArgs[modelIndex + 1];
   }
-  return process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2';
+  return process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
 }
 
 function warnIfOutsideWorkspace(inputPath: string): void {
@@ -412,7 +412,7 @@ export function buildCLI(): Command {
   program
     .command('download-model')
     .description('Download a local embedding model for offline use')
-    .option('--model <id>', 'HuggingFace model ID', process.env.EMBEDDING_MODEL ?? 'Xenova/all-MiniLM-L6-v2')
+    .option('--model <id>', 'HuggingFace model ID', process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5')
     .action(async (opts) => {
       await runDownloadModel(opts.model);
     });

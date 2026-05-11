@@ -12,7 +12,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
   private pipe: EmbeddingPipeline | null = null;
   private loading: Promise<EmbeddingPipeline> | null = null;
 
-  constructor(private modelId: string = 'Xenova/all-MiniLM-L6-v2') {}
+  constructor(private modelId: string = 'Xenova/bge-small-en-v1.5') {}
 
   private async getPipeline(): Promise<EmbeddingPipeline> {
     if (this.pipe) return this.pipe;
@@ -52,7 +52,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 }
 
 /** Pre-download a model to the local cache */
-export async function downloadModel(modelId: string = 'Xenova/all-MiniLM-L6-v2'): Promise<void> {
+export async function downloadModel(modelId: string = 'Xenova/bge-small-en-v1.5'): Promise<void> {
   console.log(`Downloading model: ${modelId}`);
   console.log(`Cache path: ${env.localModelPath}`);
 

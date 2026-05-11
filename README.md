@@ -398,7 +398,7 @@ All configuration is via environment variables:
 | `DB_PATH` | `./data/spacefolding.db` | SQLite database location |
 | `MODEL_PATH` | `./data/models` | Where embedding models are cached |
 | `EMBEDDING_PROVIDER` | `local` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash) |
-| `EMBEDDING_MODEL` | `Xenova/all-MiniLM-L6-v2` | HuggingFace model ID (for `local`) |
+| `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID (for `local`) |
 | `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu`) |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
 | `PYTHON_PATH` | `python3` | Python executable for GPU embedder |
@@ -441,17 +441,17 @@ The GPU provider spawns a Python subprocess (`scripts/gpu-embedder.py`) that use
 Spacefolding can also use **real local embedding models** that run in-process on CPU — no API keys, no cloud, no GPU.
 
 ```bash
-# Download the default model (~80MB)
+# Download the default model (~130MB)
 node dist/main.js download-model
 
 # Or a specific one
-node dist/main.js download-model --model Xenova/bge-small-en-v1.5
+node dist/main.js download-model --model Xenova/all-MiniLM-L6-v2
 ```
 
 | Model | Size | Best for |
 |-------|------|----------|
-| `Xenova/all-MiniLM-L6-v2` | ~80MB | **Default.** Fast, good quality |
-| `Xenova/bge-small-en-v1.5` | ~130MB | Higher accuracy |
+| `Xenova/bge-small-en-v1.5` | ~130MB | **Default.** Best accuracy, MTEB retrieval 51.68 |
+| `Xenova/all-MiniLM-L6-v2` | ~80MB | Faster, smaller, lower accuracy (MTEB retrieval 42) |
 | `Xenova/gte-small` | ~130MB | General-purpose alternative |
 
 ### Deterministic Fallback
