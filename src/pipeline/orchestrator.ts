@@ -23,6 +23,7 @@ import { HybridRetriever } from '../core/retriever.js';
 import type { RetrievalOptions, RetrievalResult } from '../core/retriever.js';
 import { fillBudget, compressOmitted } from '../core/budget.js';
 import { planQuery } from '../core/query-planner.js';
+import { DeterministicRerankerProvider } from '../providers/deterministic-reranker.js';
 
 export class PipelineOrchestrator {
   private retriever: HybridRetriever;
@@ -41,7 +42,7 @@ export class PipelineOrchestrator {
     this.retriever = new HybridRetriever(storage, embeddingProvider ?? {
       embed: async () => [],
       embedBatch: async () => [],
-    });
+    }, new DeterministicRerankerProvider());
   }
 
   /** Run the full pipeline: score, route, compress, persist */

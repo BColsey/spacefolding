@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { reciprocalRankFusion } from '../src/core/retriever.js';
+import { reciprocalRankFusion, HybridRetriever } from '../src/core/retriever.js';
 import type { RetrievalResult } from '../src/core/retriever.js';
 import { detectIntent, expandQuery, planQuery, estimateComplexity, getAdaptiveStrategy } from '../src/core/query-planner.js';
 import { fillBudget, compressOmitted } from '../src/core/budget.js';
-import type { ContextChunk } from '../src/types/index.js';
+import type { ContextChunk, EmbeddingProvider, RerankerProvider } from '../src/types/index.js';
+import { DeterministicRerankerProvider } from '../src/providers/deterministic-reranker.js';
 
 describe('QueryPlanner', () => {
   describe('getAdaptiveStrategy', () => {
@@ -273,5 +274,148 @@ describe('Iterative Query Expansion', () => {
     // If we run fillBudget again with same IDs, they should still work
     const result2 = fillBudget(ranked, chunks, 100);
     expect(result2.selected.length).toBe(2);
+  });
+});
+
+describe('DeterministicRerankerProvider', () => {
+  it('ranks documents with keyword overlap higher', async () => {
+    const reranker = new DeterministicRerankerProvider();
+    const results = await reranker.rerank('authentication middleware', [
+      'the authentication middleware validates JWT tokens',
+      'the database connection pool manages connections',
+      'authentication is handled by the auth module',
+    ]);
+
+    // Documents 0 and 2 have keyword overlap, document 1 has none
+    const topResult = results[0];
+    expect(topResult.index).toBe(0); // doc 0 has both keywords
+    expect(topResult.score).toBeGreaterThan(0);
+
+    // Verify scores decrease for less relevant docs
+    expect(results[0].score).toBeGreaterThanOrEqual(results[1].score);
+  });
+
+  it('returns correct reason strings', async () => {
+    const reranker = new DeterministicRerankerProvider();
+    const results = await reranker.rerank('test query terms', [
+      'test query terms all present',
+      'test only partial',
+      'completely unrelated document',
+    ]);
+
+    expect(results[0].reason).toBe('direct keyword match');
+    expect(results[1].reason).toBe('partial keyword match');
+    expect(results[2].reason).toBe('no keyword overlap');
+  });
+
+  it('handles empty documents array', async () => {
+    const reranker = new DeterministicRerankerProvider();
+    const results = await reranker.rerank('query', []);
+    expect(results).toEqual([]);
+  });
+
+  it('handles empty query', async () => {
+    const reranker = new DeterministicRerankerProvider();
+    const results = await reranker.rerank('', ['some document text']);
+    expect(results[0].score).toBe(0);
+    expect(results[0].reason).toBe('no keyword overlap');
+  });
+});
+
+describe('HybridRetriever reranker integration', () => {
+  // Minimal mock storage that supports the retriever's needs
+  function createMockStorage(chunks: ContextChunk[]) {
+    const chunkMap = new Map(chunks.map(c => [c.id, c]));
+    return {
+      getChunk: (id: string) => chunkMap.get(id) ?? null,
+      getAllChunks: () => chunks,
+      getDependencies: () => [] as any[],
+      searchByVector: () => chunks.map(c => ({ chunkId: c.id, score: 0.5 })),
+      searchByText: () => chunks.map(c => ({ chunkId: c.id, score: 0.5 })),
+    } as any;
+  }
+
+  const noOpEmbedding: EmbeddingProvider = {
+    embed: async () => [0.1, 0.2, 0.3],
+    embedBatch: async () => [],
+  };
+
+  const makeChunk = (id: string, text: string): ContextChunk => ({
+    id,
+    source: 'test',
+    type: 'code',
+    text,
+    timestamp: Date.now(),
+    tokensEstimate: text.split(/\s+/).length,
+    childrenIds: [],
+    metadata: {},
+  });
+
+  it('reorders results when reranker has keyword overlap signal', async () => {
+    const chunks = [
+      makeChunk('a', 'completely unrelated database connection pooling'),
+      makeChunk('b', 'authentication middleware handles user login flow'),
+      makeChunk('c', 'some other random utility helper function'),
+    ];
+
+    // The storage returns all chunks for both vector and text search.
+    // Without the reranker, order depends on RRF fusion of identical scores.
+    // With the reranker, chunk 'b' should be boosted for 'authentication middleware'.
+    const storage = createMockStorage(chunks);
+    const reranker = new DeterministicRerankerProvider();
+    const retriever = new HybridRetriever(storage, noOpEmbedding, reranker);
+
+    const results = await retriever.retrieve('authentication middleware', {
+      strategy: 'hybrid',
+      topK: 10,
+    });
+
+    // Chunk 'b' has the most keyword overlap with 'authentication middleware'
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].chunkId).toBe('b');
+  });
+
+  it('works without a reranker (backward compatible)', async () => {
+    const chunks = [
+      makeChunk('a', 'authentication module'),
+      makeChunk('b', 'database module'),
+    ];
+
+    const storage = createMockStorage(chunks);
+    // No reranker passed — should still work
+    const retriever = new HybridRetriever(storage, noOpEmbedding);
+
+    const results = await retriever.retrieve('authentication', {
+      strategy: 'hybrid',
+      topK: 10,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    // Should return results without error
+    expect(results.every(r => r.chunkId && typeof r.score === 'number')).toBe(true);
+  });
+
+  it('handles reranker that throws an error gracefully', async () => {
+    const chunks = [
+      makeChunk('a', 'authentication module'),
+      makeChunk('b', 'database module'),
+    ];
+
+    const failingReranker: RerankerProvider = {
+      async rerank() {
+        throw new Error('reranker exploded');
+      },
+    };
+
+    const storage = createMockStorage(chunks);
+    const retriever = new HybridRetriever(storage, noOpEmbedding, failingReranker);
+
+    // Should not throw — falls back to RRF ordering
+    const results = await retriever.retrieve('authentication', {
+      strategy: 'hybrid',
+      topK: 10,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
   });
 });

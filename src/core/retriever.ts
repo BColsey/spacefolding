@@ -1,4 +1,4 @@
-import type { ContextChunk, EmbeddingProvider } from '../types/index.js';
+import type { ContextChunk, EmbeddingProvider, RerankerProvider } from '../types/index.js';
 import type { SQLiteRepository } from '../storage/repository.js';
 
 export interface RetrievalResult {
@@ -43,11 +43,19 @@ export function reciprocalRankFusion(
   return scores;
 }
 
+/** Maximum candidates to send to the reranker (avoids unnecessary work) */
+const RERANKER_MAX_CANDIDATES = 20;
+
 export class HybridRetriever {
+  private reranker: RerankerProvider | null;
+
   constructor(
     private storage: SQLiteRepository,
-    private embeddingProvider: EmbeddingProvider
-  ) {}
+    private embeddingProvider: EmbeddingProvider,
+    reranker?: RerankerProvider
+  ) {
+    this.reranker = reranker ?? null;
+  }
 
   async retrieve(query: string, options: RetrievalOptions = {}): Promise<RetrievalResult[]> {
     const { topK = 50, maxHops = 0, strategy = 'hybrid' } = options;
@@ -111,8 +119,42 @@ export class HybridRetriever {
       .sort((a, b) => b[1].fusedScore - a[1].fusedScore)
       .slice(0, topK);
 
+    // Rerank top candidates by keyword overlap if a reranker is available
+    let reranked = sorted;
+    if (this.reranker && sorted.length > 0) {
+      const candidates = sorted.slice(0, RERANKER_MAX_CANDIDATES);
+      const documents = candidates.map(([chunkId]) => {
+        const chunk = this.storage.getChunk(chunkId);
+        return chunk?.text ?? '';
+      });
+
+      try {
+        const rerankResults = await this.reranker.rerank(query, documents);
+
+        // Build a reranker score lookup and re-sort candidates
+        const rerankScoreMap = new Map<number, number>();
+        for (const r of rerankResults) {
+          rerankScoreMap.set(r.index, r.score);
+        }
+
+        // Re-sort candidates by combined score (RRF + reranker)
+        const rerankedCandidates = candidates.map(([chunkId, data], idx) => {
+          const rerankerScore = rerankScoreMap.get(idx) ?? 0;
+          return { chunkId, data, combinedScore: data.fusedScore + rerankerScore };
+        });
+        rerankedCandidates.sort((a, b) => b.combinedScore - a.combinedScore);
+
+        reranked = [
+          ...rerankedCandidates.map(({ chunkId, data }) => [chunkId, data] as [string, typeof data]),
+          ...sorted.slice(candidates.length),
+        ];
+      } catch {
+        // Reranker failure is non-fatal — fall back to RRF ordering
+      }
+    }
+
     // Build result objects with reasons
-    return sorted.map(([chunkId, data]) => {
+    return reranked.map(([chunkId, data]) => {
       const reasons: string[] = [];
       const sources = [...data.sources] as RetrievalResult['sources'];
 
