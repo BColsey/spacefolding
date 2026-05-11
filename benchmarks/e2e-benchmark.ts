@@ -258,14 +258,28 @@ async function runE2EBenchmark() {
     '../dist/pipeline/orchestrator.js'
   );
 
-  const dbPath = join(benchDir, 'e2e-benchmark.db');
+  // Support EMBEDDING_PROVIDER=local for real ONNX embeddings
+  const embeddingProviderEnv = process.env.EMBEDDING_PROVIDER ?? 'deterministic';
+  const dbPath = process.env.DB_PATH ?? join(benchDir, 'e2e-benchmark.db');
   try {
     unlinkSync(dbPath);
   } catch {}
 
+  let embeddingProvider;
+  if (embeddingProviderEnv === 'local') {
+    const { LocalEmbeddingProvider } = await import(
+      '../dist/providers/local-embedding.js'
+    );
+    const modelId = process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
+    console.log(`  Embedding provider: local (${modelId})`);
+    embeddingProvider = new LocalEmbeddingProvider(modelId);
+  } else {
+    console.log(`  Embedding provider: deterministic`);
+    embeddingProvider = new DeterministicEmbeddingProvider();
+  }
+
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
-  const embeddingProvider = new DeterministicEmbeddingProvider();
   const pipeline = new PipelineOrchestrator(
     storage,
     new ContextScorer(DEFAULT_ROUTING_CONFIG, embeddingProvider, tokenEstimator),
@@ -516,8 +530,12 @@ async function runE2EBenchmark() {
   console.log(`  ${avgRow}`);
   console.log(`\n  Note: "vs Codebase" shows token savings compared to reading all ${totalCodebaseFiles} files (${totalCodebaseTokens.toLocaleString()} tokens)`);
   console.log(`        Positive savings = Spacefold uses fewer tokens; "+X% more" = Spacefold uses more tokens`);
-  console.log(`        With deterministic (hash-based) embeddings, results approximate random retrieval.`);
-  console.log(`        Real embeddings significantly improve recall and precision.`);
+  if (embeddingProviderEnv === 'local') {
+    console.log(`        Using real ONNX embeddings (${process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5'}).`);
+  } else {
+    console.log(`        With deterministic (hash-based) embeddings, results approximate random retrieval.`);
+    console.log(`        Real embeddings significantly improve recall and precision.`);
+  }
 
   // ── Per-task detail ──────────────────────────────────────────────
 
@@ -658,9 +676,12 @@ async function runE2EBenchmark() {
   // ── Cleanup ─────────────────────────────────────────────────────
 
   pipeline.close();
-  try {
-    unlinkSync(dbPath);
-  } catch {}
+  // Only auto-delete the default db path; custom paths are the caller's responsibility
+  if (!process.env.DB_PATH) {
+    try {
+      unlinkSync(dbPath);
+    } catch {}
+  }
 
   console.log(`\n${'='.repeat(78)}`);
   console.log(`  E2E BENCHMARK COMPLETE`);
