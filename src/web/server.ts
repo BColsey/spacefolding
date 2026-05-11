@@ -1,8 +1,6 @@
 import * as http from 'node:http';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 
-type Tier = 'hot' | 'warm' | 'cold';
-
 const PAGE = String.raw`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Spacefolding Inspector</title>
@@ -28,7 +26,9 @@ async function load(){
   state.chunks=chunks; renderStats(stats); renderRows();
 }
 function renderStats(stats){
-  const pills=['Total '+stats.total,'Hot '+stats.byTier.hot,'Warm '+stats.byTier.warm,'Cold '+stats.byTier.cold].concat(Object.entries(stats.byType).map(([k,v])=>k+' '+v));
+  const pills=['Chunks '+stats.totalChunks,'~Tokens '+stats.totalTokensEstimate,'Files '+stats.files.length];
+  if(stats.oldestTimestamp)pills.push('From '+new Date(stats.oldestTimestamp).toLocaleDateString());
+  if(stats.newestTimestamp)pills.push('To '+new Date(stats.newestTimestamp).toLocaleDateString());
   document.getElementById('stats').innerHTML=pills.map(v=>'<span class="pill">'+v+'</span>').join('');
 }
 function renderRows(){
@@ -70,14 +70,6 @@ function sendHtml(res: http.ServerResponse, html: string): void {
   res.end(html);
 }
 
-function getTierCounts(result: { hot: string[]; warm: string[]; cold: string[] }): Record<Tier, number> {
-  return {
-    hot: result.hot.length,
-    warm: result.warm.length,
-    cold: result.cold.length,
-  };
-}
-
 export function startWebServer(options: { port: number; pipeline: PipelineOrchestrator }): http.Server {
   const server = http.createServer(async (req, res) => {
     try {
@@ -99,14 +91,7 @@ export function startWebServer(options: { port: number; pipeline: PipelineOrches
       }
 
       if (url.pathname === '/api/stats') {
-        const chunks = options.pipeline.getAllChunks();
-        const byType = Object.fromEntries(
-          chunks.reduce((counts, chunk) => counts.set(chunk.type, (counts.get(chunk.type) ?? 0) + 1), new Map<string, number>())
-        );
-        const byTier = chunks.length === 0
-          ? { hot: 0, warm: 0, cold: 0 }
-          : getTierCounts(await options.pipeline.processContext({ text: 'Inspect stored context' }));
-        sendJson(res, 200, { total: chunks.length, byType, byTier });
+        sendJson(res, 200, options.pipeline.getStats());
         return;
       }
 
