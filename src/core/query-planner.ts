@@ -1,12 +1,17 @@
+import type { StructuralQuery } from '../types/index.js';
+import { normalizeIdentifier, normalizeSymbolName, splitIdentifier } from '../providers/structural-indexer.js';
+
 export type QueryIntent = 'code_search' | 'debug' | 'explain' | 'implement' | 'general';
 
 export interface QueryPlan {
   intent: QueryIntent;
   expandedTerms: string[];
-  strategy: 'hybrid' | 'vector' | 'text' | 'graph';
+  strategy: RetrievalStrategy;
   maxHops: number;
   tokenBudgetRatio: number; // fraction of max tokens to use
   complexity: 'narrow' | 'moderate' | 'broad'; // query scope estimate
+  structuralQuery: StructuralQuery;
+  recommendedTopK: number;
 }
 
 const INTENT_KEYWORDS: Record<QueryIntent, string[]> = {
@@ -21,7 +26,7 @@ const INTENT_KEYWORDS: Record<QueryIntent, string[]> = {
 const BROADENING_TERMS = new Set([
   'all', 'entire', 'everything', 'whole', 'comprehensive', 'complete',
   'full', 'overall', 'architecture', 'system', 'overview', 'every',
-  'and', 'multiple', 'various', 'several',
+  'multiple', 'various', 'several',
 ]);
 
 // Narrowing signals: queries with specific file paths, function names, or "exact" language
@@ -53,25 +58,88 @@ export function detectIntent(query: string): QueryIntent {
   return bestIntent;
 }
 
-/** Extract key terms from a query for expansion */
-export function expandQuery(query: string): string[] {
-  const stopWords = new Set([
+const STOP_WORDS = new Set([
     'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
     'should', 'may', 'might', 'shall', 'can', 'need', 'dare', 'ought',
     'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from',
     'it', 'its', 'this', 'that', 'these', 'those', 'i', 'me', 'my', 'we',
     'how', 'why', 'what', 'who', 'when', 'where', 'which', 'than', 'then',
+    'please', 'using', 'use', 'uses', 'used', 'add', 'fix', 'find',
   ]);
 
+/** Extract key terms from a query for expansion */
+export function expandQuery(query: string): string[] {
   const words = query
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !stopWords.has(w));
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
 
   // Deduplicate preserving order
   return [...new Set(words)];
+}
+
+/** Parse code-aware query features for structural retrieval. */
+export function parseStructuralQuery(query: string): StructuralQuery {
+  const quotedTerms = [...query.matchAll(/"([^"]+)"|'([^']+)'/g)]
+    .map((match) => match[1] ?? match[2])
+    .filter(Boolean);
+
+  const pathFragments = [
+    ...query.matchAll(/(?:[\w.-]+\/)+[\w.-]+(?:\.[A-Za-z0-9]+)?/g),
+    ...query.matchAll(/\b[\w.-]+\.(?:ts|tsx|js|jsx|py|rs|go|java)\b/g),
+  ]
+    .map((match) => match[0])
+    .filter((value, index, all) => all.indexOf(value) === index);
+
+  const extensions = [...query.matchAll(/\.(ts|tsx|js|jsx|py|rs|go|java)\b/gi)]
+    .map((match) => match[1].toLowerCase())
+    .filter((value, index, all) => all.indexOf(value) === index);
+
+  const rawIdentifiers = [
+    ...query.matchAll(/\b[A-Za-z_$][A-Za-z0-9_$]*\b/g),
+  ]
+    .map((match) => match[0])
+    .filter((word) => word.length > 1 && !STOP_WORDS.has(word.toLowerCase()));
+
+  for (const quoted of quotedTerms) {
+    if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(quoted)) rawIdentifiers.push(quoted);
+  }
+
+  for (const path of pathFragments) {
+    const filename = path.split('/').pop() ?? path;
+    const withoutExt = filename.replace(/\.[^.]+$/, '');
+    if (withoutExt.length > 1) rawIdentifiers.push(withoutExt);
+  }
+
+  const identifiers = [...new Set(rawIdentifiers)];
+  const identifierParts = [...new Set(identifiers.flatMap(splitIdentifier))]
+    .filter((part) => part.length > 1 && !STOP_WORDS.has(part));
+  const normalizedIdentifiers = [...new Set([
+    ...identifiers.map(normalizeSymbolName),
+    ...identifierParts.map(normalizeSymbolName),
+    ...quotedTerms.map(normalizeSymbolName),
+  ])].filter(Boolean);
+
+  const pathTokens = [...new Set(pathFragments.flatMap((fragment) =>
+    fragment
+      .toLowerCase()
+      .split(/[/. _-]+/)
+      .filter((part) => part.length > 1 && !STOP_WORDS.has(part))
+  ))];
+
+  return {
+    raw: query,
+    tokens: expandQuery(query),
+    identifiers,
+    normalizedIdentifiers,
+    identifierParts,
+    pathFragments,
+    pathTokens,
+    extensions,
+    quotedTerms: quotedTerms.map(normalizeIdentifier),
+  };
 }
 
 /** Estimate query complexity/scope for adaptive budget sizing */
@@ -89,12 +157,17 @@ export function estimateComplexity(query: string, expandedTerms: string[]): 'nar
   }
 
   // Path-like patterns (src/foo/bar.ts) indicate narrow targeting
-  if (/[a-z]+\/[a-z]+/.test(lower) || /\.(ts|js|py|rs|go)$/.test(lower)) {
+  if (/[a-z0-9_.-]+\/[a-z0-9_.-]+/.test(lower) || /\.(ts|tsx|js|jsx|py|rs|go|java)\b/.test(lower)) {
     narrowSignals += 2;
   }
 
-  // Many terms = broader query
-  if (termCount >= 6) broadSignals++;
+  if (/\b[A-Za-z_$][A-Za-z0-9_$]*\(\)/.test(query) || /\b[A-Za-z]+(?:[A-Z][a-z0-9]+)+\b/.test(query) || /\b[a-z]+_[a-z0-9_]+\b/.test(query)) {
+    narrowSignals++;
+  }
+
+  // Long queries are common for concrete coding tasks. Treat them as broad
+  // only when they also contain explicit broadening language.
+  if (termCount >= 8 && broadSignals > 0) broadSignals++;
   if (termCount <= 2) narrowSignals++;
 
   if (narrowSignals > broadSignals + 1) return 'narrow';
@@ -102,7 +175,7 @@ export function estimateComplexity(query: string, expandedTerms: string[]): 'nar
   return 'moderate';
 }
 
-export type RetrievalStrategy = 'hybrid' | 'vector' | 'text' | 'graph';
+export type RetrievalStrategy = 'hybrid' | 'vector' | 'text' | 'graph' | 'structural';
 
 /**
  * Determine the optimal retrieval strategy based on the embedding provider.
@@ -150,11 +223,18 @@ function adaptiveBudgetRatio(intent: QueryIntent, complexity: 'narrow' | 'modera
   }
 }
 
+export function adaptiveTopK(intent: QueryIntent, complexity: 'narrow' | 'moderate' | 'broad'): number {
+  if (complexity === 'broad') return 15;
+  if (complexity === 'narrow' || intent === 'code_search') return 5;
+  return intent === 'debug' || intent === 'implement' || intent === 'explain' ? 10 : 8;
+}
+
 /** Create a retrieval plan from a query */
 export function planQuery(query: string): QueryPlan {
   const intent = detectIntent(query);
   const expandedTerms = expandQuery(query);
   const complexity = estimateComplexity(query, expandedTerms);
+  const structuralQuery = parseStructuralQuery(query);
 
   // Strategy is adaptive based on embedding model quality:
   // - GPU embeddings (GTE-ModernBERT): vector-only is optimal
@@ -169,5 +249,7 @@ export function planQuery(query: string): QueryPlan {
     maxHops: 0,
     tokenBudgetRatio,
     complexity,
+    structuralQuery,
+    recommendedTopK: adaptiveTopK(intent, complexity),
   };
 }

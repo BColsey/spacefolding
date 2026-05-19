@@ -34,6 +34,31 @@ interface ExpertTask {
   irrelevant_files?: string[];
 }
 
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createRng(seedText: string): () => number {
+  let state = hashString(seedText) || 1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 0xffffffff;
+  };
+}
+
+function deterministicShuffle<T>(items: T[], seed: string): T[] {
+  return [...items].sort((a, b) =>
+    hashString(`${seed}:${String(a)}`) - hashString(`${seed}:${String(b)}`)
+  );
+}
+
 // Intent templates for generating queries
 const TEMPLATES: Record<string, string[]> = {
   code_search: [
@@ -125,10 +150,11 @@ function generateTasks(srcDir: string): Task[] {
     const symbols = extractSymbols(content, relativePath);
 
     for (const symbol of symbols) {
+      const rng = createRng(`${relativePath}:${symbol.name}`);
       const intents = Object.keys(TEMPLATES);
-      const intent = intents[Math.floor(Math.random() * intents.length)];
+      const intent = intents[Math.floor(rng() * intents.length)];
       const templates = TEMPLATES[intent];
-      const template = templates[Math.floor(Math.random() * templates.length)];
+      const template = templates[Math.floor(rng() * templates.length)];
 
       const query = template
         .replace('{symbol}', symbol.name)
@@ -137,19 +163,19 @@ function generateTasks(srcDir: string): Task[] {
       // Determine difficulty based on number of relevant files
       // The primary file is always relevant; add cross-references for harder tasks
       const relevantFiles = [relativePath];
-      const difficulty: Task['difficulty'] = ['easy', 'medium', 'hard'][Math.floor(Math.random() * 3)] as Task['difficulty'];
+      const difficulty: Task['difficulty'] = ['easy', 'medium', 'hard'][Math.floor(rng() * 3)] as Task['difficulty'];
 
       if (difficulty === 'medium') {
         // Add 1-2 files from the same directory
         const sameDir = allRelativePaths.filter(p =>
           p !== relativePath && dirname(p) === dirname(relativePath)
         );
-        const extra = sameDir.sort(() => Math.random() - 0.5).slice(0, Math.min(2, sameDir.length));
+        const extra = deterministicShuffle(sameDir, `${relativePath}:${symbol.name}:medium`).slice(0, Math.min(2, sameDir.length));
         relevantFiles.push(...extra);
       } else if (difficulty === 'hard') {
         // Add 2-4 files from anywhere
         const others = allRelativePaths.filter(p => p !== relativePath);
-        const extra = others.sort(() => Math.random() - 0.5).slice(0, Math.min(4, others.length));
+        const extra = deterministicShuffle(others, `${relativePath}:${symbol.name}:hard`).slice(0, Math.min(4, others.length));
         relevantFiles.push(...extra);
       }
 

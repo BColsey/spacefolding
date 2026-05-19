@@ -1,10 +1,15 @@
 import type {
+  CodeReference,
+  CodeSymbol,
   ContextChunk,
   ContextFilter,
   ContextTier,
   DependencyLink,
   CompressionResult,
+  StructuralQuery,
+  StructuralSearchResult,
 } from '../types/index.js';
+import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -114,6 +119,7 @@ export class SQLiteRepository {
   }
 
   deleteChunk(id: string): void {
+    this.deleteCodeStructure(id);
     this.db.prepare('DELETE FROM chunks WHERE id = ?').run(id);
     this.removeAllDependenciesForChunk(id);
   }
@@ -219,6 +225,239 @@ export class SQLiteRepository {
     return null;
   }
 
+  /** Find a previously ingested chunk by content hash, scoped by path for files. */
+  findChunkByContentHash(contentHash: string, path?: string): ContextChunk | null {
+    const rows = this.db
+      .prepare(path ? 'SELECT * FROM chunks WHERE path = ?' : 'SELECT * FROM chunks WHERE path IS NULL')
+      .all(...(path ? [path] : [])) as Row[];
+    for (const row of rows) {
+      try {
+        const meta = JSON.parse(row.metadata);
+        if (meta.contentHash === contentHash) return rowToChunk(row);
+      } catch { continue; }
+    }
+    return null;
+  }
+
+  // ── Structural Code Index ─────────────────────────────────────
+
+  storeCodeStructure(chunkId: string, symbols: CodeSymbol[], references: CodeReference[]): void {
+    const insertSymbol = this.db.prepare(
+      `INSERT INTO code_symbols (
+        id, chunkId, path, language, name, normalizedName, kind, signature,
+        startLine, endLine, isExported, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const insertReference = this.db.prepare(
+      `INSERT INTO code_references (
+        id, chunkId, path, language, target, normalizedTarget, kind,
+        startLine, endLine, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+
+    const tx = this.db.transaction(() => {
+      this.deleteCodeStructure(chunkId);
+      for (const symbol of symbols) {
+        insertSymbol.run(
+          symbol.id ?? randomUUID(),
+          chunkId,
+          symbol.path ?? '',
+          symbol.language ?? '',
+          symbol.name,
+          symbol.normalizedName,
+          symbol.kind,
+          symbol.signature ?? null,
+          symbol.startLine,
+          symbol.endLine,
+          symbol.isExported ? 1 : 0,
+          JSON.stringify(symbol.metadata ?? {})
+        );
+      }
+      for (const reference of references) {
+        insertReference.run(
+          reference.id ?? randomUUID(),
+          chunkId,
+          reference.path ?? '',
+          reference.language ?? '',
+          reference.target,
+          reference.normalizedTarget,
+          reference.kind,
+          reference.startLine,
+          reference.endLine,
+          JSON.stringify(reference.metadata ?? {})
+        );
+      }
+    });
+    tx();
+  }
+
+  deleteCodeStructure(chunkId: string): void {
+    this.db.prepare('DELETE FROM code_symbols WHERE chunkId = ?').run(chunkId);
+    this.db.prepare('DELETE FROM code_references WHERE chunkId = ?').run(chunkId);
+  }
+
+  getCodeSymbols(chunkId: string): CodeSymbol[] {
+    const rows = this.db
+      .prepare('SELECT * FROM code_symbols WHERE chunkId = ? ORDER BY startLine, name')
+      .all(chunkId) as CodeSymbolRow[];
+    return rows.map(rowToCodeSymbol);
+  }
+
+  getCodeReferences(chunkId: string): CodeReference[] {
+    const rows = this.db
+      .prepare('SELECT * FROM code_references WHERE chunkId = ? ORDER BY startLine, target')
+      .all(chunkId) as CodeReferenceRow[];
+    return rows.map(rowToCodeReference);
+  }
+
+  getAllCodeSymbols(): CodeSymbol[] {
+    const rows = this.db
+      .prepare('SELECT * FROM code_symbols ORDER BY path, startLine, name')
+      .all() as CodeSymbolRow[];
+    return rows.map(rowToCodeSymbol);
+  }
+
+  hasCodeStructure(): boolean {
+    const row = this.db
+      .prepare('SELECT COUNT(*) as count FROM code_symbols')
+      .get() as { count: number };
+    return row.count > 0;
+  }
+
+  searchByStructure(query: StructuralQuery, topK: number = 50): StructuralSearchResult[] {
+    const scores = new Map<string, StructuralSearchResult>();
+    const normalizedIdentifiers = new Set(query.normalizedIdentifiers);
+    const identifierParts = new Set(query.identifierParts);
+    const pathTokens = new Set(query.pathTokens);
+    const queryPathParts = new Set([
+      ...query.identifierParts,
+      ...query.tokens.map((token) => normalizeSearchTerm(token)).filter((token) => token.length > 2),
+    ]);
+    const quotedTerms = new Set(query.quotedTerms.map((term) => normalizeSearchTerm(term)));
+
+    const addScore = (
+      chunkId: string,
+      structuralScore: number,
+      dependencyBoost: number,
+      reason: string
+    ) => {
+      if (structuralScore <= 0 && dependencyBoost <= 0) return;
+      const existing = scores.get(chunkId) ?? {
+        chunkId,
+        score: 0,
+        structuralScore: 0,
+        dependencyBoost: 0,
+        reasons: [],
+      };
+      existing.structuralScore += structuralScore;
+      existing.dependencyBoost = Math.min(0.12, existing.dependencyBoost + dependencyBoost);
+      if (!existing.reasons.includes(reason) && existing.reasons.length < 6) {
+        existing.reasons.push(reason);
+      }
+      existing.score = existing.structuralScore + existing.dependencyBoost;
+      scores.set(chunkId, existing);
+    };
+
+    const pathRows = this.db
+      .prepare(`SELECT id, path, language FROM chunks WHERE path IS NOT NULL AND path != ''`)
+      .all() as Array<{ id: string; path: string; language: string | null }>;
+    for (const row of pathRows) {
+      const lowerPath = row.path.toLowerCase();
+      const basename = lowerPath.split('/').pop() ?? lowerPath;
+      const basenameParts = splitSearchIdentifier(basename.replace(/\.[^.]+$/, ''));
+
+      for (const fragment of query.pathFragments) {
+        const lowerFragment = fragment.toLowerCase();
+        if (lowerPath === lowerFragment || lowerPath.endsWith(`/${lowerFragment}`)) {
+          addScore(row.id, 1.4, 0, `path exact match: ${fragment}`);
+        } else if (lowerPath.includes(lowerFragment)) {
+          addScore(row.id, 0.9, 0, `path fragment match: ${fragment}`);
+        } else if (basename.includes(lowerFragment)) {
+          addScore(row.id, 0.55, 0, `filename match: ${fragment}`);
+        }
+      }
+
+      for (const token of pathTokens) {
+        if (token.length > 1 && lowerPath.includes(token)) {
+          addScore(row.id, 0.12, 0, `path token match: ${token}`);
+        }
+      }
+
+      for (const part of queryPathParts) {
+        if (part.length <= 2) continue;
+        if (basename.includes(part)) {
+          addScore(row.id, 0.5, 0, `filename token match: ${part}`);
+        } else if (lowerPath.includes(part)) {
+          addScore(row.id, 0.25, 0, `path token match: ${part}`);
+        } else if (basenameParts.some((basenamePart) => commonPrefixLength(part, basenamePart) >= 4)) {
+          addScore(row.id, 0.28, 0, `filename fuzzy match: ${part}`);
+        }
+      }
+
+      for (const ext of query.extensions) {
+        if (lowerPath.endsWith(`.${ext}`)) {
+          addScore(row.id, 0.08, 0, `extension match: .${ext}`);
+        }
+      }
+    }
+
+    const symbolRows = this.db
+      .prepare('SELECT * FROM code_symbols')
+      .all() as CodeSymbolRow[];
+    for (const row of symbolRows) {
+      const normalizedName = row.normalizedName;
+      if (normalizedIdentifiers.has(normalizedName) || quotedTerms.has(normalizedName)) {
+        addScore(row.chunkId, row.isExported ? 1.35 : 1.25, 0, `symbol exact match: ${row.name}`);
+        continue;
+      }
+
+      let overlap = 0;
+      for (const part of splitSearchIdentifier(row.name)) {
+        if (identifierParts.has(part)) overlap++;
+      }
+      if (overlap > 0) {
+        addScore(
+          row.chunkId,
+          Math.min(0.75, overlap * 0.25) + (row.isExported ? 0.05 : 0),
+          0,
+          `symbol token match: ${row.name}`
+        );
+      }
+
+      for (const identifier of normalizedIdentifiers) {
+        if (identifier.length > 2 && normalizedName.includes(identifier)) {
+          addScore(row.chunkId, 0.45, 0, `symbol partial match: ${row.name}`);
+        }
+      }
+    }
+
+    const referenceRows = this.db
+      .prepare('SELECT * FROM code_references')
+      .all() as CodeReferenceRow[];
+    for (const row of referenceRows) {
+      const target = row.normalizedTarget;
+      for (const identifier of normalizedIdentifiers) {
+        if (identifier.length > 2 && (target === identifier || target.includes(identifier))) {
+          addScore(row.chunkId, 0.18, 0.05, `direct reference match: ${row.target}`);
+        }
+      }
+      for (const part of identifierParts) {
+        if (part.length > 2 && target.includes(part)) {
+          addScore(row.chunkId, 0.04, 0.02, `reference token boost: ${row.target}`);
+        }
+      }
+    }
+
+    return [...scores.values()]
+      .map((result) => ({
+        ...result,
+        score: result.structuralScore + result.dependencyBoost,
+      }))
+      .filter((result) => result.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+  }
+
   // ── Vector Store ──────────────────────────────────────────
 
   storeEmbedding(chunkId: string, embedding: number[], model: string): void {
@@ -314,6 +553,8 @@ export class SQLiteRepository {
         )
         .all(ftsQuery, topK) as Array<{ rowid: number; rank: number }>;
 
+      if (rows.length === 0) return [];
+
       // Convert FTS5 rowid back to chunk ID
       const chunkRows = this.db
         .prepare('SELECT id, rowid FROM chunks WHERE rowid IN (' + rows.map(() => '?').join(',') + ')')
@@ -331,6 +572,42 @@ export class SQLiteRepository {
       // FTS5 might not support the query syntax
       return [];
     }
+  }
+
+  /** Deterministic lexical fallback over chunk text and paths. */
+  searchByLexical(query: string, topK: number = 50): { chunkId: string; score: number }[] {
+    const stopWords = new Set([
+      'that', 'this', 'with', 'from', 'does', 'have', 'been', 'were', 'will',
+      'would', 'could', 'should', 'than', 'then', 'into', 'when', 'where',
+      'which', 'their',
+    ]);
+    const terms = query
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter((term) => term.length > 3 && !stopWords.has(term));
+    const uniqueTerms = [...new Set(terms)];
+    if (uniqueTerms.length === 0) return [];
+
+    const rows = this.db
+      .prepare('SELECT id, text, path FROM chunks')
+      .all() as Array<{ id: string; text: string; path: string | null }>;
+
+    const scored = rows.map((chunk) => {
+      const text = chunk.text.toLowerCase();
+      const path = (chunk.path ?? '').toLowerCase();
+      let score = 0;
+      for (const term of uniqueTerms) {
+        if (`${text} ${path}`.includes(term)) score += 2;
+        if (path.includes(term)) score += 3;
+      }
+      return { chunkId: chunk.id, score };
+    });
+
+    return scored
+      .filter((result) => result.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
   }
 
   close(): void {
@@ -376,6 +653,34 @@ interface EmbRow {
   dimensions: number;
 }
 
+interface CodeSymbolRow {
+  id: string;
+  chunkId: string;
+  path: string;
+  language: string;
+  name: string;
+  normalizedName: string;
+  kind: string;
+  signature: string | null;
+  startLine: number;
+  endLine: number;
+  isExported: number;
+  metadata: string;
+}
+
+interface CodeReferenceRow {
+  id: string;
+  chunkId: string;
+  path: string;
+  language: string;
+  target: string;
+  normalizedTarget: string;
+  kind: string;
+  startLine: number;
+  endLine: number;
+  metadata: string;
+}
+
 function rowToChunk(row: Row): ContextChunk {
   return {
     id: row.id,
@@ -390,6 +695,58 @@ function rowToChunk(row: Row): ContextChunk {
     childrenIds: [],
     metadata: JSON.parse(row.metadata),
   };
+}
+
+function rowToCodeSymbol(row: CodeSymbolRow): CodeSymbol {
+  return {
+    id: row.id,
+    chunkId: row.chunkId,
+    path: row.path || undefined,
+    language: row.language || undefined,
+    name: row.name,
+    normalizedName: row.normalizedName,
+    kind: row.kind as CodeSymbol['kind'],
+    signature: row.signature ?? undefined,
+    startLine: row.startLine,
+    endLine: row.endLine,
+    isExported: row.isExported === 1,
+    metadata: JSON.parse(row.metadata),
+  };
+}
+
+function rowToCodeReference(row: CodeReferenceRow): CodeReference {
+  return {
+    id: row.id,
+    chunkId: row.chunkId,
+    path: row.path || undefined,
+    language: row.language || undefined,
+    target: row.target,
+    normalizedTarget: row.normalizedTarget,
+    kind: row.kind as CodeReference['kind'],
+    startLine: row.startLine,
+    endLine: row.endLine,
+    metadata: JSON.parse(row.metadata),
+  };
+}
+
+function normalizeSearchTerm(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9_$]/g, '');
+}
+
+function splitSearchIdentifier(value: string): string[] {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_$./:-]+/g, ' ')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((part) => part.length > 1);
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  const max = Math.min(a.length, b.length);
+  let count = 0;
+  while (count < max && a[count] === b[count]) count++;
+  return count;
 }
 
 export function createRepository(dbPath?: string): SQLiteRepository {

@@ -53,6 +53,11 @@ interface SpacefoldResult {
   chunksReturned: number;
   /** Relevant chunks (from expected files) */
   relevantChunks: number;
+  tokensVsCurrent: number;
+  recallVsCurrent: number;
+  precisionVsCurrent: number;
+  tokensVsFullCodebase: number;
+  returnedMoreThanCodebase: boolean;
 }
 
 interface TaskComparison {
@@ -63,6 +68,11 @@ interface TaskComparison {
   savingsVsRelevant: number;
   /** % token savings vs reading the entire codebase */
   savingsVsCodebase: number;
+}
+
+interface CliOptions {
+  strategy: 'structural' | 'hybrid' | 'vector' | 'text' | 'graph';
+  json: boolean;
 }
 
 // ── Test Tasks ───────────────────────────────────────────────────
@@ -222,17 +232,52 @@ function fmtSavings(v: number): string {
   return v >= 0 ? `${v.toFixed(0)}% saved` : `+${Math.abs(v).toFixed(0)}% more`;
 }
 
+function parseArgs(argv: string[]): CliOptions {
+  const options: CliOptions = { strategy: 'structural', json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--strategy' && argv[i + 1]) {
+      options.strategy = argv[++i] as CliOptions['strategy'];
+    } else if (arg === '--json') {
+      options.json = true;
+    }
+  }
+  return options;
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createRng(seedText: string): () => number {
+  let state = hashString(seedText) || 1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 0xffffffff;
+  };
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
-async function runE2EBenchmark() {
+async function runE2EBenchmark(options: CliOptions) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
   const projectRoot = join(benchDir, '..');
+  const log = (...args: unknown[]) => {
+    if (!options.json) console.log(...args);
+  };
 
-  console.log(`\n${'='.repeat(78)}`);
-  console.log(`  END-TO-END A/B BENCHMARK`);
-  console.log(`  Tasks: ${TASKS.length}`);
-  console.log(`  Measures: file recall, token efficiency, precision`);
-  console.log(`${'='.repeat(78)}\n`);
+  log(`\n${'='.repeat(78)}`);
+  log(`  END-TO-END A/B BENCHMARK`);
+  log(`  Tasks: ${TASKS.length} | Strategy: ${options.strategy}`);
+  log(`  Measures: file recall, token efficiency, precision`);
+  log(`${'='.repeat(78)}\n`);
 
   // ── Build pipeline ──────────────────────────────────────────────
 
@@ -271,10 +316,10 @@ async function runE2EBenchmark() {
       '../dist/providers/local-embedding.js'
     );
     const modelId = process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
-    console.log(`  Embedding provider: local (${modelId})`);
+    log(`  Embedding provider: local (${modelId})`);
     embeddingProvider = new LocalEmbeddingProvider(modelId);
   } else {
-    console.log(`  Embedding provider: deterministic`);
+    log(`  Embedding provider: deterministic`);
     embeddingProvider = new DeterministicEmbeddingProvider();
   }
 
@@ -294,7 +339,7 @@ async function runE2EBenchmark() {
 
   const srcDir = join(projectRoot, 'src');
   const files = walkDir(srcDir);
-  console.log(`Ingesting ${files.length} source files...`);
+  log(`Ingesting ${files.length} source files...`);
 
   // Build a map of relative path -> file content for baseline calculation
   const fileContents = new Map<string, string>();
@@ -307,7 +352,7 @@ async function runE2EBenchmark() {
   }
 
   const allChunks = storage.getAllChunks();
-  console.log(`Ingested ${allChunks.length} chunks\n`);
+  log(`Ingested ${allChunks.length} chunks\n`);
 
   // Build path -> chunks lookup for precision measurement
   const chunksByPath = new Map<string, typeof allChunks>();
@@ -333,11 +378,11 @@ async function runE2EBenchmark() {
   const TOKEN_BUDGET = 50_000; // Realistic budget for a coding task
 
   for (const task of TASKS) {
-    console.log(
+    log(
       `${'─'.repeat(78)}\n  Task ${task.id}: ${task.name}\n${'─'.repeat(78)}`
     );
-    console.log(`  "${task.description.slice(0, 90)}..."`);
-    console.log(
+    log(`  "${task.description.slice(0, 90)}..."`);
+    log(
       `  Expected files: ${task.expectedFiles.join(', ')}\n`
     );
 
@@ -360,14 +405,14 @@ async function runE2EBenchmark() {
       totalFilesCodebase: totalCodebaseFiles,
     };
 
-    console.log(
+    log(
       `  BASELINE: ${baseline.filesNeeded} relevant files (${baseline.totalTokensAllFiles.toLocaleString()} tokens), ` +
         `entire codebase: ${totalCodebaseFiles} files (${totalCodebaseTokens.toLocaleString()} tokens)`
     );
 
     // ── Spacefolding: retrieve with the task description ───────────
 
-    const retrievalResult = await pipeline.retrieve(
+    const currentResult = await pipeline.retrieve(
       task.description,
       TOKEN_BUDGET,
       {
@@ -376,14 +421,36 @@ async function runE2EBenchmark() {
         maxHops: 2,
       }
     );
+    const expectedSet = new Set(task.expectedFiles);
+    const currentPaths = new Set(
+      currentResult.chunks
+        .map((c: any) => c.path)
+        .filter(Boolean) as string[]
+    );
+    const currentRecall =
+      task.expectedFiles.length > 0
+        ? task.expectedFiles.filter((f) => currentPaths.has(f)).length / task.expectedFiles.length
+        : 0;
+    const currentPrecision =
+      currentPaths.size > 0
+        ? [...currentPaths].filter((p) => expectedSet.has(p)).length / currentPaths.size
+        : 0;
+
+    const retrievalResult = await pipeline.retrieve(
+      task.description,
+      TOKEN_BUDGET,
+      {
+        strategy: options.strategy,
+        topK: 15,
+        maxHops: 0,
+      }
+    );
 
     const returnedPaths = new Set(
       retrievalResult.chunks
         .map((c: any) => c.path)
         .filter(Boolean) as string[]
     );
-    const expectedSet = new Set(task.expectedFiles);
-
     const filesHit = task.expectedFiles.filter((f) => returnedPaths.has(f));
     const filesMissed = task.expectedFiles.filter(
       (f) => !returnedPaths.has(f)
@@ -414,6 +481,11 @@ async function runE2EBenchmark() {
       utilization: retrievalResult.utilization,
       chunksReturned: retrievalResult.chunks.length,
       relevantChunks,
+      tokensVsCurrent: currentResult.totalTokens - retrievalResult.totalTokens,
+      recallVsCurrent: recall - currentRecall,
+      precisionVsCurrent: precision - currentPrecision,
+      tokensVsFullCodebase: retrievalResult.totalTokens - totalCodebaseTokens,
+      returnedMoreThanCodebase: retrievalResult.totalTokens > totalCodebaseTokens,
     };
 
     const savingsVsRelevant =
@@ -428,20 +500,24 @@ async function runE2EBenchmark() {
           100
         : 0;
 
-    console.log(
+    log(
       `  SPACEFOLD: ${filesHit.length}/${task.expectedFiles.length} files found, ` +
         `${spacefold.tokensUsed.toLocaleString()} tokens used / ${spacefold.tokensBudget.toLocaleString()} budget ` +
         `(${(spacefold.utilization * 100).toFixed(1)}% util)`
     );
-    console.log(
+    log(
       `            recall=${recall.toFixed(2)} precision=${precision.toFixed(2)} ` +
         `${spacefold.chunksReturned} chunks (${spacefold.relevantChunks} relevant)`
     );
-    console.log(
+    log(
       `            vs codebase: ${fmtSavings(savingsVsCodebase)}`
     );
+    log(
+      `            vs current hybrid: ${spacefold.tokensVsCurrent >= 0 ? `${spacefold.tokensVsCurrent.toLocaleString()} fewer` : `${Math.abs(spacefold.tokensVsCurrent).toLocaleString()} more`} tokens, ` +
+        `recall delta=${spacefold.recallVsCurrent.toFixed(2)}, precision delta=${spacefold.precisionVsCurrent.toFixed(2)}`
+    );
     if (filesMissed.length > 0) {
-      console.log(`            missed: ${filesMissed.join(', ')}`);
+      log(`            missed: ${filesMissed.join(', ')}`);
     }
 
     comparisons.push({
@@ -455,9 +531,9 @@ async function runE2EBenchmark() {
 
   // ── Summary comparison table ────────────────────────────────────
 
-  console.log(`\n\n${'='.repeat(78)}`);
-  console.log(`  COMPARISON TABLE`);
-  console.log(`${'='.repeat(78)}\n`);
+  log(`\n\n${'='.repeat(78)}`);
+  log(`  COMPARISON TABLE`);
+  log(`${'='.repeat(78)}\n`);
 
   // Table header
   const col = (s: string, w: number) => s.padEnd(w);
@@ -472,8 +548,8 @@ async function runE2EBenchmark() {
     col('Precis', 7),
     col('vs Codebase', 12),
   ].join(' ');
-  console.log(`  ${hdr}`);
-  console.log(`  ${'─'.repeat(hdr.length)}`);
+  log(`  ${hdr}`);
+  log(`  ${'─'.repeat(hdr.length)}`);
 
   let totalBaseTokens = 0;
   let totalSfTokens = 0;
@@ -495,7 +571,7 @@ async function runE2EBenchmark() {
       col(c.spacefold.precision.toFixed(2), 7),
       col(fmtSavings(c.savingsVsCodebase), 12),
     ].join(' ');
-    console.log(`  ${row}`);
+    log(`  ${row}`);
 
     totalBaseTokens += c.baseline.totalTokensAllFiles;
     totalSfTokens += c.spacefold.tokensUsed;
@@ -515,7 +591,7 @@ async function runE2EBenchmark() {
         100
       : 0;
 
-  console.log(`  ${'─'.repeat(hdr.length)}`);
+  log(`  ${'─'.repeat(hdr.length)}`);
   const avgRow = [
     col('', 6),
     col(`AVERAGE (${comparisons.length} tasks)`, 28),
@@ -527,49 +603,49 @@ async function runE2EBenchmark() {
     col(avgPrecision.toFixed(2), 7),
     col(fmtSavings(overallCodebaseSavings), 12),
   ].join(' ');
-  console.log(`  ${avgRow}`);
-  console.log(`\n  Note: "vs Codebase" shows token savings compared to reading all ${totalCodebaseFiles} files (${totalCodebaseTokens.toLocaleString()} tokens)`);
-  console.log(`        Positive savings = Spacefold uses fewer tokens; "+X% more" = Spacefold uses more tokens`);
+  log(`  ${avgRow}`);
+  log(`\n  Note: "vs Codebase" shows token savings compared to reading all ${totalCodebaseFiles} files (${totalCodebaseTokens.toLocaleString()} tokens)`);
+  log(`        Positive savings = Spacefold uses fewer tokens; "+X% more" = Spacefold uses more tokens`);
   if (embeddingProviderEnv === 'local') {
-    console.log(`        Using real ONNX embeddings (${process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5'}).`);
+    log(`        Using real ONNX embeddings (${process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5'}).`);
   } else {
-    console.log(`        With deterministic (hash-based) embeddings, results approximate random retrieval.`);
-    console.log(`        Real embeddings significantly improve recall and precision.`);
+    log(`        With deterministic (hash-based) embeddings, results approximate random retrieval.`);
+    log(`        Real embeddings significantly improve recall and precision.`);
   }
 
   // ── Per-task detail ──────────────────────────────────────────────
 
-  console.log(`\n\n${'='.repeat(78)}`);
-  console.log(`  PER-TASK DETAIL`);
-  console.log(`${'='.repeat(78)}\n`);
+  log(`\n\n${'='.repeat(78)}`);
+  log(`  PER-TASK DETAIL`);
+  log(`${'='.repeat(78)}\n`);
 
   for (const c of comparisons) {
     const icon = c.spacefold.filesMissed.length === 0 ? 'OK' : 'MISS';
-    console.log(`  [${icon}] ${c.task.id}: ${c.task.name}`);
-    console.log(`       Expected: ${c.task.expectedFiles.join(', ')}`);
-    console.log(`       Found:    ${c.spacefold.filesFound.join(', ') || '(none)'}`);
+    log(`  [${icon}] ${c.task.id}: ${c.task.name}`);
+    log(`       Expected: ${c.task.expectedFiles.join(', ')}`);
+    log(`       Found:    ${c.spacefold.filesFound.join(', ') || '(none)'}`);
     if (c.spacefold.filesMissed.length > 0) {
-      console.log(
+      log(
         `       Missed:   ${c.spacefold.filesMissed.join(', ')}`
       );
     }
-    console.log(
+    log(
       `       Baseline: ${c.baseline.totalTokensAllFiles.toLocaleString()} tokens for ${c.baseline.filesNeeded} relevant files ` +
         `(entire codebase: ${c.baseline.totalTokensCodebase.toLocaleString()} tokens across ${c.baseline.totalFilesCodebase} files)`
     );
-    console.log(
+    log(
       `       Spacefold: ${c.spacefold.tokensUsed.toLocaleString()} tokens (${c.spacefold.chunksReturned} chunks, ${c.spacefold.relevantChunks} relevant)`
     );
-    console.log(
+    log(
       `       vs codebase: ${fmtSavings(c.savingsVsCodebase)} | Recall: ${c.spacefold.recall.toFixed(2)} | Precision: ${c.spacefold.precision.toFixed(2)}\n`
     );
   }
 
   // ── Scenario analysis ───────────────────────────────────────────
 
-  console.log(`${'='.repeat(78)}`);
-  console.log(`  SCENARIO ANALYSIS`);
-  console.log(`${'='.repeat(78)}\n`);
+  log(`${'='.repeat(78)}`);
+  log(`  SCENARIO ANALYSIS`);
+  log(`${'='.repeat(78)}\n`);
 
   // Group by recall performance
   const perfectRecall = comparisons.filter(
@@ -580,16 +656,16 @@ async function runE2EBenchmark() {
   );
   const zeroRecall = comparisons.filter((c) => c.spacefold.recall === 0);
 
-  console.log(
+  log(
     `  Perfect recall (all files found): ${perfectRecall.length} / ${comparisons.length}`
   );
-  console.log(
+  log(
     `  Partial recall (some files found): ${partialRecall.length} / ${comparisons.length}`
   );
-  console.log(
+  log(
     `  Zero recall (no files found):      ${zeroRecall.length} / ${comparisons.length}`
   );
-  console.log(
+  log(
     `  Overall file recall:               ${totalFilesHit}/${totalFilesNeeded} (${((totalFilesHit / totalFilesNeeded) * 100).toFixed(1)}%)\n`
   );
 
@@ -605,22 +681,22 @@ async function runE2EBenchmark() {
       ? ((totalCodebaseTokens - totalSfTokens / comparisons.length) / totalCodebaseTokens) * 100
       : 0;
 
-  console.log(
+  log(
     `  Token reduction vs entire codebase: ${fmtSavings(overallCodebaseSavingsAvg)} ` +
         `(${totalCodebaseTokens.toLocaleString()} -> ${(totalSfTokens / comparisons.length).toFixed(0)} avg tokens per task)`
   );
-  console.log(
+  log(
     `  When Spacefold saves tokens (avg of ${withSavings.length} tasks): ${avgSavingsWhenPositive.toFixed(1)}%`
   );
-  console.log(
+  log(
     `  Average budget utilization: ${((totalSfTokens / (TOKEN_BUDGET * comparisons.length)) * 100).toFixed(1)}%\n`
   );
 
   // ── Statistical significance (Bootstrap CI) ─────────────────────
 
-  console.log(`${'='.repeat(78)}`);
-  console.log(`  STATISTICAL SIGNIFICANCE — Bootstrap 95% CI (10,000 resamples)`);
-  console.log(`${'='.repeat(78)}\n`);
+  log(`${'='.repeat(78)}`);
+  log(`  STATISTICAL SIGNIFICANCE — Bootstrap 95% CI (10,000 resamples)`);
+  log(`${'='.repeat(78)}\n`);
 
   const metricExtractors: {
     key: string;
@@ -656,10 +732,11 @@ async function runE2EBenchmark() {
 
     // Bootstrap
     const bootMeans: number[] = [];
+    const rng = createRng(`bootstrap:${key}:${options.strategy}`);
     for (let b = 0; b < N_BOOT; b++) {
       let sum = 0;
       for (let i = 0; i < n; i++) {
-        sum += values[Math.floor(Math.random() * n)];
+        sum += values[Math.floor(rng() * n)];
       }
       bootMeans.push(sum / n);
     }
@@ -668,7 +745,7 @@ async function runE2EBenchmark() {
     const low = bootMeans[Math.floor(N_BOOT * 0.025)];
     const high = bootMeans[Math.ceil(N_BOOT * 0.975)];
 
-    console.log(
+    log(
       `  ${label.padEnd(18)} mean=${mean.toFixed(3)}  95% CI=[${low.toFixed(3)}, ${high.toFixed(3)}]  std=${std.toFixed(3)}`
     );
   }
@@ -683,12 +760,42 @@ async function runE2EBenchmark() {
     } catch {}
   }
 
-  console.log(`\n${'='.repeat(78)}`);
-  console.log(`  E2E BENCHMARK COMPLETE`);
-  console.log(`${'='.repeat(78)}\n`);
+  const avgTokensVsCurrent = comparisons.reduce((sum, c) => sum + c.spacefold.tokensVsCurrent, 0) / comparisons.length;
+  const avgRecallVsCurrent = comparisons.reduce((sum, c) => sum + c.spacefold.recallVsCurrent, 0) / comparisons.length;
+  const avgPrecisionVsCurrent = comparisons.reduce((sum, c) => sum + c.spacefold.precisionVsCurrent, 0) / comparisons.length;
+  const tasksReturningMoreThanCodebase = comparisons.filter((c) => c.spacefold.returnedMoreThanCodebase).map((c) => c.task.id);
+
+  if (options.json) {
+    process.stdout.write(JSON.stringify({
+      strategy: options.strategy,
+      summary: {
+        averageRecall: avgRecall,
+        averagePrecision: avgPrecision,
+        totalFilesHit,
+        totalFilesNeeded,
+        totalTokens: totalSfTokens,
+        averageTokens: totalSfTokens / comparisons.length,
+        totalCodebaseTokens,
+        averageTokensVsCurrent: avgTokensVsCurrent,
+        averageRecallVsCurrent: avgRecallVsCurrent,
+        averagePrecisionVsCurrent: avgPrecisionVsCurrent,
+        tasksReturningMoreThanCodebase,
+      },
+      comparisons,
+    }, null, 2) + '\n');
+  } else {
+    log(`\n${'='.repeat(78)}`);
+    log(`  E2E BENCHMARK COMPLETE`);
+    log(`  Avg token delta vs current hybrid: ${avgTokensVsCurrent >= 0 ? `${avgTokensVsCurrent.toFixed(0)} fewer` : `${Math.abs(avgTokensVsCurrent).toFixed(0)} more`} tokens`);
+    log(`  Avg recall delta vs current hybrid: ${avgRecallVsCurrent.toFixed(3)}`);
+    log(`  Avg precision delta vs current hybrid: ${avgPrecisionVsCurrent.toFixed(3)}`);
+    log(`  Tasks over full-codebase token count: ${tasksReturningMoreThanCodebase.join(', ') || 'none'}`);
+    log(`${'='.repeat(78)}\n`);
+  }
 }
 
-runE2EBenchmark().catch((err) => {
+const e2eOptions = parseArgs(process.argv.slice(2));
+runE2EBenchmark(e2eOptions).catch((err) => {
   console.error('E2E benchmark failed:', err);
   process.exit(1);
 });

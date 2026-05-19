@@ -93,6 +93,79 @@ export interface ContextFilter {
   textContains?: string;
 }
 
+// --- Structural Code Index ---
+
+export type CodeSymbolKind =
+  | 'function'
+  | 'class'
+  | 'interface'
+  | 'type'
+  | 'variable'
+  | 'method'
+  | 'struct'
+  | 'enum'
+  | 'trait'
+  | 'module'
+  | 'field'
+  | 'constant';
+
+export type CodeReferenceKind =
+  | 'import'
+  | 'export'
+  | 'call'
+  | 'type'
+  | 'module'
+  | 'inheritance'
+  | 'use';
+
+export interface CodeSymbol {
+  id?: string;
+  chunkId?: string;
+  path?: string;
+  language?: string;
+  name: string;
+  normalizedName: string;
+  kind: CodeSymbolKind;
+  signature?: string;
+  startLine: number;
+  endLine: number;
+  isExported: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface CodeReference {
+  id?: string;
+  chunkId?: string;
+  path?: string;
+  language?: string;
+  target: string;
+  normalizedTarget: string;
+  kind: CodeReferenceKind;
+  startLine: number;
+  endLine: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface StructuralQuery {
+  raw: string;
+  tokens: string[];
+  identifiers: string[];
+  normalizedIdentifiers: string[];
+  identifierParts: string[];
+  pathFragments: string[];
+  pathTokens: string[];
+  extensions: string[];
+  quotedTerms: string[];
+}
+
+export interface StructuralSearchResult {
+  chunkId: string;
+  score: number;
+  structuralScore: number;
+  dependencyBoost: number;
+  reasons: string[];
+}
+
 // --- Routing Configuration ---
 
 export interface RoutingWeights {

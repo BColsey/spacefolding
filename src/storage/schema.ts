@@ -111,6 +111,63 @@ CREATE INDEX IF NOT EXISTS idx_routing_chunk ON routing_history(chunkId)`;
 export const CREATE_INDEX_ROUTING_TIMESTAMP = `
 CREATE INDEX IF NOT EXISTS idx_routing_timestamp ON routing_history(timestamp)`;
 
+// Phase 3: Structural code index
+export const CREATE_TABLE_CODE_SYMBOLS = `
+CREATE TABLE IF NOT EXISTS code_symbols (
+  id TEXT PRIMARY KEY,
+  chunkId TEXT NOT NULL,
+  path TEXT NOT NULL DEFAULT '',
+  language TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL,
+  normalizedName TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  signature TEXT,
+  startLine INTEGER NOT NULL,
+  endLine INTEGER NOT NULL,
+  isExported INTEGER NOT NULL DEFAULT 0,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  FOREIGN KEY (chunkId) REFERENCES chunks(id) ON DELETE CASCADE
+)`;
+
+export const CREATE_TABLE_CODE_REFERENCES = `
+CREATE TABLE IF NOT EXISTS code_references (
+  id TEXT PRIMARY KEY,
+  chunkId TEXT NOT NULL,
+  path TEXT NOT NULL DEFAULT '',
+  language TEXT NOT NULL DEFAULT '',
+  target TEXT NOT NULL,
+  normalizedTarget TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  startLine INTEGER NOT NULL,
+  endLine INTEGER NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  FOREIGN KEY (chunkId) REFERENCES chunks(id) ON DELETE CASCADE
+)`;
+
+export const CREATE_INDEX_CODE_SYMBOLS_CHUNK = `
+CREATE INDEX IF NOT EXISTS idx_code_symbols_chunk ON code_symbols(chunkId)`;
+
+export const CREATE_INDEX_CODE_SYMBOLS_PATH = `
+CREATE INDEX IF NOT EXISTS idx_code_symbols_path ON code_symbols(path)`;
+
+export const CREATE_INDEX_CODE_SYMBOLS_LANGUAGE = `
+CREATE INDEX IF NOT EXISTS idx_code_symbols_language ON code_symbols(language)`;
+
+export const CREATE_INDEX_CODE_SYMBOLS_NORMALIZED = `
+CREATE INDEX IF NOT EXISTS idx_code_symbols_normalized ON code_symbols(normalizedName)`;
+
+export const CREATE_INDEX_CODE_REFERENCES_CHUNK = `
+CREATE INDEX IF NOT EXISTS idx_code_references_chunk ON code_references(chunkId)`;
+
+export const CREATE_INDEX_CODE_REFERENCES_PATH = `
+CREATE INDEX IF NOT EXISTS idx_code_references_path ON code_references(path)`;
+
+export const CREATE_INDEX_CODE_REFERENCES_LANGUAGE = `
+CREATE INDEX IF NOT EXISTS idx_code_references_language ON code_references(language)`;
+
+export const CREATE_INDEX_CODE_REFERENCES_TARGET = `
+CREATE INDEX IF NOT EXISTS idx_code_references_target ON code_references(normalizedTarget)`;
+
 export interface Migration {
   version: number;
   up: string[];
@@ -147,6 +204,21 @@ export const MIGRATIONS: Migration[] = [
       CREATE_FTS_UPDATE_TRIGGER,
       CREATE_INDEX_ROUTING_CHUNK,
       CREATE_INDEX_ROUTING_TIMESTAMP,
+    ],
+  },
+  {
+    version: 4,
+    up: [
+      CREATE_TABLE_CODE_SYMBOLS,
+      CREATE_TABLE_CODE_REFERENCES,
+      CREATE_INDEX_CODE_SYMBOLS_CHUNK,
+      CREATE_INDEX_CODE_SYMBOLS_PATH,
+      CREATE_INDEX_CODE_SYMBOLS_LANGUAGE,
+      CREATE_INDEX_CODE_SYMBOLS_NORMALIZED,
+      CREATE_INDEX_CODE_REFERENCES_CHUNK,
+      CREATE_INDEX_CODE_REFERENCES_PATH,
+      CREATE_INDEX_CODE_REFERENCES_LANGUAGE,
+      CREATE_INDEX_CODE_REFERENCES_TARGET,
     ],
   },
 ];

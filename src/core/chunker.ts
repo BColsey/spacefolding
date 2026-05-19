@@ -45,15 +45,16 @@ export function maybeSplit(
   if (pieces.length <= 1) return null;
 
   const parentId = randomUUID();
+  const parentText = `[split from ${pieces.length} sub-chunks] ${text.slice(0, 200)}...`;
   const parent: ContextChunk = {
     id: parentId,
     source: overrides.source,
     type: overrides.type ?? classifyChunk(text, overrides.source),
-    text: `[split from ${pieces.length} sub-chunks] ${text.slice(0, 200)}…`,
+    text: parentText,
     timestamp: Date.now(),
     path: overrides.path,
     language: overrides.language,
-    tokensEstimate: pieces.reduce((sum, p) => sum + tokenEstimator.estimate(p), 0),
+    tokensEstimate: tokenEstimator.estimate(parentText),
     childrenIds: [],
     metadata: { split: true, childCount: pieces.length, strategy },
   };

@@ -19,6 +19,7 @@ import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
 import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
+import type { RetrievalStrategy } from '../core/query-planner.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
@@ -276,20 +277,20 @@ export function buildCLI(): Command {
 
   program
     .command('retrieve')
-    .description('Retrieve relevant context using hybrid search (vector + FTS + graph)')
+    .description('Retrieve relevant context using structural, vector, and FTS search')
     .requiredOption('--query <text>', 'Search query')
     .option('--max-tokens <number>', 'Max token budget', '100000')
-    .option('--strategy <type>', 'Search strategy: hybrid, vector, text, graph', 'hybrid')
-    .option('--top-k <number>', 'Max results to return', '50')
-    .option('--max-hops <number>', 'Max graph traversal hops', '2')
+    .option('--strategy <type>', 'Search strategy: structural, hybrid, vector, text, graph')
+    .option('--top-k <number>', 'Max results to return (default: adaptive)')
+    .option('--max-hops <number>', 'Max graph traversal hops', '0')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
 
       const result = await pipeline.retrieve(opts.query, parseInt(opts.maxTokens ?? opts.maxTokens, 10), {
-        strategy: opts.strategy as 'hybrid' | 'vector' | 'text' | 'graph',
-        topK: parseInt(opts.topK, 10),
-        maxHops: parseInt(opts.maxHops, 10),
+        strategy: opts.strategy as RetrievalStrategy | undefined,
+        topK: opts.topK ? parseInt(opts.topK, 10) : undefined,
+        maxHops: opts.maxHops ? parseInt(opts.maxHops, 10) : undefined,
       });
 
       console.log(chalk.bold(`Query: ${opts.query}`));
@@ -307,6 +308,11 @@ export function buildCLI(): Command {
           `~${chunk.tokensEstimate} tokens`,
           retrieval ? `(${retrieval.sources.join('+')})` : ''
         );
+        if (retrieval?.sourceScores) {
+          console.log(chalk.gray(
+            `  scores structural=${retrieval.sourceScores.structural.toFixed(3)} vector=${retrieval.sourceScores.vector.toFixed(3)} fts=${retrieval.sourceScores.fts.toFixed(3)} dependency=${retrieval.sourceScores.dependency.toFixed(3)} final=${retrieval.sourceScores.final.toFixed(3)}`
+          ));
+        }
         const preview = chunk.text.slice(0, 120).replace(/\n/g, ' ');
         console.log(chalk.gray(`  ${preview}${chunk.text.length > 120 ? '…' : ''}`));
       }
@@ -439,6 +445,9 @@ function detectLanguage(filePath: string): string | undefined {
   if (extension === '.ts' || extension === '.tsx') return 'typescript';
   if (extension === '.js' || extension === '.jsx') return 'javascript';
   if (extension === '.py') return 'python';
+  if (extension === '.rs') return 'rust';
+  if (extension === '.go') return 'go';
+  if (extension === '.java') return 'java';
   return undefined;
 }
 

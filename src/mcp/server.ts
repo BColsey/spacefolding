@@ -6,6 +6,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import { getAdaptiveStrategy } from '../core/query-planner.js';
+import type { RetrievalStrategy } from '../core/query-planner.js';
 
 const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
@@ -198,8 +199,8 @@ const TOOL_DEFINITIONS = [
         },
         strategy: {
           type: 'string',
-          enum: ['hybrid', 'vector', 'text', 'graph'],
-          description: 'Retrieval strategy (default: adaptive based on embedding provider. hybrid for local, vector for gpu, text for deterministic)',
+          enum: ['structural', 'hybrid', 'vector', 'text', 'graph'],
+          description: 'Retrieval strategy (default: structural when code symbols are indexed, otherwise adaptive based on embedding provider)',
         },
         topK: {
           type: 'number',
@@ -235,7 +236,7 @@ const TOOL_DEFINITIONS = [
         },
         strategy: {
           type: 'string',
-          enum: ['hybrid', 'vector', 'text', 'graph'],
+          enum: ['structural', 'hybrid', 'vector', 'text', 'graph'],
           description: 'Retrieval strategy per round (default: adaptive based on embedding provider)',
         },
       },
@@ -399,8 +400,8 @@ function createServer(pipeline: PipelineOrchestrator): Server {
         case 'retrieve_context': {
           const query = args!.query as string;
           const maxTokens = args!.maxTokens as number | undefined;
-          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? getAdaptiveStrategy();
-          const topK = (args!.topK as number | undefined) ?? 15;
+          const strategy = args!.strategy as RetrievalStrategy | undefined;
+          const topK = args!.topK as number | undefined;
           const maxHops = args!.maxHops as number | undefined;
 
           const result = await pipeline.retrieve(query, maxTokens, { strategy, topK, maxHops });
@@ -414,6 +415,8 @@ function createServer(pipeline: PipelineOrchestrator): Server {
               tier: result.tiers.get(c.id) ?? 'warm',
               compressedFrom: c.metadata?.compressedFrom ?? undefined,
               retrievalSources: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.sources ?? [],
+              retrievalScores: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.sourceScores ?? undefined,
+              retrievalReasons: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.reasons ?? [],
             })),
             totalTokens: result.totalTokens,
             budget: result.budget,
@@ -432,7 +435,7 @@ function createServer(pipeline: PipelineOrchestrator): Server {
           const query = args!.query as string;
           const maxTokens = (args!.maxTokens as number | undefined) ?? 100_000;
           const rounds = (args!.rounds as number | undefined) ?? 2;
-          const strategy = (args!.strategy as 'hybrid' | 'vector' | 'text' | 'graph' | undefined) ?? getAdaptiveStrategy();
+          const strategy = (args!.strategy as RetrievalStrategy | undefined) ?? getAdaptiveStrategy();
 
           const result = await pipeline.iterativeRetrieve(query, rounds, maxTokens, { strategy });
           return jsonResponse({

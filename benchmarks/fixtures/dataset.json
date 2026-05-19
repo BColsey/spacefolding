@@ -1,0 +1,51 @@
+{
+  "codebase": "spacefolding-fixtures",
+  "description": "Small deterministic multi-language retrieval fixture corpus",
+  "tasks": [
+    {
+      "id": "F01",
+      "task": "Where is authenticateSession defined?",
+      "intent": "code_search",
+      "relevant_files": ["benchmarks/fixtures/typescript/auth-service.ts"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["authenticateSession", "AuthService"],
+      "irrelevant_files": ["benchmarks/fixtures/javascript/event-bus.js"]
+    },
+    {
+      "id": "F02",
+      "task": "Find the Python CacheService implementation",
+      "intent": "code_search",
+      "relevant_files": ["benchmarks/fixtures/python/cache.py"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["CacheService", "fetch_cached_user"],
+      "irrelevant_files": ["benchmarks/fixtures/go/auth/service.go"]
+    },
+    {
+      "id": "F03",
+      "task": "How is verify_login implemented in Rust?",
+      "intent": "explain",
+      "relevant_files": ["benchmarks/fixtures/rust/src/lib.rs", "benchmarks/fixtures/rust/src/tokens.rs"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["verify_login", "Token"],
+      "irrelevant_files": ["benchmarks/fixtures/java/src/main/java/com/example/AuthController.java"]
+    },
+    {
+      "id": "F04",
+      "task": "Locate the Java authenticateRequest method",
+      "intent": "code_search",
+      "relevant_files": ["benchmarks/fixtures/java/src/main/java/com/example/AuthController.java"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["authenticateRequest", "AuthController"],
+      "irrelevant_files": ["benchmarks/fixtures/python/cache.py"]
+    },
+    {
+      "id": "F05",
+      "task": "Where is ValidateSession in the Go auth package?",
+      "intent": "code_search",
+      "relevant_files": ["benchmarks/fixtures/go/auth/service.go"],
+      "relevant_types": ["code"],
+      "relevant_keywords": ["ValidateSession", "SessionService"],
+      "irrelevant_files": ["benchmarks/fixtures/typescript/token-store.ts"]
+    }
+  ]
+}

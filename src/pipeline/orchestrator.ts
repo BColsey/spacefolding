@@ -24,10 +24,12 @@ import type { RetrievalOptions, RetrievalResult } from '../core/retriever.js';
 import { fillBudget, compressOmitted } from '../core/budget.js';
 import { planQuery } from '../core/query-planner.js';
 import { DeterministicRerankerProvider } from '../providers/deterministic-reranker.js';
+import { StructuralIndexer, isSupportedCodeLanguage } from '../providers/structural-indexer.js';
 
 export class PipelineOrchestrator {
   private retriever: HybridRetriever;
   private embeddingModel: string;
+  private structuralIndexer: StructuralIndexer;
 
   constructor(
     private storage: SQLiteRepository,
@@ -39,6 +41,7 @@ export class PipelineOrchestrator {
     private embeddingProvider?: EmbeddingProvider
   ) {
     this.embeddingModel = process.env.EMBEDDING_MODEL ?? 'deterministic';
+    this.structuralIndexer = new StructuralIndexer();
     this.retriever = new HybridRetriever(storage, embeddingProvider ?? {
       embed: async () => [],
       embedBatch: async () => [],
@@ -151,7 +154,7 @@ export class PipelineOrchestrator {
     // Use hybrid retrieval instead of brute-force scoring all chunks
     const result = await this.retrieve(task.text, undefined, {
       topK: 10,
-      strategy: 'vector',
+      strategy: undefined,
       maxHops: 0,
     });
 
@@ -227,9 +230,10 @@ export class PipelineOrchestrator {
     path?: string,
     language?: string
   ): Promise<ContextChunk> {
-    // Deduplication: check if we've already ingested this exact content
+    // Deduplication: file content is scoped by path so identical files at
+    // different paths remain distinct chunks.
     const contentHash = createHash('sha256').update(text).digest('hex').slice(0, 16);
-    const existing = this.storage.findChunkByMetadata('contentHash', contentHash);
+    const existing = this.storage.findChunkByContentHash(contentHash, path);
     if (existing) return existing;
 
     const result: IngestResult =
@@ -406,6 +410,36 @@ export class PipelineOrchestrator {
         // Embedding failure is non-fatal — chunk is still stored
       }
     }
+    await this.storeChunkStructure(chunk);
+  }
+
+  private async storeChunkStructure(chunk: ContextChunk): Promise<void> {
+    if (!chunk.path || !isSupportedCodeLanguage(chunk.language)) {
+      this.storage.deleteCodeStructure(chunk.id);
+      return;
+    }
+    try {
+      const extraction = await this.structuralIndexer.extract(chunk.text, chunk.language, chunk.path);
+      this.storage.storeCodeStructure(
+        chunk.id,
+        extraction.symbols.map((symbol) => ({
+          ...symbol,
+          chunkId: chunk.id,
+          path: chunk.path,
+          language: chunk.language,
+          metadata: { ...symbol.metadata, backend: extraction.backend },
+        })),
+        extraction.references.map((reference) => ({
+          ...reference,
+          chunkId: chunk.id,
+          path: chunk.path,
+          language: chunk.language,
+          metadata: { ...reference.metadata, backend: extraction.backend },
+        }))
+      );
+    } catch {
+      this.storage.deleteCodeStructure(chunk.id);
+    }
   }
 
   /** Retrieve context for a query using hybrid search + budget control */
@@ -424,13 +458,15 @@ export class PipelineOrchestrator {
     plan: ReturnType<typeof planQuery>;
     retrieval: RetrievalResult[];
   }> {
-    const plan = planQuery(query);
+    const planned = planQuery(query);
+    const effectiveStrategy = options?.strategy ?? (this.storage.hasCodeStructure() ? 'structural' : planned.strategy);
+    const plan = { ...planned, strategy: effectiveStrategy };
     const budget = maxTokens ?? Math.floor(200_000 * plan.tokenBudgetRatio);
     const retrieval = await this.retriever.retrieve(query, {
       ...options,
-      topK: options?.topK ?? 15,
+      topK: options?.topK ?? plan.recommendedTopK,
       maxHops: options?.maxHops ?? plan.maxHops,
-      strategy: options?.strategy ?? plan.strategy,
+      strategy: effectiveStrategy,
     });
 
     // Load chunks for retrieved IDs
@@ -440,7 +476,10 @@ export class PipelineOrchestrator {
       if (chunk) chunkMap.set(result.chunkId, chunk);
     }
 
-    // Get current hot chunk IDs from recent routing history
+    // Get current hot chunk IDs from recent routing history. These are used
+    // only as tier metadata for retrieval output; ranking order stays owned by
+    // the retriever so dependency-heavy files do not jump ahead of stronger
+    // lexical or structural matches.
     const hotIds = new Set<string>();
     for (const result of retrieval.slice(0, retrieval.length)) {
       // Check if this chunk was recently routed to hot tier
@@ -452,14 +491,27 @@ export class PipelineOrchestrator {
       }
     }
 
-    const budgetResult = fillBudget(retrieval, chunkMap, budget, {
-      hotChunkIds: hotIds,
+    const requestedTopK = options?.topK ?? plan.recommendedTopK;
+    const contextLimit = options?.returnLimit ?? (
+      effectiveStrategy === 'structural'
+        ? Math.min(requestedTopK, plan.recommendedTopK)
+        : requestedTopK
+    );
+    const rankedForBudget = retrieval
+      .slice(0, contextLimit)
+      .filter((result) => !chunkMap.get(result.chunkId)?.metadata?.split);
+
+    const budgetResult = fillBudget(rankedForBudget, chunkMap, budget, {
       collapseSiblings: true,
     });
 
+    for (const chunk of budgetResult.selected) {
+      if (hotIds.has(chunk.id)) budgetResult.tiers.set(chunk.id, 'hot');
+    }
+
     // Compress omitted chunks that could fit as summaries
     if (budgetResult.omitted.length > 0) {
-      await compressOmitted(budgetResult, retrieval, chunkMap, {
+      await compressOmitted(budgetResult, rankedForBudget, chunkMap, {
         estimateCompressed: (tokens) => Math.max(50, Math.floor(tokens * 0.1)),
         compress: async (chunkId) => {
           const chunk = chunkMap.get(chunkId);

@@ -10,7 +10,7 @@
  */
 
 import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { join, dirname, extname } from 'node:path';
+import { join, dirname, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── Types ────────────────────────────────────────────────────
@@ -60,6 +60,13 @@ interface EvalResult {
     hits: string[];
     misses: string[];
   };
+}
+
+interface CliOptions {
+  dataset: string;
+  corpus: string;
+  strategy: string;
+  json: boolean;
 }
 
 // ── Scoring Functions ────────────────────────────────────────
@@ -113,6 +120,39 @@ function computeMetrics(retrieved: string[], relevant: Set<string>, totalRelevan
   };
 }
 
+function parseArgs(argv: string[], benchDir: string): CliOptions {
+  const options: CliOptions = {
+    dataset: join(benchDir, 'dataset.json'),
+    corpus: join(benchDir, '..', 'src'),
+    strategy: 'all',
+    json: false,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--dataset' && argv[i + 1]) options.dataset = argv[++i];
+    else if (arg === '--corpus' && argv[i + 1]) options.corpus = argv[++i];
+    else if (arg === '--strategy' && argv[i + 1]) options.strategy = argv[++i];
+    else if (arg === '--json') options.json = true;
+    else if (!arg.startsWith('--')) options.strategy = arg;
+  }
+
+  return options;
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function seededScore(seed: string): number {
+  return hashString(seed) / 0xffffffff;
+}
+
 // ── Baseline Strategies ──────────────────────────────────────
 
 /** Simple keyword search baseline — grep for task terms across all file paths and content */
@@ -147,10 +187,12 @@ async function keywordBaseline(
 
 /** Random baseline — pick random chunks */
 async function randomBaseline(
-  _task: BenchmarkTask,
+  task: BenchmarkTask,
   allChunks: { id: string; text: string; path?: string }[]
 ): Promise<string[]> {
-  const shuffled = [...allChunks].sort(() => Math.random() - 0.5);
+  const shuffled = [...allChunks].sort((a, b) =>
+    seededScore(`${task.id}:${a.path ?? a.id}`) - seededScore(`${task.id}:${b.path ?? b.id}`)
+  );
   return shuffled.slice(0, 20).map((c) => c.path ?? c.id);
 }
 
@@ -179,29 +221,79 @@ async function pathMatchBaseline(
 
 async function spacefoldingRetrieval(
   task: BenchmarkTask,
-  pipeline: any
+  pipeline: any,
+  strategy: 'structural' | 'hybrid' | 'vector' | 'text' = 'structural'
 ): Promise<string[]> {
   const result = await pipeline.retrieve(task.task, 200_000, {
-    strategy: 'hybrid',
+    strategy,
     topK: 50,
-    maxHops: 2,
+    maxHops: 0,
   });
 
   return result.chunks.map((c: any) => c.path).filter(Boolean);
 }
 
+async function symbolOnlyRetrieval(
+  task: BenchmarkTask,
+  storage: any,
+  parseStructuralQuery: (query: string) => {
+    normalizedIdentifiers: string[];
+    identifierParts: string[];
+  }
+): Promise<string[]> {
+  const query = parseStructuralQuery(task.task);
+  const identifiers = new Set(query.normalizedIdentifiers);
+  const parts = new Set(query.identifierParts);
+  const rows = storage.getAllCodeSymbols() as Array<{
+    chunkId?: string;
+    path?: string;
+    name: string;
+    normalizedName: string;
+  }>;
+  const scored = new Map<string, { path: string; score: number }>();
+  for (const symbol of rows) {
+    if (!symbol.path) continue;
+    let score = 0;
+    if (identifiers.has(symbol.normalizedName)) score += 3;
+    for (const part of splitBenchmarkIdentifier(symbol.name)) {
+      if (parts.has(part)) score += 0.5;
+    }
+    if (score <= 0) continue;
+    const existing = scored.get(symbol.path) ?? { path: symbol.path, score: 0 };
+    existing.score += score;
+    scored.set(symbol.path, existing);
+  }
+  return [...scored.values()]
+    .sort((a, b) => b.score - a.score)
+    .map((entry) => entry.path);
+}
+
+function splitBenchmarkIdentifier(value: string): string[] {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_$./:-]+/g, ' ')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((part) => part.length > 1);
+}
+
 // ── Main Evaluation Runner ──────────────────────────────────
 
-async function runEvaluation(strategy: string = 'all') {
+async function runEvaluation(options: CliOptions) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
   const dataset: BenchmarkDataset = JSON.parse(
-    readFileSync(join(benchDir, 'dataset.json'), 'utf-8')
+    readFileSync(options.dataset, 'utf-8')
   );
+  const log = (...args: unknown[]) => {
+    if (!options.json) console.log(...args);
+  };
 
-  console.log(`\n${'═'.repeat(70)}`);
-  console.log(`  SPACEFOLDING RETRIEVAL BENCHMARK`);
-  console.log(`  Tasks: ${dataset.tasks.length} | Strategy: ${strategy}`);
-  console.log(`${'═'.repeat(70)}\n`);
+  log(`\n${'═'.repeat(70)}`);
+  log(`  SPACEFOLDING RETRIEVAL BENCHMARK`);
+  log(`  Tasks: ${dataset.tasks.length} | Strategy: ${options.strategy}`);
+  log(`  Dataset: ${relative(benchDir, options.dataset) || options.dataset}`);
+  log(`  Corpus: ${relative(benchDir, options.corpus) || options.corpus}`);
+  log(`${'═'.repeat(70)}\n`);
 
   // Load the Spacefolding pipeline with real codebase data
   const { createRepository } = await import('../dist/storage/repository.js');
@@ -213,6 +305,7 @@ async function runEvaluation(strategy: string = 'all') {
   const { ContextRouter, DEFAULT_ROUTING_CONFIG } = await import('../dist/core/router.js');
   const { ContextIngester } = await import('../dist/core/ingester.js');
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
+  const { parseStructuralQuery } = await import('../dist/core/query-planner.js');
 
   // Create a test pipeline with the Spacefolding codebase ingested
   const dbPath = join(benchDir, 'benchmark-eval.db');
@@ -231,28 +324,34 @@ async function runEvaluation(strategy: string = 'all') {
   );
 
   // Ingest the Spacefolding source code
-  const srcDir = join(benchDir, '..', 'src');
-  const files = walkDir(srcDir);
-  console.log(`Ingesting ${files.length} source files...`);
+  const projectRoot = join(benchDir, '..');
+  const files = walkDir(options.corpus);
+  log(`Ingesting ${files.length} source files...`);
 
   for (const filePath of files) {
     const content = readFileSync(filePath, 'utf-8');
-    const relativePath = filePath.replace(/.*\/spacefolding\//, '');
+    const relativePath = relative(projectRoot, filePath);
     await pipeline.ingest('file', content, undefined, relativePath, undefined);
   }
 
   const allChunks = storage.getAllChunks();
-  console.log(`Ingested ${allChunks.length} chunks\n`);
+  log(`Ingested ${allChunks.length} chunks\n`);
 
   // Run evaluations for each strategy
-  const strategies = strategy === 'all'
-    ? ['spacefolding', 'keyword', 'path-match', 'random']
-    : [strategy];
+  const strategies = options.strategy === 'all'
+    ? ['keyword', 'path-match', 'fts', 'vector', 'symbol-only', 'structural']
+    : [options.strategy];
+
+  const summaries: Array<{
+    strategy: string;
+    averages: Record<string, number>;
+    results: EvalResult[];
+  }> = [];
 
   for (const strat of strategies) {
-    console.log(`\n${'─'.repeat(70)}`);
-    console.log(`  Strategy: ${strat.toUpperCase()}`);
-    console.log(`${'─'.repeat(70)}\n`);
+    log(`\n${'─'.repeat(70)}`);
+    log(`  Strategy: ${strat.toUpperCase()}`);
+    log(`${'─'.repeat(70)}\n`);
 
     const results: EvalResult[] = [];
 
@@ -262,7 +361,21 @@ async function runEvaluation(strategy: string = 'all') {
 
       switch (strat) {
         case 'spacefolding':
-          retrievedPaths = await spacefoldingRetrieval(task, pipeline);
+        case 'structural':
+          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'structural');
+          break;
+        case 'hybrid':
+          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'hybrid');
+          break;
+        case 'fts':
+        case 'text':
+          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'text');
+          break;
+        case 'vector':
+          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'vector');
+          break;
+        case 'symbol-only':
+          retrievedPaths = await symbolOnlyRetrieval(task, storage, parseStructuralQuery);
           break;
         case 'keyword':
           retrievedPaths = await keywordBaseline(task, allChunks);
@@ -299,7 +412,7 @@ async function runEvaluation(strategy: string = 'all') {
 
       // Print per-task result
       const hitIcon = hits.length > 0 ? '✓' : '✗';
-      console.log(
+      log(
         `  ${hitIcon} ${task.id} [${task.intent.padEnd(12)}] ` +
         `R@10=${metrics.recallAt10.toFixed(2)} P@10=${metrics.precisionAt10.toFixed(2)} ` +
         `NDCG=${metrics.ndcgAt10.toFixed(2)} MRR=${metrics.mrr.toFixed(2)} ` +
@@ -317,38 +430,65 @@ async function runEvaluation(strategy: string = 'all') {
     }
 
     // Print summary
-    console.log(`\n  ${'─'.repeat(50)}`);
-    console.log(`  AVERAGE (${results.length} tasks)`);
-    console.log(`  ${'─'.repeat(50)}`);
-    console.log(`  Recall@5:       ${avgMetrics.recallAt5.toFixed(3)}`);
-    console.log(`  Recall@10:      ${avgMetrics.recallAt10.toFixed(3)}`);
-    console.log(`  Recall@20:      ${avgMetrics.recallAt20.toFixed(3)}`);
-    console.log(`  Precision@5:    ${avgMetrics.precisionAt5.toFixed(3)}`);
-    console.log(`  Precision@10:   ${avgMetrics.precisionAt10.toFixed(3)}`);
-    console.log(`  Precision@20:   ${avgMetrics.precisionAt20.toFixed(3)}`);
-    console.log(`  NDCG@10:        ${avgMetrics.ndcgAt10.toFixed(3)}`);
-    console.log(`  NDCG@20:        ${avgMetrics.ndcgAt20.toFixed(3)}`);
-    console.log(`  MRR:            ${avgMetrics.mrr.toFixed(3)}`);
-    console.log(`  Avg results:    ${avgMetrics.avgResults.toFixed(1)}`);
+    log(`\n  ${'─'.repeat(50)}`);
+    log(`  AVERAGE (${results.length} tasks)`);
+    log(`  ${'─'.repeat(50)}`);
+    log(`  Recall@5:       ${avgMetrics.recallAt5.toFixed(3)}`);
+    log(`  Recall@10:      ${avgMetrics.recallAt10.toFixed(3)}`);
+    log(`  Recall@20:      ${avgMetrics.recallAt20.toFixed(3)}`);
+    log(`  Precision@5:    ${avgMetrics.precisionAt5.toFixed(3)}`);
+    log(`  Precision@10:   ${avgMetrics.precisionAt10.toFixed(3)}`);
+    log(`  Precision@20:   ${avgMetrics.precisionAt20.toFixed(3)}`);
+    log(`  NDCG@10:        ${avgMetrics.ndcgAt10.toFixed(3)}`);
+    log(`  NDCG@20:        ${avgMetrics.ndcgAt20.toFixed(3)}`);
+    log(`  MRR:            ${avgMetrics.mrr.toFixed(3)}`);
+    log(`  Avg results:    ${avgMetrics.avgResults.toFixed(1)}`);
 
     // Breakdown by intent
     const intents = [...new Set(results.map((r) => r.intent))];
-    console.log(`\n  By intent:`);
+    log(`\n  By intent:`);
     for (const intent of intents) {
       const intentResults = results.filter((r) => r.intent === intent);
       const avgRecall = intentResults.reduce((s, r) => s + r.metrics.recallAt10, 0) / intentResults.length;
       const avgNdcg = intentResults.reduce((s, r) => s + r.metrics.ndcgAt10, 0) / intentResults.length;
-      console.log(`    ${intent.padEnd(12)} R@10=${avgRecall.toFixed(3)} NDCG=${avgNdcg.toFixed(3)} (${intentResults.length} tasks)`);
+      log(`    ${intent.padEnd(12)} R@10=${avgRecall.toFixed(3)} NDCG=${avgNdcg.toFixed(3)} (${intentResults.length} tasks)`);
     }
+
+    summaries.push({ strategy: strat, averages: avgMetrics, results });
   }
 
   // Cleanup
   pipeline.close();
   try { unlinkSync(dbPath); } catch {}
 
-  console.log(`\n${'═'.repeat(70)}`);
-  console.log(`  BENCHMARK COMPLETE`);
-  console.log(`${'═'.repeat(70)}\n`);
+  const byStrategy = Object.fromEntries(summaries.map((summary) => [summary.strategy, summary]));
+  const keyword = byStrategy.keyword;
+  const structural = byStrategy.structural;
+  const beatsKeyword = Boolean(keyword && structural
+    && structural.averages.recallAt10 > keyword.averages.recallAt10
+    && structural.averages.ndcgAt10 > keyword.averages.ndcgAt10
+    && structural.averages.mrr > keyword.averages.mrr);
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      dataset: options.dataset,
+      corpus: options.corpus,
+      strategies: summaries,
+      successGate: {
+        structuralBeatsKeyword: beatsKeyword,
+        recallAt10Delta: structural && keyword ? structural.averages.recallAt10 - keyword.averages.recallAt10 : null,
+        ndcgAt10Delta: structural && keyword ? structural.averages.ndcgAt10 - keyword.averages.ndcgAt10 : null,
+        mrrDelta: structural && keyword ? structural.averages.mrr - keyword.averages.mrr : null,
+      },
+    }, null, 2));
+  } else {
+    log(`\n${'═'.repeat(70)}`);
+    log(`  BENCHMARK COMPLETE`);
+    if (keyword && structural) {
+      log(`  Structural beats keyword on strict metrics: ${beatsKeyword ? 'yes' : 'no'}`);
+    }
+    log(`${'═'.repeat(70)}\n`);
+  }
 }
 
 function walkDir(dir: string): string[] {
@@ -362,7 +502,7 @@ function walkDir(dir: string): string[] {
         results.push(...walkDir(fullPath));
       }
     } else {
-      if (extname(entry) === '.ts') {
+      if (['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java'].includes(extname(entry))) {
         results.push(fullPath);
       }
     }
@@ -371,8 +511,9 @@ function walkDir(dir: string): string[] {
 }
 
 // Run
-const strategy = process.argv[2] ?? 'all';
-runEvaluation(strategy).catch((err) => {
+const benchDir = dirname(fileURLToPath(import.meta.url));
+const options = parseArgs(process.argv.slice(2), benchDir);
+runEvaluation(options).catch((err) => {
   console.error('Benchmark failed:', err);
   process.exit(1);
 });
