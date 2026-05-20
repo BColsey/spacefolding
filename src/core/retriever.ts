@@ -284,7 +284,7 @@ export class HybridRetriever {
 
   private retrieveDeterministicStructural(query: string, topK: number): RetrievalResult[] {
     const structuralQuery = parseStructuralQuery(query);
-    const codeSearchCue = /\b(find|where|locate|show|implementation|defined|function|method|class|interface|type)\b/i.test(query);
+    const lowercaseExactCue = /\b(find|where|locate|show|contains|defined|grep)\b/i.test(query);
     const strongIdentifiers = new Set(
       structuralQuery.identifiers
         .filter((identifier) =>
@@ -292,7 +292,7 @@ export class HybridRetriever {
           identifier.includes('_') ||
           /^[A-Z]{2,}$/.test(identifier) ||
           /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(identifier) ||
-          (codeSearchCue && /^[a-z][a-z0-9_$]{4,}$/.test(identifier))
+          (lowercaseExactCue && /^[a-z][a-z0-9_$]{4,}$/.test(identifier))
         )
         .map((identifier) => identifier.toLowerCase().replace(/[^a-z0-9_$]/g, ''))
     );
@@ -321,8 +321,11 @@ export class HybridRetriever {
       const exactPath = structuralQuery.pathFragments.length > 0 && result.reasons.some((reason) =>
         reason.startsWith('path exact match')
       );
-      const exact = exactSymbol || exactPath;
-      const boost = exact ? 0.01 : 0;
+      const boost = exactSymbol
+        ? 12 + result.structuralScore
+        : exactPath
+          ? 10 + result.structuralScore
+          : 0;
       if (boost <= 0) continue;
       const existing = candidates.get(result.chunkId) ?? {
         fusedScore: 0,
@@ -576,6 +579,11 @@ const TERM_EXPANSIONS: Record<string, Array<[string, number]>> = {
   tokens: [['token', 1.0], ['estimate', 0.8], ['tokenestimator', 1.0]],
   estimator: [['estimate', 1.0], ['tokenestimator', 1.2]],
   underestimating: [['estimate', 1.0], ['tokenestimator', 1.1], ['tokens', 0.6]],
+  budget: [['fillbudget', 1.3], ['budgetresult', 0.9], ['retrievalresult', 0.8], ['retriever', 0.7]],
+  controller: [['budget', 0.8], ['fillbudget', 0.7], ['router', 0.4]],
+  overflow: [['budget', 0.8], ['fillbudget', 0.7], ['retrievalresult', 0.5]],
+  sibling: [['collapsesiblings', 1.0], ['parentid', 0.6], ['budget', 0.5]],
+  collapse: [['collapsesiblings', 1.0], ['parentid', 0.6], ['budget', 0.5]],
   python: [['def', 0.6], ['class', 0.4], ['chunker', 0.6]],
   export: [['exportdata', 0.8], ['dependencylink', 0.5]],
   import: [['exportdata', 0.6], ['dependencylink', 0.5]],
@@ -590,6 +598,7 @@ const PHRASE_EXPANSIONS: Array<[RegExp, Array<[string, number]>]> = [
   [/\bweb ui\b/i, [['web', 1.2], ['server', 1.0], ['html', 0.9]]],
   [/\bcli commands?\b/i, [['cli', 1.2], ['commander', 1.1], ['program', 1.0]]],
   [/\btoken estimator\b/i, [['tokenestimator', 1.3], ['estimate', 1.0]]],
+  [/\bbudget controller\b/i, [['fillbudget', 1.4], ['budgetresult', 1.0], ['retrievalresult', 0.9], ['retriever', 0.8]]],
 ];
 
 function buildSparseStructuralTerms(query: string, structuralQuery: StructuralQuery): SparseStructuralTerm[] {

@@ -16,7 +16,7 @@ export interface QueryPlan {
 
 const INTENT_KEYWORDS: Record<QueryIntent, string[]> = {
   debug: ['error', 'bug', 'fail', 'crash', 'broken', 'fix', 'issue', 'exception', 'trace', 'wrong', 'unexpected'],
-  implement: ['add', 'create', 'build', 'implement', 'write', 'make', 'new', 'feature', 'support'],
+  implement: ['add', 'create', 'build', 'implement', 'write', 'make', 'new', 'feature', 'support', 'switch', 'update', 'change', 'modify', 'enhance'],
   explain: ['how', 'why', 'what', 'explain', 'understand', 'describe', 'meaning', 'purpose', 'does'],
   code_search: ['where', 'find', 'locate', 'search', 'show', 'grep', 'file', 'function', 'class', 'module'],
   general: [],
