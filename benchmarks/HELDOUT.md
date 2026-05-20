@@ -23,6 +23,20 @@ npx tsx benchmarks/evaluate.ts \
   --json
 ```
 
+Profile ingest/index cost and retrieval latency on the same held-out corpus:
+
+```sh
+npx tsx benchmarks/profile-retrieval.ts \
+  --dataset /tmp/spacefolding-heldout-repo.json \
+  --corpus /path/to/other/repo \
+  --strategy structural \
+  --json
+```
+
+The profiler reports file/chunk/symbol/reference counts, total estimated corpus
+tokens, SQLite footprint, ingest time, query latency percentiles, returned token
+percentiles, returned chunk counts, memory usage, and the slowest queries.
+
 Notes:
 
 - Generated task paths are relative to the Spacefolding checkout so they match
