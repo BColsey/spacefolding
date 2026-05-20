@@ -67,6 +67,7 @@ interface CliOptions {
   corpus: string;
   strategy: string;
   json: boolean;
+  includeTests: boolean;
 }
 
 // ── Scoring Functions ────────────────────────────────────────
@@ -126,6 +127,7 @@ function parseArgs(argv: string[], benchDir: string): CliOptions {
     corpus: join(benchDir, '..', 'src'),
     strategy: 'all',
     json: false,
+    includeTests: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -134,6 +136,7 @@ function parseArgs(argv: string[], benchDir: string): CliOptions {
     else if (arg === '--corpus' && argv[i + 1]) options.corpus = argv[++i];
     else if (arg === '--strategy' && argv[i + 1]) options.strategy = argv[++i];
     else if (arg === '--json') options.json = true;
+    else if (arg === '--include-tests') options.includeTests = true;
     else if (!arg.startsWith('--')) options.strategy = arg;
   }
 
@@ -227,6 +230,7 @@ async function spacefoldingRetrieval(
   const result = await pipeline.retrieve(task.task, 200_000, {
     strategy,
     topK: 50,
+    returnLimit: 50,
     maxHops: 0,
   });
 
@@ -325,7 +329,7 @@ async function runEvaluation(options: CliOptions) {
 
   // Ingest the Spacefolding source code
   const projectRoot = join(benchDir, '..');
-  const files = walkDir(options.corpus);
+  const files = walkDir(options.corpus, options.includeTests);
   log(`Ingesting ${files.length} source files...`);
 
   for (const filePath of files) {
@@ -491,23 +495,50 @@ async function runEvaluation(options: CliOptions) {
   }
 }
 
-function walkDir(dir: string): string[] {
+const SKIP_DIRS = new Set([
+  '.git',
+  '.hg',
+  '.next',
+  '.svn',
+  '.turbo',
+  '.venv',
+  '__pycache__',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'out',
+  'target',
+  'vendor',
+  'venv',
+]);
+
+function walkDir(dir: string, includeTests: boolean): string[] {
   const results: string[] = [];
   const entries = readdirSync(dir);
   for (const entry of entries) {
     const fullPath = join(dir, entry);
     const stat = statSync(fullPath);
     if (stat.isDirectory()) {
-      if (entry !== 'node_modules' && entry !== '.git' && entry !== 'dist') {
-        results.push(...walkDir(fullPath));
-      }
+      if (!SKIP_DIRS.has(entry)) results.push(...walkDir(fullPath, includeTests));
     } else {
-      if (['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java'].includes(extname(entry))) {
+      if (
+        ['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java'].includes(extname(entry))
+        && (includeTests || !isTestPath(fullPath))
+      ) {
         results.push(fullPath);
       }
     }
   }
   return results;
+}
+
+function isTestPath(filePath: string): boolean {
+  const normalized = filePath.split(/[\\/]+/).join('/');
+  return /(^|\/)(__tests__|tests?|spec|fixtures|mocks?)(\/|$)/i.test(normalized)
+    || /\.(test|spec)\.[cm]?[jt]sx?$/i.test(normalized)
+    || /test_.*\.py$/i.test(normalized)
+    || /_test\.go$/i.test(normalized);
 }
 
 // Run

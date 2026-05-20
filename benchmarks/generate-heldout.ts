@@ -1,0 +1,399 @@
+/**
+ * Generate held-out retrieval datasets from an arbitrary local corpus.
+ *
+ * The generated tasks use source symbols as ground truth and write only task
+ * metadata, not external source contents. Use an output path under /tmp when
+ * benchmarking private repos.
+ *
+ * Usage:
+ *   npx tsx benchmarks/generate-heldout.ts --corpus /path/to/repo --output /tmp/repo-dataset.json --limit 60
+ */
+
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, extname, join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+type Intent = 'code_search' | 'debug' | 'explain' | 'implement';
+
+interface HeldoutTask {
+  id: string;
+  task: string;
+  intent: Intent;
+  relevant_files: string[];
+  relevant_types: string[];
+  relevant_keywords: string[];
+  irrelevant_files: string[];
+  source: 'heldout-generated';
+  symbol: {
+    name: string;
+    kind: string;
+    language: string;
+  };
+}
+
+interface SymbolCandidate {
+  name: string;
+  kind: string;
+  language: string;
+  filePath: string;
+}
+
+interface CliOptions {
+  corpus: string;
+  output: string;
+  limit: number;
+  maxPerFile: number;
+  seed: string;
+  includeTests: boolean;
+}
+
+const benchDir = dirname(fileURLToPath(import.meta.url));
+const projectRoot = join(benchDir, '..');
+
+const EXT_TO_LANGUAGE: Record<string, string> = {
+  '.ts': 'typescript',
+  '.tsx': 'typescript',
+  '.js': 'javascript',
+  '.jsx': 'javascript',
+  '.py': 'python',
+  '.rs': 'rust',
+  '.go': 'go',
+  '.java': 'java',
+};
+
+const SKIP_DIRS = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  '.next',
+  '.turbo',
+  '.venv',
+  '__pycache__',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'out',
+  'target',
+  'vendor',
+  'venv',
+]);
+
+const QUERY_TEMPLATES: Record<Intent, string[]> = {
+  code_search: [
+    'where is {symbol} defined',
+    'find the {symbol} {kind}',
+    'which file contains {symbol}',
+  ],
+  debug: [
+    'debug the {symbol} {kind}',
+    'fix an issue in {symbol}',
+    '{symbol} is returning wrong values',
+  ],
+  explain: [
+    'explain the {symbol} implementation',
+    'how does {symbol} work',
+    'what does {symbol} do',
+  ],
+  implement: [
+    'add error handling around {symbol}',
+    'extend {symbol} to support a new case',
+    'add tests for {symbol}',
+  ],
+};
+
+const GENERIC_SYMBOLS = new Set([
+  '__init__',
+  'app',
+  'config',
+  'data',
+  'get',
+  'handler',
+  'index',
+  'init',
+  'label',
+  'main',
+  'put',
+  'query',
+  'request',
+  'response',
+  'result',
+  'run',
+  'set',
+  'setup',
+  'statistics',
+  'status',
+  'test',
+  'update',
+  'value',
+]);
+
+function parseArgs(argv: string[]): CliOptions {
+  const options: CliOptions = {
+    corpus: join(projectRoot, 'src'),
+    output: join(benchDir, 'heldout-dataset.json'),
+    limit: 80,
+    maxPerFile: 3,
+    seed: 'heldout',
+    includeTests: false,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--corpus' && argv[i + 1]) options.corpus = argv[++i];
+    else if (arg === '--output' && argv[i + 1]) options.output = argv[++i];
+    else if (arg === '--limit' && argv[i + 1]) options.limit = parsePositiveInt(argv[++i], 'limit');
+    else if (arg === '--max-per-file' && argv[i + 1]) options.maxPerFile = parsePositiveInt(argv[++i], 'max-per-file');
+    else if (arg === '--seed' && argv[i + 1]) options.seed = argv[++i];
+    else if (arg === '--include-tests') options.includeTests = true;
+  }
+
+  return options;
+}
+
+function parsePositiveInt(value: string, name: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`--${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function walkDir(dir: string, includeTests: boolean): string[] {
+  const entries = readdirSync(dir);
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = join(dir, entry);
+    const stat = statSync(fullPath);
+    if (stat.isDirectory()) {
+      if (SKIP_DIRS.has(entry)) continue;
+      files.push(...walkDir(fullPath, includeTests));
+      continue;
+    }
+
+    const ext = extname(entry).toLowerCase();
+    if (!EXT_TO_LANGUAGE[ext]) continue;
+    if (!includeTests && isTestPath(fullPath)) continue;
+    files.push(fullPath);
+  }
+  return files.sort();
+}
+
+function isTestPath(filePath: string): boolean {
+  const normalized = filePath.split(sep).join('/');
+  return /(^|\/)(__tests__|tests?|spec|fixtures|mocks?)(\/|$)/i.test(normalized)
+    || /\.(test|spec)\.[cm]?[jt]sx?$/i.test(normalized)
+    || /test_.*\.py$/i.test(normalized)
+    || /_test\.go$/i.test(normalized);
+}
+
+function extractSymbols(content: string, filePath: string): SymbolCandidate[] {
+  const ext = extname(filePath).toLowerCase();
+  const language = EXT_TO_LANGUAGE[ext];
+  if (!language) return [];
+
+  switch (language) {
+    case 'typescript':
+    case 'javascript':
+      return extractTsJsSymbols(content, filePath, language);
+    case 'python':
+      return extractPythonSymbols(content, filePath, language);
+    case 'rust':
+      return extractRustSymbols(content, filePath, language);
+    case 'go':
+      return extractGoSymbols(content, filePath, language);
+    case 'java':
+      return extractJavaSymbols(content, filePath, language);
+    default:
+      return [];
+  }
+}
+
+function extractTsJsSymbols(content: string, filePath: string, language: string): SymbolCandidate[] {
+  return collectMatches(content, filePath, language, [
+    [/\bexport\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, 'function'],
+    [/\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g, 'function'],
+    [/\bexport\s+(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g, 'class'],
+    [/\b(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g, 'class'],
+    [/\bexport\s+interface\s+([A-Za-z_$][\w$]*)/g, 'interface'],
+    [/\binterface\s+([A-Za-z_$][\w$]*)/g, 'interface'],
+    [/\bexport\s+type\s+([A-Za-z_$][\w$]*)/g, 'type'],
+    [/\btype\s+([A-Za-z_$][\w$]*)\s*=/g, 'type'],
+    [/\bexport\s+const\s+([A-Za-z_$][\w$]*)/g, 'constant'],
+    [/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\(/g, 'function'],
+  ]);
+}
+
+function extractPythonSymbols(content: string, filePath: string, language: string): SymbolCandidate[] {
+  return collectMatches(content, filePath, language, [
+    [/^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/gm, 'function'],
+    [/^\s*class\s+([A-Za-z_]\w*)\s*[:(]/gm, 'class'],
+  ]);
+}
+
+function extractRustSymbols(content: string, filePath: string, language: string): SymbolCandidate[] {
+  return collectMatches(content, filePath, language, [
+    [/\b(?:pub\s+)?fn\s+([A-Za-z_]\w*)\s*</g, 'function'],
+    [/\b(?:pub\s+)?fn\s+([A-Za-z_]\w*)\s*\(/g, 'function'],
+    [/\b(?:pub\s+)?(?:struct|enum|trait)\s+([A-Za-z_]\w*)/g, 'type'],
+  ]);
+}
+
+function extractGoSymbols(content: string, filePath: string, language: string): SymbolCandidate[] {
+  return collectMatches(content, filePath, language, [
+    [/\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\(/g, 'function'],
+    [/\btype\s+([A-Za-z_]\w*)\s+(?:struct|interface)/g, 'type'],
+  ]);
+}
+
+function extractJavaSymbols(content: string, filePath: string, language: string): SymbolCandidate[] {
+  return collectMatches(content, filePath, language, [
+    [/\b(?:public|protected|private)?\s*(?:abstract\s+|final\s+)?(?:class|interface|enum)\s+([A-Za-z_]\w*)/g, 'class'],
+    [/\b(?:public|protected|private)\s+(?:static\s+)?(?:final\s+)?[A-Za-z_<>, ?[\]]+\s+([A-Za-z_]\w*)\s*\(/g, 'method'],
+  ]);
+}
+
+function collectMatches(
+  content: string,
+  filePath: string,
+  language: string,
+  patterns: Array<[RegExp, string]>
+): SymbolCandidate[] {
+  const seen = new Set<string>();
+  const symbols: SymbolCandidate[] = [];
+  for (const [pattern, kind] of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      const name = match[1];
+      if (!isUsefulSymbol(name)) continue;
+      const key = `${kind}:${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      symbols.push({ name, kind, language, filePath });
+    }
+  }
+  return symbols;
+}
+
+function isUsefulSymbol(name: string): boolean {
+  const normalized = name.toLowerCase();
+  if (name.length < 3) return false;
+  if (/^test[_A-Z]/i.test(name)) return false;
+  if (/^__.*__$/.test(name)) return false;
+  return !GENERIC_SYMBOLS.has(normalized);
+}
+
+function generateTasks(symbols: SymbolCandidate[], options: CliOptions): HeldoutTask[] {
+  const shuffled = deterministicShuffle(symbols, options.seed);
+  const perFileCounts = new Map<string, number>();
+  const allPaths = [...new Set(symbols.map((symbol) => toDatasetPath(symbol.filePath)))].sort();
+  const tasks: HeldoutTask[] = [];
+
+  for (const symbol of shuffled) {
+    const currentCount = perFileCounts.get(symbol.filePath) ?? 0;
+    if (currentCount >= options.maxPerFile) continue;
+
+    const intent = pickIntent(symbol, options.seed);
+    const templates = QUERY_TEMPLATES[intent];
+    const template = templates[hashString(`${options.seed}:${symbol.filePath}:${symbol.name}:template`) % templates.length];
+    const taskText = template
+      .replace('{symbol}', symbol.name)
+      .replace('{kind}', symbol.kind);
+    const relevantPath = toDatasetPath(symbol.filePath);
+
+    tasks.push({
+      id: `H${String(tasks.length + 1).padStart(3, '0')}`,
+      task: taskText,
+      intent,
+      relevant_files: [relevantPath],
+      relevant_types: ['code'],
+      relevant_keywords: keywordParts(symbol.name, symbol.kind),
+      irrelevant_files: deterministicShuffle(
+        allPaths.filter((path) => path !== relevantPath),
+        `${options.seed}:${symbol.filePath}:${symbol.name}:irrelevant`
+      ).slice(0, 3),
+      source: 'heldout-generated',
+      symbol: {
+        name: symbol.name,
+        kind: symbol.kind,
+        language: symbol.language,
+      },
+    });
+
+    perFileCounts.set(symbol.filePath, currentCount + 1);
+    if (tasks.length >= options.limit) break;
+  }
+
+  return tasks.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function pickIntent(symbol: SymbolCandidate, seed: string): Intent {
+  const intents: Intent[] = ['code_search', 'debug', 'explain', 'implement'];
+  return intents[hashString(`${seed}:${symbol.filePath}:${symbol.name}:intent`) % intents.length];
+}
+
+function keywordParts(symbol: string, kind: string): string[] {
+  return [
+    symbol,
+    kind,
+    ...symbol
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_$.-]+/g, ' ')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((part) => part.length > 2),
+  ].filter((value, index, all) => all.indexOf(value) === index);
+}
+
+function toDatasetPath(filePath: string): string {
+  return relative(projectRoot, filePath).split(sep).join('/');
+}
+
+function deterministicShuffle<T>(items: T[], seed: string): T[] {
+  return [...items].sort((a, b) =>
+    hashString(`${seed}:${JSON.stringify(a)}`) - hashString(`${seed}:${JSON.stringify(b)}`)
+  );
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function main(): void {
+  const options = parseArgs(process.argv.slice(2));
+  const corpus = options.corpus;
+  const files = walkDir(corpus, options.includeTests);
+  const symbols = files.flatMap((filePath) => {
+    const content = readFileSync(filePath, 'utf-8');
+    return extractSymbols(content, filePath);
+  });
+  const tasks = generateTasks(symbols, options);
+  const byLanguage = tasks.reduce<Record<string, number>>((acc, task) => {
+    acc[task.symbol.language] = (acc[task.symbol.language] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  writeFileSync(options.output, JSON.stringify({
+    codebase: corpus,
+    description: 'Held-out generated benchmark dataset. Relevant paths are relative to the Spacefolding project root.',
+    generated_at: new Date(0).toISOString(),
+    source_file_count: files.length,
+    symbol_count: symbols.length,
+    tasks,
+  }, null, 2));
+
+  console.log(JSON.stringify({
+    output: options.output,
+    corpus,
+    sourceFiles: files.length,
+    symbols: symbols.length,
+    tasks: tasks.length,
+    byLanguage,
+  }, null, 2));
+}
+
+main();
