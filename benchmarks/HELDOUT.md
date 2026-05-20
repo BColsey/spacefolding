@@ -3,6 +3,8 @@
 Held-out runs should use repositories outside this checkout and should not
 commit generated datasets from private codebases.
 
+For the main local pass/fail gate, see [ACCEPTANCE.md](ACCEPTANCE.md).
+
 Generate a temporary dataset:
 
 ```sh
