@@ -22,6 +22,13 @@ const INTENT_KEYWORDS: Record<QueryIntent, string[]> = {
   general: [],
 };
 
+const MUTATION_TERMS = new Set([
+  'add', 'build', 'change', 'create', 'enhance', 'extend', 'implement',
+  'improve', 'make', 'modify', 'refactor', 'switch', 'update', 'write',
+]);
+
+const LOOKUP_OPENING = /^(where|find|locate|show|grep|which\s+file)\b/i;
+
 // Broadening signals: queries mentioning "all", "entire", "everything", "whole" suggest wider scope
 const BROADENING_TERMS = new Set([
   'all', 'entire', 'everything', 'whole', 'comprehensive', 'complete',
@@ -39,6 +46,10 @@ const NARROWING_TERMS = new Set([
 export function detectIntent(query: string): QueryIntent {
   const lower = query.toLowerCase();
   const words = lower.split(/\s+/);
+
+  if (!LOOKUP_OPENING.test(lower) && words.some((word) => MUTATION_TERMS.has(word))) {
+    return 'implement';
+  }
 
   let bestIntent: QueryIntent = 'general';
   let bestScore = 0;

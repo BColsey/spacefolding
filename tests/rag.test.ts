@@ -61,6 +61,7 @@ describe('QueryPlanner', () => {
   it('detects implement intent', () => {
     expect(detectIntent('add rate limiting to the API')).toBe('implement');
     expect(detectIntent('create a new endpoint')).toBe('implement');
+    expect(detectIntent('switch the web UI to show per-file statistics')).toBe('implement');
   });
 
   it('detects explain intent', () => {
@@ -71,6 +72,7 @@ describe('QueryPlanner', () => {
   it('detects code search intent', () => {
     expect(detectIntent('find the auth middleware')).toBe('code_search');
     expect(detectIntent('where is the router class')).toBe('code_search');
+    expect(detectIntent('find where updateStats is defined')).toBe('code_search');
   });
 
   it('defaults to general', () => {
