@@ -110,6 +110,123 @@ describe('Usability: ingestDirectory', () => {
   });
 });
 
+describe('Usability: ingestProject', () => {
+  it('ingests source and project context while skipping tests and benchmarks by default', async () => {
+    const dir = createTestDir('project', {
+      'src/app.ts': 'export function runApp() { return true; }',
+      'README.md': '# Demo\n\nRun the app with npm start.',
+      'docs/configuration.md': '# Configuration\n\nDB_PATH controls the database file.',
+      '.env.example': 'DB_PATH=./data/app.db\nMODEL_PATH=./data/models',
+      'AGENTS.md': '# Security\n\nMust never commit secrets.\n\n# Build\n\nUse npm test before release.',
+      'tests/app.test.ts': 'import { runApp } from "../src/app";',
+      'benchmarks/run.ts': 'export const benchmark = true;',
+    });
+    const { pipeline } = createTestPipeline();
+
+    const result = await pipeline.ingestProject(dir);
+    const chunks = pipeline.getAllChunks();
+    const paths = chunks.map((chunk) => chunk.path).filter(Boolean);
+
+    expect(result.files).toBe(5);
+    expect(result.codeFiles).toBe(1);
+    expect(result.projectContextFiles).toBe(4);
+    expect(paths).toContain('src/app.ts');
+    expect(paths).toContain('README.md');
+    expect(paths).toContain('docs/configuration.md');
+    expect(paths).toContain('.env.example');
+    expect(paths).toContain('AGENTS.md');
+    expect(paths.some((path) => path?.startsWith('tests/'))).toBe(false);
+    expect(paths.some((path) => path?.startsWith('benchmarks/'))).toBe(false);
+
+    const agentChunks = chunks.filter((chunk) => chunk.path === 'AGENTS.md');
+    expect(agentChunks.some((chunk) => chunk.type === 'constraint')).toBe(true);
+    expect(agentChunks.some((chunk) => chunk.metadata.instructionCategory === 'security')).toBe(true);
+  });
+
+  it('makes environment examples retrievable after project ingestion', async () => {
+    const dir = createTestDir('project-env', {
+      'src/app.ts': 'export function readConfig() { return process.env.DB_PATH; }',
+      '.env.example': 'DB_PATH=./data/app.db\nMODEL_PATH=./data/models',
+    });
+    const { pipeline } = createTestPipeline();
+
+    await pipeline.ingestProject(dir);
+    const result = await pipeline.retrieve('DB_PATH environment variable', 20_000, {
+      strategy: 'structural',
+      topK: 10,
+    });
+
+    expect(result.chunks.map((chunk) => chunk.path)).toContain('.env.example');
+  });
+
+  it('honors includeDocs when ingesting project context', async () => {
+    const dir = createTestDir('project-no-docs', {
+      'src/app.ts': 'export function runApp() { return true; }',
+      'README.md': '# Demo',
+      'docs/configuration.md': '# Configuration',
+      '.env.example': 'DB_PATH=./data/app.db',
+    });
+    const { pipeline } = createTestPipeline();
+
+    await pipeline.ingestProject(dir, { includeDocs: false });
+    const paths = pipeline.getAllChunks().map((chunk) => chunk.path).filter(Boolean);
+
+    expect(paths).toContain('src/app.ts');
+    expect(paths).toContain('.env.example');
+    expect(paths).not.toContain('README.md');
+    expect(paths).not.toContain('docs/configuration.md');
+  });
+
+  it('retrieves watcher code for incremental file re-ingestion tasks', async () => {
+    const noisyImplementationText = Array(120)
+      .fill('ingest chunks when file content is changed and modified by the implementation')
+      .join('\n');
+    const dir = createTestDir('project-watcher', {
+      'src/pipeline/orchestrator.ts': `export class PipelineOrchestrator {
+  ingest(source: string, text: string, type?: string, path?: string) {
+    return { source, text, type, path };
+  }
+}
+${noisyImplementationText}`,
+      'src/core/query-planner.ts': `export function planQuery(query: string) {
+  return { query, intent: 'implement' };
+}
+${noisyImplementationText}`,
+      'src/core/watcher.ts': `import chokidar from 'chokidar';
+
+export class FileWatcher {
+  start() {
+    chokidar.watch('src').on('change', (filePath) => this.scheduleIngest(filePath, 'change'));
+  }
+
+  private scheduleIngest(filePath: string, event: 'add' | 'change') {
+    return this.ingestFile(filePath, event);
+  }
+
+  private ingestFile(filePath: string, event: 'add' | 'change') {
+    return { filePath, event };
+  }
+}`,
+    });
+    const { pipeline } = createTestPipeline();
+
+    await pipeline.ingestProject(dir);
+    const result = await pipeline.retrieve(
+      'Add support for incremental file re-ingestion on change. When a file is modified, only the changed chunks should be re-ingested rather than the entire file.',
+      8_000,
+      {
+        strategy: 'structural',
+        mode: 'focused',
+        topK: 20,
+        returnLimit: 20,
+        maxHops: 0,
+      }
+    );
+
+    expect(result.chunks.map((chunk) => chunk.path)).toContain('src/core/watcher.ts');
+  });
+});
+
 describe('Usability: getStats', () => {
   it('returns empty stats for empty storage', () => {
     const { pipeline } = createTestPipeline();

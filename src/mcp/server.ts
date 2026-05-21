@@ -7,6 +7,7 @@ import {
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import { getAdaptiveStrategy } from '../core/query-planner.js';
 import type { RetrievalStrategy } from '../core/query-planner.js';
+import type { RetrievalMode } from '../core/retriever.js';
 
 const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
@@ -184,7 +185,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'retrieve_context',
     description: describeTool(
-      'Retrieve relevant context using semantic vector search with automatic budget control and compress-overflow'
+      'Retrieve relevant context using focused structural/vector/text search with automatic budget control'
     ),
     inputSchema: {
       type: 'object' as const,
@@ -202,9 +203,18 @@ const TOOL_DEFINITIONS = [
           enum: ['structural', 'hybrid', 'vector', 'text', 'graph'],
           description: 'Retrieval strategy (default: structural when code symbols are indexed, otherwise adaptive based on embedding provider)',
         },
+        mode: {
+          type: 'string',
+          enum: ['focused', 'broad', 'exhaustive'],
+          description: 'Selection mode: focused returns compact high-confidence context, broad returns more coverage, exhaustive preserves legacy breadth',
+        },
         topK: {
           type: 'number',
-          description: 'Max results to retrieve before budget filtering (default: 15)',
+          description: 'Max results to retrieve before budget filtering (default: adaptive by query intent)',
+        },
+        returnLimit: {
+          type: 'number',
+          description: 'Max scored candidates to consider after retrieval and before token budgeting',
         },
         maxHops: {
           type: 'number',
@@ -241,6 +251,34 @@ const TOOL_DEFINITIONS = [
         },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'ingest_project',
+    description: describeTool(
+      'Ingest a project with source code plus README, docs, env examples, config files, and agent instructions'
+    ),
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path to project directory to ingest',
+        },
+        includeDocs: {
+          type: 'boolean',
+          description: 'Include docs/**/*.md and README files (default: true)',
+        },
+        includeTests: {
+          type: 'boolean',
+          description: 'Include test/spec files and test directories (default: false)',
+        },
+        includeBenchmarks: {
+          type: 'boolean',
+          description: 'Include benchmark directories (default: false)',
+        },
+      },
+      required: ['path'],
     },
   },
   {
@@ -401,10 +439,12 @@ function createServer(pipeline: PipelineOrchestrator): Server {
           const query = args!.query as string;
           const maxTokens = args!.maxTokens as number | undefined;
           const strategy = args!.strategy as RetrievalStrategy | undefined;
+          const mode = args!.mode as RetrievalMode | undefined;
           const topK = args!.topK as number | undefined;
+          const returnLimit = args!.returnLimit as number | undefined;
           const maxHops = args!.maxHops as number | undefined;
 
-          const result = await pipeline.retrieve(query, maxTokens, { strategy, topK, maxHops });
+          const result = await pipeline.retrieve(query, maxTokens, { strategy, mode, topK, returnLimit, maxHops });
           return jsonResponse({
             chunks: result.chunks.map((c) => ({
               id: c.id,
@@ -420,6 +460,8 @@ function createServer(pipeline: PipelineOrchestrator): Server {
             })),
             totalTokens: result.totalTokens,
             budget: result.budget,
+            hardBudget: result.hardBudget,
+            targetBudget: result.targetBudget,
             utilization: result.utilization,
             omittedCount: result.omitted.length,
             compressedCount: result.compressed.length,
@@ -428,6 +470,7 @@ function createServer(pipeline: PipelineOrchestrator): Server {
               tokensEstimate: c.tokensEstimate,
             })),
             plan: result.plan,
+            selectionPolicy: result.selectionPolicy,
           });
         }
 
@@ -456,6 +499,19 @@ function createServer(pipeline: PipelineOrchestrator): Server {
             totalTokens: result.totalTokens,
             budget: result.budget,
           });
+        }
+
+        case 'ingest_project': {
+          const dirPath = args!.path as string;
+          if (typeof dirPath !== 'string' || dirPath.length === 0) {
+            return errorResponse('path must be a non-empty string');
+          }
+          const result = await pipeline.ingestProject(dirPath, {
+            includeDocs: args!.includeDocs as boolean | undefined,
+            includeTests: args!.includeTests as boolean | undefined,
+            includeBenchmarks: args!.includeBenchmarks as boolean | undefined,
+          });
+          return jsonResponse(result);
         }
 
         case 'ingest_directory': {

@@ -229,6 +229,7 @@ async function spacefoldingRetrieval(
 ): Promise<string[]> {
   const result = await pipeline.retrieve(task.task, 200_000, {
     strategy,
+    mode: 'exhaustive',
     topK: 50,
     returnLimit: 50,
     maxHops: 0,

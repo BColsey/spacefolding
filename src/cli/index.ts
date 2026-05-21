@@ -22,6 +22,7 @@ import { exportState, importState } from './commands/export-import.js';
 import type { RetrievalStrategy } from '../core/query-planner.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
+import type { RetrievalMode } from '../core/retriever.js';
 
 function createCompressionProvider() {
   const provider = process.env.COMPRESSION_PROVIDER ?? 'deterministic';
@@ -215,6 +216,33 @@ export function buildCLI(): Command {
     });
 
   program
+    .command('ingest-project')
+    .description('Ingest project source plus README, docs, env examples, config files, and agent instructions')
+    .argument('<path>', 'Project directory path to ingest')
+    .option('--no-docs', 'Skip README and docs/**/*.md project context')
+    .option('--include-tests', 'Include test/spec files and test directories', false)
+    .option('--include-benchmarks', 'Include benchmark directories', false)
+    .action(async (inputPath, opts, cmd) => {
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+      const pipeline = createPipeline(dbPath);
+
+      warnIfOutsideWorkspace(inputPath);
+
+      const result = await pipeline.ingestProject(inputPath, {
+        includeDocs: opts.docs,
+        includeTests: opts.includeTests,
+        includeBenchmarks: opts.includeBenchmarks,
+      });
+      console.log(chalk.green('✓'), `Ingested ${result.files} project files`);
+      console.log(
+        chalk.gray(
+          `${result.codeFiles} code files, ${result.projectContextFiles} project context files, ${result.chunks.length} chunks, ${result.skipped} skipped`
+        )
+      );
+      pipeline.close();
+    });
+
+  program
     .command('score')
     .description('Score current context against a task')
     .requiredOption('--task <text>', 'Task description')
@@ -281,7 +309,9 @@ export function buildCLI(): Command {
     .requiredOption('--query <text>', 'Search query')
     .option('--max-tokens <number>', 'Max token budget', '100000')
     .option('--strategy <type>', 'Search strategy: structural, hybrid, vector, text, graph')
+    .option('--mode <type>', 'Selection mode: focused, broad, exhaustive', 'focused')
     .option('--top-k <number>', 'Max results to return (default: adaptive)')
+    .option('--return-limit <number>', 'Max scored candidates to consider before token budgeting')
     .option('--max-hops <number>', 'Max graph traversal hops', '0')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
@@ -289,12 +319,17 @@ export function buildCLI(): Command {
 
       const result = await pipeline.retrieve(opts.query, parseInt(opts.maxTokens ?? opts.maxTokens, 10), {
         strategy: opts.strategy as RetrievalStrategy | undefined,
+        mode: opts.mode as RetrievalMode | undefined,
         topK: opts.topK ? parseInt(opts.topK, 10) : undefined,
+        returnLimit: opts.returnLimit ? parseInt(opts.returnLimit, 10) : undefined,
         maxHops: opts.maxHops ? parseInt(opts.maxHops, 10) : undefined,
       });
 
       console.log(chalk.bold(`Query: ${opts.query}`));
-      console.log(chalk.gray(`Intent: ${result.plan.intent} | Strategy: ${result.plan.strategy} | Budget: ${result.totalTokens}/${result.budget} tokens (${(result.utilization * 100).toFixed(0)}%)`));
+      console.log(chalk.gray(
+        `Intent: ${result.plan.intent} | Strategy: ${result.plan.strategy} | Mode: ${result.selectionPolicy.mode} | ` +
+        `Tokens: ${result.totalTokens}/${result.targetBudget} target (${result.budget} hard cap)`
+      ));
       console.log();
 
       for (const chunk of result.chunks) {

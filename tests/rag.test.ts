@@ -5,6 +5,11 @@ import { detectIntent, expandQuery, planQuery, estimateComplexity, getAdaptiveSt
 import { fillBudget, compressOmitted } from '../src/core/budget.js';
 import type { ContextChunk, EmbeddingProvider, RerankerProvider } from '../src/types/index.js';
 import { DeterministicRerankerProvider } from '../src/providers/deterministic-reranker.js';
+import {
+  budgetForSelectedCandidates,
+  createRetrievalSelectionPolicy,
+  selectRetrievalCandidates,
+} from '../src/core/retrieval-policy.js';
 
 describe('QueryPlanner', () => {
   describe('getAdaptiveStrategy', () => {
@@ -244,6 +249,91 @@ describe('BudgetController', () => {
 
     // No compression should happen — only 5 tokens remaining
     expect(result.compressed.length).toBe(0);
+  });
+});
+
+describe('RetrievalSelectionPolicy', () => {
+  const makeChunk = (id: string, tokens: number, path = `${id}.ts`): ContextChunk => ({
+    id,
+    source: 'file',
+    type: 'code',
+    text: 'x'.repeat(tokens * 4),
+    timestamp: Date.now(),
+    path,
+    tokensEstimate: tokens,
+    childrenIds: [],
+    metadata: {},
+  });
+
+  it('uses compact focused targets by query complexity', () => {
+    const narrow = createRetrievalSelectionPolicy({
+      complexity: 'narrow',
+      hardBudget: 50_000,
+      requestedTopK: 10,
+    });
+    const moderate = createRetrievalSelectionPolicy({
+      complexity: 'moderate',
+      hardBudget: 50_000,
+      requestedTopK: 10,
+    });
+    const broad = createRetrievalSelectionPolicy({
+      complexity: 'broad',
+      hardBudget: 50_000,
+      requestedTopK: 10,
+    });
+
+    expect(narrow.targetBudget).toBe(8_000);
+    expect(moderate.targetBudget).toBe(17_000);
+    expect(broad.targetBudget).toBe(24_000);
+    expect(moderate.mode).toBe('focused');
+    expect(moderate.maxChunksPerPath).toBe(2);
+  });
+
+  it('keeps protected top candidates and drops weak tail results', () => {
+    const chunks = new Map([
+      ['a', makeChunk('a', 100, 'same.ts')],
+      ['b', makeChunk('b', 100, 'same.ts')],
+      ['c', makeChunk('c', 100, 'same.ts')],
+      ['d', makeChunk('d', 100, 'same.ts')],
+      ['e', makeChunk('e', 100, 'other.ts')],
+    ]);
+    const policy = createRetrievalSelectionPolicy({
+      complexity: 'moderate',
+      hardBudget: 50_000,
+      requestedTopK: 10,
+    });
+    const selected = selectRetrievalCandidates([
+      { chunkId: 'a', score: 1.0, sources: ['structural'], reasons: [] },
+      { chunkId: 'b', score: 0.8, sources: ['structural'], reasons: [] },
+      { chunkId: 'c', score: 0.1, sources: ['structural'], reasons: [] },
+      { chunkId: 'd', score: 0.7, sources: ['structural'], reasons: [] },
+      { chunkId: 'e', score: 0.2, sources: ['structural'], reasons: [] },
+    ], chunks, policy);
+
+    expect(selected.ranked.map((result) => result.chunkId)).toEqual(['a', 'b', 'c']);
+    expect(selected.dropped.map((drop) => drop.chunkId)).toContain('d');
+    expect(selected.dropped.map((drop) => drop.chunkId)).toContain('e');
+  });
+
+  it('expands the effective budget when protected top candidates exceed the target', () => {
+    const chunks = new Map([
+      ['a', makeChunk('a', 6_000)],
+      ['b', makeChunk('b', 6_000)],
+      ['c', makeChunk('c', 6_000)],
+    ]);
+    const policy = createRetrievalSelectionPolicy({
+      complexity: 'narrow',
+      hardBudget: 50_000,
+      requestedTopK: 3,
+    });
+    const selected = [
+      { chunkId: 'a', score: 1.0, sources: ['structural'], reasons: [] },
+      { chunkId: 'b', score: 0.9, sources: ['structural'], reasons: [] },
+      { chunkId: 'c', score: 0.8, sources: ['structural'], reasons: [] },
+    ] as RetrievalResult[];
+
+    expect(policy.targetBudget).toBe(8_000);
+    expect(budgetForSelectedCandidates(selected, chunks, policy)).toBe(18_000);
   });
 });
 

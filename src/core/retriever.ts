@@ -26,7 +26,10 @@ export interface RetrievalOptions {
   returnLimit?: number;
   maxHops?: number;
   strategy?: RetrievalStrategy;
+  mode?: RetrievalMode;
 }
+
+export type RetrievalMode = 'focused' | 'broad' | 'exhaustive';
 
 const RRF_K = 60; // Reciprocal Rank Fusion constant
 
@@ -342,26 +345,28 @@ export class HybridRetriever {
       candidates.set(result.chunkId, existing);
     }
 
-    if (sparseTerms.length > 0) {
+    if (sparseTerms.length > 0 || structuralQuery.tokens.length > 0 || structuralQuery.identifierParts.length > 0) {
       for (const chunk of this.storage.getAllChunks()) {
         if (chunk.metadata?.split) continue;
-        const sparseScore = scoreSparseStructuralFields(
+        const sparseScore = sparseTerms.length > 0 ? scoreSparseStructuralFields(
           chunk,
           sparseTerms,
           this.storage.getCodeSymbols(chunk.id),
           this.storage.getCodeReferences(chunk.id)
-        );
-        if (sparseScore.score <= 0) continue;
+        ) : { score: 0, reasons: [] };
+        const pathIntent = scorePathIntent(chunk, structuralQuery);
+        const combinedScore = sparseScore.score + pathIntent.score;
+        if (combinedScore <= 0) continue;
         const existing = candidates.get(chunk.id) ?? {
           fusedScore: 0,
           sources: new Set<RetrievalSource>(),
           sourceScores: {},
           reasons: [],
         };
-        existing.fusedScore += sparseScore.score;
+        existing.fusedScore += combinedScore;
         existing.sources.add('structural');
-        existing.sourceScores.structural = (existing.sourceScores.structural ?? 0) + sparseScore.score;
-        for (const reason of sparseScore.reasons) {
+        existing.sourceScores.structural = (existing.sourceScores.structural ?? 0) + combinedScore;
+        for (const reason of [...pathIntent.reasons, ...sparseScore.reasons]) {
           if (!existing.reasons.includes(reason) && existing.reasons.length < 8) existing.reasons.push(reason);
         }
         candidates.set(chunk.id, existing);
@@ -486,6 +491,20 @@ const SPARSE_STOP_WORDS = new Set([
   'properly', 'different', 'causing', 'flow', 'logic', 'large', 'files',
 ]);
 
+const PATH_INTENT_STOP_WORDS = new Set([
+  ...SPARSE_STOP_WORDS,
+  'context',
+  'count',
+  'file',
+  'files',
+  'information',
+  'show',
+  'statistics',
+  'total',
+  'type',
+  'types',
+]);
+
 const TERM_EXPANSIONS: Record<string, Array<[string, number]>> = {
   scoring: [['score', 1.2], ['scorer', 1.4], ['weight', 0.9], ['factor', 0.7]],
   score: [['scorer', 1.1], ['scoring', 0.8]],
@@ -509,6 +528,18 @@ const TERM_EXPANSIONS: Record<string, Array<[string, number]>> = {
   splitter: [['split', 1.1], ['chunker', 1.2], ['ingester', 0.7]],
   splits: [['split', 1.0], ['chunker', 1.0]],
   split: [['chunker', 0.8], ['ingester', 0.6], ['maybesplit', 0.9]],
+  ingest: [['ingester', 1.0], ['ingestfile', 1.0], ['orchestrator', 0.8]],
+  ingested: [['ingest', 1.1], ['ingester', 0.9], ['ingestfile', 0.9]],
+  ingestion: [['ingest', 1.1], ['ingester', 0.9], ['orchestrator', 0.7]],
+  reingestion: [['ingest', 1.1], ['ingester', 0.9], ['watcher', 1.2], ['filewatcher', 1.2]],
+  reingest: [['ingest', 1.1], ['ingester', 0.9], ['watcher', 1.2], ['filewatcher', 1.2]],
+  change: [['watcher', 1.0], ['filewatcher', 1.0], ['chokidar', 0.8]],
+  changed: [['change', 1.0], ['watcher', 1.1], ['filewatcher', 1.1], ['chokidar', 0.8]],
+  changing: [['change', 1.0], ['watcher', 1.0], ['filewatcher', 1.0], ['chokidar', 0.8]],
+  modified: [['change', 0.9], ['watcher', 1.1], ['filewatcher', 1.1], ['chokidar', 0.8]],
+  modification: [['change', 0.9], ['watcher', 1.0], ['filewatcher', 1.0], ['chokidar', 0.8]],
+  watch: [['watcher', 1.2], ['filewatcher', 1.2], ['chokidar', 1.0]],
+  watcher: [['filewatcher', 1.0], ['chokidar', 0.8]],
 
   embedding: [['embed', 1.0], ['embeddings', 0.8], ['embeddingprovider', 1.0], ['provider', 0.5]],
   embeddings: [['embedding', 1.0], ['embed', 0.9], ['embeddingprovider', 1.0], ['provider', 0.5]],
@@ -599,6 +630,9 @@ const PHRASE_EXPANSIONS: Array<[RegExp, Array<[string, number]>]> = [
   [/\bcli commands?\b/i, [['cli', 1.2], ['commander', 1.1], ['program', 1.0]]],
   [/\btoken estimator\b/i, [['tokenestimator', 1.3], ['estimate', 1.0]]],
   [/\bbudget controller\b/i, [['fillbudget', 1.4], ['budgetresult', 1.0], ['retrievalresult', 0.9], ['retriever', 0.8]]],
+  [/\bre[-\s]?ingest(?:ion|ed|s)?\b/i, [['ingest', 1.2], ['ingestfile', 1.1], ['watcher', 1.2], ['filewatcher', 1.2]]],
+  [/\bincremental\s+file\s+re[-\s]?ingestion\b/i, [['filewatcher', 1.5], ['watcher', 1.5], ['chokidar', 1.1], ['scheduleingest', 1.1]]],
+  [/\bfiles?\s+(?:is\s+|are\s+)?(?:modified|changed)|\b(?:modified|changed)\s+files?\b/i, [['filewatcher', 1.5], ['watcher', 1.5], ['chokidar', 1.1], ['scheduleingest', 1.0]]],
 ];
 
 function buildSparseStructuralTerms(query: string, structuralQuery: StructuralQuery): SparseStructuralTerm[] {
@@ -693,6 +727,39 @@ function scoreSparseStructuralFields(
   }
 
   return { score: Math.min(5, score), reasons };
+}
+
+function scorePathIntent(
+  chunk: ContextChunk,
+  structuralQuery: StructuralQuery
+): { score: number; reasons: string[] } {
+  const path = chunk.path ?? '';
+  if (!path) return { score: 0, reasons: [] };
+
+  const pathParts = new Set(tokenizeStructuralField(path));
+  const basename = path.split('/').pop() ?? path;
+  const basenameParts = new Set(tokenizeStructuralField(basename.replace(/\.[^.]+$/, '')));
+  const terms = [...new Set([
+    ...structuralQuery.tokens,
+    ...structuralQuery.identifierParts,
+    ...structuralQuery.identifiers.flatMap(splitIdentifier),
+  ]
+    .map(normalizeSymbolName)
+    .filter((term) => term.length > 2 && !PATH_INTENT_STOP_WORDS.has(term)))];
+
+  let score = 0;
+  const reasons: string[] = [];
+  for (const term of terms) {
+    if (basenameParts.has(term)) {
+      score += 5;
+      if (reasons.length < 3) reasons.push(`path intent filename match: ${term}`);
+    } else if (pathParts.has(term)) {
+      score += 8;
+      if (reasons.length < 3) reasons.push(`path intent segment match: ${term}`);
+    }
+  }
+
+  return { score: Math.min(12, score), reasons };
 }
 
 function scoreSparseTerm(

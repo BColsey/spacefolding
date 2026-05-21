@@ -58,7 +58,8 @@ function printUsage(): void {
     --e2e-json /tmp/spacefolding-e2e.json
 
 Checks:
-  retrieval: structural beats keyword on R@10, NDCG@10, and MRR
+  retrieval: exhaustive structural ranking beats keyword on R@10, NDCG@10, and MRR
+  e2e: focused retrieval reaches >=0.95 average recall, >=0.35 precision, and <=16k average tokens
   e2e: recall, precision, and average tokens improve vs current hybrid
   e2e: no task returns more tokens than the full codebase`);
 }
@@ -152,6 +153,24 @@ function addE2EChecks(checks: GateCheck[], data: any): void {
       ? summary.tasksReturningMoreThanCodebase.join(', ') || 'none'
       : 'missing',
     expected: 'tasksReturningMoreThanCodebase is empty',
+  });
+  checks.push({
+    name: 'e2e.focused_average_recall',
+    passed: summary.averageRecall >= 0.95,
+    actual: rounded(summary.averageRecall ?? Number.NaN),
+    expected: 'averageRecall >= 0.95',
+  });
+  checks.push({
+    name: 'e2e.focused_average_precision',
+    passed: summary.averagePrecision >= 0.35,
+    actual: rounded(summary.averagePrecision ?? Number.NaN),
+    expected: 'averagePrecision >= 0.35',
+  });
+  checks.push({
+    name: 'e2e.focused_average_tokens',
+    passed: summary.averageTokens <= 16_000,
+    actual: rounded(summary.averageTokens ?? Number.NaN),
+    expected: 'averageTokens <= 16000',
   });
 
   if (typeof summary.averageTokens === 'number' && typeof summary.totalCodebaseTokens === 'number') {

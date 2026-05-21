@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { basename, extname, join, relative } from 'node:path';
 import type {
   ChunkType,
   CompressionResult,
@@ -23,8 +23,27 @@ import { HybridRetriever } from '../core/retriever.js';
 import type { RetrievalOptions, RetrievalResult } from '../core/retriever.js';
 import { fillBudget, compressOmitted } from '../core/budget.js';
 import { planQuery } from '../core/query-planner.js';
+import {
+  budgetForSelectedCandidates,
+  createRetrievalSelectionPolicy,
+  selectRetrievalCandidates,
+} from '../core/retrieval-policy.js';
 import { DeterministicRerankerProvider } from '../providers/deterministic-reranker.js';
 import { StructuralIndexer, isSupportedCodeLanguage } from '../providers/structural-indexer.js';
+
+export interface ProjectIngestOptions {
+  includeDocs?: boolean;
+  includeTests?: boolean;
+  includeBenchmarks?: boolean;
+}
+
+export interface ProjectIngestResult {
+  files: number;
+  chunks: string[];
+  skipped: number;
+  codeFiles: number;
+  projectContextFiles: number;
+}
 
 export class PipelineOrchestrator {
   private retriever: HybridRetriever;
@@ -151,7 +170,7 @@ export class PipelineOrchestrator {
     task: TaskDescription,
     filters?: ContextFilter
   ): Promise<{ chunks: ContextChunk[]; explanations: string[] }> {
-    // Use hybrid retrieval instead of brute-force scoring all chunks
+    // Use retrieval instead of brute-force scoring all chunks
     const result = await this.retrieve(task.text, undefined, {
       topK: 10,
       strategy: undefined,
@@ -291,6 +310,71 @@ export class PipelineOrchestrator {
     }
 
     return { files: files.length, chunks, skipped };
+  }
+
+  /** Ingest a project with code plus selected project-level context files. */
+  async ingestProject(
+    dirPath: string,
+    options: ProjectIngestOptions = {}
+  ): Promise<ProjectIngestResult> {
+    const resolvedOptions = {
+      includeDocs: options.includeDocs ?? true,
+      includeTests: options.includeTests ?? false,
+      includeBenchmarks: options.includeBenchmarks ?? false,
+    };
+    const files = walkProjectFiles(dirPath, resolvedOptions);
+    const chunks: string[] = [];
+    let skipped = 0;
+    let codeFiles = 0;
+    let projectContextFiles = 0;
+
+    for (const filePath of files) {
+      const relativePath = normalizePath(relative(dirPath, filePath));
+      const contextKind = getProjectContextKind(relativePath, resolvedOptions);
+      const isCode = isCodePath(relativePath);
+
+      try {
+        const content = readFileSync(filePath, 'utf-8');
+
+        if (contextKind === 'agent-instruction') {
+          projectContextFiles++;
+          for (const section of segmentAgentInstructions(content)) {
+            const chunk = await this.ingest('file', section.text, section.type, relativePath);
+            this.annotateChunkTree(chunk, {
+              projectContext: true,
+              projectContextKind: contextKind,
+              instructionCategory: section.category,
+              projectRoot: dirPath,
+            });
+            chunks.push(chunk.id);
+          }
+          continue;
+        }
+
+        const chunk = await this.ingest(
+          'file',
+          content,
+          contextKind ? 'reference' : undefined,
+          relativePath
+        );
+        if (contextKind) {
+          projectContextFiles++;
+          this.annotateChunkTree(chunk, {
+            projectContext: true,
+            projectContextKind: contextKind,
+            projectRoot: dirPath,
+          });
+        } else if (isCode) {
+          codeFiles++;
+        }
+        chunks.push(chunk.id);
+        this.enforceMaxChunks();
+      } catch {
+        skipped++;
+      }
+    }
+
+    return { files: files.length, chunks, skipped, codeFiles, projectContextFiles };
   }
 
   /** Get storage stats: chunk counts, token totals, per-file breakdown */
@@ -442,7 +526,19 @@ export class PipelineOrchestrator {
     }
   }
 
-  /** Retrieve context for a query using hybrid search + budget control */
+  private annotateChunkTree(chunk: ContextChunk, metadata: Record<string, unknown>): void {
+    const annotate = (chunkId: string) => {
+      const stored = this.storage.getChunk(chunkId);
+      if (!stored) return;
+      stored.metadata = { ...stored.metadata, ...metadata };
+      this.storage.updateChunk(stored);
+    };
+
+    annotate(chunk.id);
+    for (const childId of chunk.childrenIds) annotate(childId);
+  }
+
+  /** Retrieve context for a query using search + selection policy + budget control */
   async retrieve(
     query: string,
     maxTokens?: number,
@@ -452,19 +548,27 @@ export class PipelineOrchestrator {
     tiers: Map<string, import('../types/index.js').ContextTier>;
     totalTokens: number;
     budget: number;
+    hardBudget: number;
+    targetBudget: number;
     utilization: number;
     omitted: { chunkId: string; tokensEstimate: number; reason: string }[];
     compressed: { chunkId: string; summary: string; tokensEstimate: number }[];
     plan: ReturnType<typeof planQuery>;
     retrieval: RetrievalResult[];
+    selectionPolicy: ReturnType<typeof createRetrievalSelectionPolicy> & {
+      effectiveBudget: number;
+      selectedCandidates: number;
+      droppedCandidates: number;
+    };
   }> {
     const planned = planQuery(query);
     const effectiveStrategy = options?.strategy ?? (this.storage.hasCodeStructure() ? 'structural' : planned.strategy);
     const plan = { ...planned, strategy: effectiveStrategy };
-    const budget = maxTokens ?? Math.floor(200_000 * plan.tokenBudgetRatio);
+    const hardBudget = maxTokens ?? Math.floor(200_000 * plan.tokenBudgetRatio);
+    const requestedTopK = options?.topK ?? plan.recommendedTopK;
     const retrieval = await this.retriever.retrieve(query, {
       ...options,
-      topK: options?.topK ?? plan.recommendedTopK,
+      topK: requestedTopK,
       maxHops: options?.maxHops ?? plan.maxHops,
       strategy: effectiveStrategy,
     });
@@ -491,17 +595,19 @@ export class PipelineOrchestrator {
       }
     }
 
-    const requestedTopK = options?.topK ?? plan.recommendedTopK;
-    const contextLimit = options?.returnLimit ?? (
-      effectiveStrategy === 'structural'
-        ? Math.min(requestedTopK, plan.recommendedTopK)
-        : requestedTopK
-    );
-    const rankedForBudget = retrieval
-      .slice(0, contextLimit)
-      .filter((result) => !chunkMap.get(result.chunkId)?.metadata?.split);
+    const contextLimit = options?.returnLimit ?? requestedTopK;
+    const basePolicy = createRetrievalSelectionPolicy({
+      mode: options?.mode,
+      complexity: plan.complexity,
+      hardBudget,
+      requestedTopK: contextLimit,
+      returnLimit: contextLimit,
+    });
+    const selectedCandidates = selectRetrievalCandidates(retrieval, chunkMap, basePolicy);
+    const rankedForBudget = selectedCandidates.ranked;
+    const effectiveBudget = budgetForSelectedCandidates(rankedForBudget, chunkMap, selectedCandidates.policy);
 
-    const budgetResult = fillBudget(rankedForBudget, chunkMap, budget, {
+    const budgetResult = fillBudget(rankedForBudget, chunkMap, effectiveBudget, {
       collapseSiblings: true,
     });
 
@@ -535,12 +641,21 @@ export class PipelineOrchestrator {
       chunks: budgetResult.selected,
       tiers: budgetResult.tiers,
       totalTokens: budgetResult.totalTokens,
-      budget: budgetResult.budget,
-      utilization: budgetResult.utilization,
+      budget: hardBudget,
+      hardBudget,
+      targetBudget: effectiveBudget,
+      utilization: hardBudget > 0 ? budgetResult.totalTokens / hardBudget : 0,
       omitted: budgetResult.omitted,
       compressed: budgetResult.compressed,
       plan,
       retrieval,
+      selectionPolicy: {
+        ...selectedCandidates.policy,
+        targetBudget: effectiveBudget,
+        effectiveBudget,
+        selectedCandidates: rankedForBudget.length,
+        droppedCandidates: selectedCandidates.dropped.length,
+      },
     };
   }
 
@@ -633,6 +748,26 @@ export class PipelineOrchestrator {
 }
 
 const BINARY_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.svg', '.webp', '.mp3', '.mp4', '.zip', '.gz', '.tar', '.db']);
+const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java']);
+const PROJECT_SKIP_DIRS = new Set([
+  '.cache',
+  '.git',
+  '.hg',
+  '.next',
+  '.svn',
+  '.turbo',
+  '.venv',
+  '__pycache__',
+  'build',
+  'coverage',
+  'data',
+  'dist',
+  'node_modules',
+  'out',
+  'target',
+  'vendor',
+  'venv',
+]);
 
 function walkDir(dir: string): string[] {
   const results: string[] = [];
@@ -652,4 +787,116 @@ function walkDir(dir: string): string[] {
     }
   }
   return results;
+}
+
+function walkProjectFiles(
+  dir: string,
+  options: Required<ProjectIngestOptions>,
+  rootDir: string = dir
+): string[] {
+  const results: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const fullPath = join(dir, entry);
+    const stat = statSync(fullPath);
+
+    if (stat.isDirectory()) {
+      if (PROJECT_SKIP_DIRS.has(entry)) continue;
+      if (!options.includeBenchmarks && entry === 'benchmarks') continue;
+      if (!options.includeTests && isTestPath(entry)) continue;
+      results.push(...walkProjectFiles(fullPath, options, rootDir));
+      continue;
+    }
+
+    const normalized = normalizePath(fullPath);
+    const relativePath = normalizePath(relative(rootDir, fullPath));
+    const ext = extname(entry).toLowerCase();
+    if (BINARY_EXTENSIONS.has(ext)) continue;
+    if (!options.includeTests && isTestPath(normalized)) continue;
+    if (!options.includeBenchmarks && relativePath.split('/').includes('benchmarks')) continue;
+
+    if (isCodePath(entry) || getProjectContextKind(relativePath, options)) {
+      results.push(fullPath);
+    }
+  }
+  return results;
+}
+
+function isCodePath(filePath: string): boolean {
+  return CODE_EXTENSIONS.has(extname(filePath).toLowerCase());
+}
+
+function getProjectContextKind(
+  filePath: string,
+  options: Required<ProjectIngestOptions>
+): string | null {
+  const normalized = normalizePath(filePath);
+  const lower = normalized.toLowerCase();
+  const base = basename(lower);
+
+  if (isAgentInstructionPath(lower)) return 'agent-instruction';
+  if (base === '.env.example' || base.endsWith('.env.example')) return 'environment';
+  if (options.includeDocs && /^readme(\.[^.]+)?$/i.test(base)) return 'documentation';
+  if (options.includeDocs && lower.startsWith('docs/') && base.endsWith('.md')) return 'documentation';
+  if (base === 'package.json' || base === 'package-lock.json') return 'configuration';
+  if (/^(tsconfig|jsconfig)(\..*)?\.json$/i.test(base)) return 'configuration';
+  if (/^(vite|next|nuxt|astro|svelte|vitest|jest|eslint|prettier|biome|rollup|webpack|babel)\.config\./i.test(base)) {
+    return 'configuration';
+  }
+  if (base === 'dockerfile' || /^docker-compose\..*ya?ml$/i.test(base) || /^compose\..*ya?ml$/i.test(base)) {
+    return 'configuration';
+  }
+
+  return null;
+}
+
+function isAgentInstructionPath(lowerPath: string): boolean {
+  const base = basename(lowerPath);
+  return base === 'agents.md'
+    || base === 'claude.md'
+    || lowerPath === '.github/copilot-instructions.md'
+    || lowerPath.startsWith('.cursor/rules/');
+}
+
+function segmentAgentInstructions(text: string): Array<{
+  text: string;
+  type: ChunkType;
+  category: string;
+}> {
+  const sections = text
+    .split(/(?=^#{1,3}\s+)/m)
+    .map((section) => section.trim())
+    .filter(Boolean);
+  const normalizedSections = sections.length > 0 ? sections : [text.trim()].filter(Boolean);
+
+  return normalizedSections.map((section) => ({
+    text: section,
+    type: isConstraintInstruction(section) ? 'constraint' : 'instruction',
+    category: categorizeInstruction(section),
+  }));
+}
+
+function isConstraintInstruction(text: string): boolean {
+  return /\b(must|never|required|forbidden|always|only|avoid|do not|don't|should not|cannot|can't)\b/i.test(text);
+}
+
+function categorizeInstruction(text: string): string {
+  const lower = text.toLowerCase();
+  if (/\b(security|secret|credential|permission|auth|sandbox|safe|privacy)\b/.test(lower)) return 'security';
+  if (/\b(performance|latency|memory|speed|efficient|throughput)\b/.test(lower)) return 'performance';
+  if (/\b(test|build|lint|run|install|command|npm|yarn|pnpm|ci)\b/.test(lower)) return 'build-test';
+  if (/\b(architecture|module|design|structure|service|component)\b/.test(lower)) return 'architecture';
+  if (/\b(style|format|naming|convention|typescript|javascript)\b/.test(lower)) return 'coding-style';
+  return 'general';
+}
+
+function isTestPath(filePath: string): boolean {
+  const normalized = normalizePath(filePath);
+  return /(^|\/)(__tests__|tests?|spec|fixtures|mocks?)(\/|$)/i.test(normalized)
+    || /\.(test|spec)\.[cm]?[jt]sx?$/i.test(normalized)
+    || /test_.*\.py$/i.test(normalized)
+    || /_test\.go$/i.test(normalized);
+}
+
+function normalizePath(filePath: string): string {
+  return filePath.split(/[\\/]+/).join('/');
 }

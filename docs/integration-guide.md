@@ -6,9 +6,10 @@ Spacefolding is designed as an MCP (Model Context Protocol) server that Claude C
 
 When connected, Claude Code can:
 - **Ingest** files, diffs, and conversation context (auto-chunks if oversized)
+- **Ingest projects** with source, README/docs, env examples, config, and agent instructions
 - **Score** all context against the current task
 - **Route** into hot (verbatim), warm (compressed), cold (archived)
-- **Retrieve** context using hybrid RAG (vector + full-text + graph search)
+- **Retrieve** context using focused RAG (structural, vector, and full-text search)
 - **Compress** warm context using LLM or deterministic providers
 - **Explain** why routing decisions were made
 
@@ -84,6 +85,27 @@ Add context to the store.
 - `path` — File path if from a file
 - `language` — Programming language if code
 
+### `ingest_project`
+
+Ingest a project using source files plus high-value project context. This is the preferred first step for a codebase because it keeps README/docs, `.env.example`, config files, and agent instruction files retrievable alongside source code while skipping tests and benchmarks by default.
+
+```json
+{
+  "path": "/path/to/project",
+  "includeDocs": true,
+  "includeTests": false,
+  "includeBenchmarks": false
+}
+```
+
+**Parameters:**
+- `path` (required) — Absolute project directory path
+- `includeDocs` — Include README files and `docs/**/*.md` (default: `true`)
+- `includeTests` — Include test/spec files and test directories (default: `false`)
+- `includeBenchmarks` — Include benchmark directories (default: `false`)
+
+Agent instruction files such as `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, and `.cursor/rules/**` are split by markdown heading and classified as `constraint` or `instruction` chunks.
+
 ### `score_context`
 
 Score all chunks against a task and get routing.
@@ -151,34 +173,43 @@ Show why chunks were routed the way they were.
 
 ### `retrieve_context`
 
-Hybrid RAG retrieval with token budget control. Runs vector search + FTS5 + graph traversal, fuses results, and returns chunks that fit within a token budget.
+Focused RAG retrieval with token budget control. When code symbols are indexed, it defaults to structural retrieval over paths, symbols, imports/references, and lexical matches. It can also use hybrid, vector, text, or graph strategies.
 
 ```json
 {
   "query": "How does JWT authentication work?",
   "maxTokens": 50000,
-  "strategy": "hybrid",
-  "topK": 50,
-  "maxHops": 2
+  "strategy": "structural",
+  "mode": "focused",
+  "topK": 15,
+  "returnLimit": 15,
+  "maxHops": 0
 }
 ```
 
 **Parameters:**
 - `query` (required) — What you're looking for
 - `maxTokens` — Max token budget (default: auto based on query intent)
-- `strategy` — `hybrid`, `vector`, `text`, or `graph`
-- `topK` — Max results to consider (default: 50)
+- `strategy` — `structural`, `hybrid`, `vector`, `text`, or `graph`
+- `mode` — `focused` (default), `broad`, or `exhaustive`
+- `topK` — Max retrieval results before selection (default: adaptive by query)
+- `returnLimit` — Max scored candidates to consider before budget filling
 - `maxHops` — Max dependency graph hops (default: auto based on intent)
+
+Use `focused` for normal coding-agent prompts. Use `broad` when the task is ambiguous and you want more coverage. Use `exhaustive` for manual inspection or ranking benchmarks where you want the raw breadth up to `maxTokens`.
 
 **Returns:**
 ```json
 {
-  "chunks": [{ "id": "...", "text": "...", "tier": "warm", "retrievalSources": ["vector", "fts"] }],
-  "totalTokens": 48500,
+  "chunks": [{ "id": "...", "text": "...", "tier": "warm", "retrievalSources": ["structural", "fts"] }],
+  "totalTokens": 14800,
   "budget": 50000,
-  "utilization": 0.97,
+  "hardBudget": 50000,
+  "targetBudget": 17000,
+  "utilization": 0.296,
   "omittedCount": 3,
-  "plan": { "intent": "explain", "strategy": "vector" }
+  "selectionPolicy": { "mode": "focused", "selectedCandidates": 9 },
+  "plan": { "intent": "explain", "strategy": "structural" }
 }
 ```
 
@@ -187,8 +218,8 @@ Hybrid RAG retrieval with token budget control. Runs vector search + FTS5 + grap
 ```
 1. Before starting a task:
 
+   ingest_project(path=<project root>)
    ingest_context(source="conversation", text=<user request>, type="instruction")
-   ingest_context(source="file", text=<relevant files>, path="...")
    ingest_context(source="conversation", text=<constraints>, type="constraint")
 
 2. Score and route:
@@ -196,7 +227,9 @@ Hybrid RAG retrieval with token budget control. Runs vector search + FTS5 + grap
    score_context(task={text: "What the user asked"})
    
 3. Use hot chunks in your prompt, compress warm if needed
-4. During work, retrieve from cold when you need something
+4. During work, retrieve focused context when you need something:
+
+   retrieve_context(query=<task-specific need>, mode="focused")
 ```
 
 ## Context Types

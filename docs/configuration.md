@@ -91,6 +91,15 @@ EMBEDDING_PROVIDER=deterministic
 ```
 Hash-based pseudo-vectors. No model download needed. Works offline. Near-random accuracy — only use as a last resort.
 
+## Retrieval Defaults
+
+Project ingestion and retrieval are configured per MCP/CLI call rather than with environment variables:
+
+- `ingest_project` includes source, README/docs, `.env.example`, common config files, and agent instruction files by default.
+- Tests/specs and benchmark directories are skipped by default; pass `includeTests` or `includeBenchmarks` when that context is relevant.
+- `retrieve_context` defaults to `mode: "focused"`, which targets compact context by query complexity: 8k tokens for narrow tasks, 17k for moderate tasks, and 24k for broad tasks, always bounded by the caller's `maxTokens`.
+- Use `mode: "broad"` for higher recall on ambiguous tasks, or `mode: "exhaustive"` for manual inspection and benchmark ranking.
+
 ### Compression Provider
 
 **Deterministic (default):**

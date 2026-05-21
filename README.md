@@ -56,10 +56,10 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
 | Feature | Description |
 |---------|-------------|
 | 🧠 **Smart Routing** | Score + route context into hot/warm/cold tiers |
-| 🔍 **Hybrid RAG** | Vector search + full-text search (FTS5) + graph traversal, fused with Reciprocal Rank Fusion |
+| 🔍 **Focused RAG** | Structural, vector, and full-text search with focused/broad/exhaustive selection modes |
 | ⚡ **GPU Embeddings** | CUDA-accelerated embeddings via Python subprocess — 12x faster than CPU |
 | 📦 **LLM Compression** | Use OpenAI, Ollama, or any compatible API to compress warm context |
-| 🔌 **MCP Server** | 8 tools for Claude Code integration via stdio or SSE |
+| 🔌 **MCP Server** | 12 tools for Claude Code integration via stdio or SSE |
 | ✂️ **Context Chunking** | Auto-split oversized files at code/markdown/paragraph boundaries |
 | 🐳 **Docker-first** | One-command setup with persistent storage |
 | 🧊 **Local Embeddings** | ONNX models run in-process — no GPU or cloud needed |
@@ -176,14 +176,17 @@ node dist/main.js health
 node dist/main.js ingest README.md
 # → ✓ abc12345 README.md
 
+node dist/main.js ingest-project .
+# → ✓ Ingested source, README/docs, env examples, config, and agent instructions
+
 node dist/main.js score --task "How does routing work?"
 # → === HOT ===    === WARM ===    === COLD ===
 # →                                abc12345 (0.35)
 
-# Hybrid RAG retrieval
-node dist/main.js retrieve --query "how does authentication work"
-# → Intent: explain | Strategy: vector | Budget: 600/100000 tokens (1%)
-# → [WARM] abc12345 src/auth.ts ~300 tokens (vector+fts)
+# Focused RAG retrieval
+node dist/main.js retrieve --query "how does authentication work" --mode focused
+# → Intent: explain | Strategy: structural | Mode: focused | Tokens: 600/8000 target (60000 hard cap)
+# → [WARM] abc12345 src/auth.ts ~300 tokens (structural+fts)
 
 node dist/main.js symbols src/core/scorer.ts
 # → class  ContextScorer  line 11
@@ -193,7 +196,7 @@ node dist/main.js symbols src/core/scorer.ts
 
 ## MCP Tools
 
-Spacefolding exposes 11 MCP tools designed for Claude Code integration.
+Spacefolding exposes 12 MCP tools designed for Claude Code integration.
 
 ### Setup
 
@@ -221,11 +224,12 @@ See the [full integration guide](docs/integration-guide.md) for Docker setup and
 | Tool | What it does |
 |------|-------------|
 | `ingest_context` | Add text, code, diffs, logs, or constraints — auto-chunks if oversized |
+| `ingest_project` | Ingest a project with source plus README/docs, env examples, config, and agent instructions |
 | `ingest_directory` | Bulk-ingest all files in a directory tree (skips node_modules, .git, binaries) |
 | `score_context` | Score chunks against a task and route into hot/warm/cold (vector-filtered for large stores) |
 | `compress_context` | Compress specified chunks into a structured summary |
-| `get_relevant_memory` | Search storage for chunks relevant to a task (hybrid retrieval) |
-| `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget control |
+| `get_relevant_memory` | Search storage for chunks relevant to a task using the retrieval pipeline |
+| `retrieve_context` | **Focused RAG retrieval** — structural/vector/text search with compact token-budget control |
 | `iterative_retrieve` | Multi-round retrieval with automatic query expansion |
 | `update_context_graph` | Add or remove dependency links between chunks |
 | `explain_routing` | Show exactly why each chunk was routed to its tier, with reasons |
@@ -248,10 +252,10 @@ User: "Fix the auth bug in login.ts"
   🟡 WARM: [log "ERROR 401"]
   🔵 COLD: [background "Project was started in 2020"]
 
-→ retrieve_context(query="authentication flow", maxTokens=50000)
+→ retrieve_context(query="authentication flow", maxTokens=50000, mode="focused")
 
-  Returns: chunks ranked by fused vector+keyword+graph score,
-  selected to fit within the token budget, with retrieval sources.
+  Returns: high-confidence chunks selected against a focused target budget,
+  with omitted/compressed counts and retrieval sources.
 ```
 
 ---
@@ -262,9 +266,11 @@ User: "Fix the auth bug in login.ts"
 spacefolding serve                    # Start MCP server (default)
 spacefolding health                   # Health check
 spacefolding ingest <path>            # Ingest a file or directory
+spacefolding ingest-project <path>    # Ingest source plus project context
 spacefolding watch <path>             # Watch for file changes
 spacefolding score --task "..."       # Score context against a task
-spacefolding retrieve --query "..."   # Hybrid RAG retrieval
+spacefolding retrieve --query "..."   # Focused RAG retrieval
+spacefolding retrieve --query "..." --mode broad --return-limit 25
 spacefolding explain --task "..."     # Explain routing decisions
 spacefolding graph --chunk <id>       # View dependency graph
 spacefolding symbols <path>           # Extract code symbols
@@ -295,25 +301,32 @@ CHUNK_STRATEGY=auto       # auto, recursive, code, markdown (default: auto)
 
 ---
 
-## Hybrid RAG Retrieval
+## Focused RAG Retrieval
 
-The `retrieve_context` tool runs a multi-strategy search pipeline:
+The `retrieve_context` tool runs a code-aware search and selection pipeline:
 
 ```
-Query → Intent Detection → [Vector + FTS5 + Graph] → RRF Fusion → Budget Fill → Results
+Query → Intent Detection → Structural/Vector/Text Search → Candidate Selection → Budget Fill → Results
 ```
 
-1. **Vector search** — cosine similarity against stored embeddings
-2. **FTS5 full-text search** — BM25-ranked keyword matching
-3. **Graph traversal** — follow dependency links from seed results
-4. **Reciprocal Rank Fusion** — merge all results, items found by multiple strategies rank highest
-5. **Budget controller** — select top results that fit within your token limit
+1. **Structural search** — symbols, paths, imports/references, and deterministic path-intent boosts for code tasks
+2. **Vector and full-text search** — cosine similarity and BM25 keyword matching when the selected strategy uses them
+3. **Candidate selection** — `focused` keeps compact high-confidence context, `broad` widens coverage, `exhaustive` preserves raw breadth
+4. **Budget controller** — select top results that fit the target budget while respecting the caller's hard token cap
+
+Selection modes:
+
+| Mode | Use it for | Behavior |
+|------|------------|----------|
+| `focused` | Default coding-agent context | Compact targets by query complexity, score thresholding, and per-file caps |
+| `broad` | Exploratory work or ambiguous tasks | Larger targets and looser thresholds |
+| `exhaustive` | Ranking benchmarks or manual inspection | Uses the caller's full hard budget without focused pruning |
 
 ### Query Planning
 
 The system automatically detects query intent and adjusts strategy:
 
-| Intent | Example | Strategy | Token budget |
+| Intent | Example | Strategy | Hard token budget |
 |--------|---------|----------|-------------|
 | **debug** | "fix the auth error" | adaptive + 2 hops | 60% |
 | **implement** | "add rate limiting" | adaptive + 1 hop | 40% |
@@ -321,21 +334,22 @@ The system automatically detects query intent and adjusts strategy:
 | **code_search** | "where is the auth middleware" | adaptive + 1 hop | 35% |
 | **general** | anything else | adaptive + 1 hop | 50% |
 
-Strategy adapts to embedding model quality:
+When code symbols are indexed, retrieval defaults to `structural`. Otherwise, strategy adapts to embedding model quality:
 - **`gpu`** (GTE-ModernBERT) → `vector` only (ablation: +7-19% over hybrid with strong embeddings)
-- **`local`** (all-MiniLM-L6-v2) → `hybrid` (vector + FTS5, weaker embeddings benefit from keyword search)
+- **`local`** (BGE-small) → `hybrid` (vector + FTS5, weaker embeddings benefit from keyword search)
 - **`deterministic`** (hash-based) → `text` (near-random vectors, FTS5/BM25 is more reliable)
 
 ### Benchmarks
 
-We evaluated retrieval accuracy against ground-truth on 20 tasks across 6 embedding models and 6 strategies. **With GTE-ModernBERT on GPU, Spacefolding beats keyword grep on every metric:**
+We evaluate two separate questions: raw ranking quality and focused context usefulness. For ranking, `benchmarks/evaluate.ts` uses exhaustive selection so top-k metrics are not confounded by budget pruning. With the deterministic structural stack, structural ranking beats keyword on the local benchmark:
 
-| Metric | Keyword Grep | Spacefolding (GPU) | Δ |
+| Metric | Keyword Grep | Spacefolding Structural | Δ |
 |--------|:-----------:|:------------------:|:-:|
-| Recall@10 | 0.787 | **0.846** | +7.5% |
-| NDCG@10 | 0.674 | **0.787** | +16.8% |
-| MRR | 0.692 | **0.823** | +18.9% |
-| Recall@20 | 0.850 | **0.942** | +10.8% |
+| Recall@10 | 0.796 | **0.929** | +16.8% |
+| NDCG@10 | 0.590 | **0.747** | +26.7% |
+| MRR | 0.546 | **0.763** | +39.8% |
+
+For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` returns 24/24 expected implementation files with 15.7k average tokens, 1.00 average recall, and 0.390 average precision.
 
 See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full results, [benchmarks/MODEL-COMPARISON.md](benchmarks/MODEL-COMPARISON.md) for model comparisons, and [benchmarks/ABLATION.md](benchmarks/ABLATION.md) for the ablation study.
 
@@ -350,7 +364,8 @@ src/
 │   ├── scorer.ts              Multi-factor relevance scoring
 │   ├── router.ts              Hot/warm/cold tier routing
 │   ├── ingester.ts            Normalize + auto-chunk input
-│   ├── retriever.ts           Hybrid RAG: vector + FTS5 + graph + RRF fusion
+│   ├── retriever.ts           Structural/vector/text retrieval and score fusion
+│   ├── retrieval-policy.ts    Focused/broad/exhaustive context selection policy
 │   ├── budget.ts              Token-budget-aware result selection
 │   ├── query-planner.ts       Intent detection + query expansion
 │   ├── chunker.ts             Auto-split: recursive, code, markdown strategies
@@ -374,7 +389,7 @@ src/
 │   └── orchestrator.ts        ingest→embed→score→route→compress→persist
 │
 ├── mcp/                   # Model Context Protocol server
-│   └── server.ts              11 tools, stdio + SSE transport
+│   └── server.ts              12 tools, stdio + SSE transport
 │
 ├── web/                   # Browser UI
 │   └── server.ts              HTTP server + inline SPA
@@ -388,7 +403,7 @@ src/
     └── index.ts
 ```
 
-**74 tests** across 9 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, integration, and usability features.
+**102 tests** across 10 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, integration, and usability features.
 
 **Benchmarks** in `benchmarks/` — 6 documents covering retrieval evaluation, ablation studies across 6 embedding models, and model comparison.
 
