@@ -67,9 +67,10 @@ export class PipelineOrchestrator {
     private compressionProvider: CompressionProvider,
     private dependencyAnalyzer: DependencyAnalyzer,
     private ingester: ContextIngester,
-    private embeddingProvider?: EmbeddingProvider
+    private embeddingProvider?: EmbeddingProvider,
+    embeddingModel?: string
   ) {
-    this.embeddingModel = process.env.EMBEDDING_MODEL ?? 'deterministic';
+    this.embeddingModel = embeddingModel ?? defaultEmbeddingModelForProvider(embeddingProvider);
     this.structuralIndexer = new StructuralIndexer();
     this.retriever = new HybridRetriever(storage, embeddingProvider ?? {
       embed: async () => [],
@@ -896,6 +897,17 @@ export class PipelineOrchestrator {
       budget,
     };
   }
+}
+
+function defaultEmbeddingModelForProvider(provider?: EmbeddingProvider): string {
+  const providerName = provider?.constructor?.name;
+  if (!provider || providerName === 'DeterministicEmbeddingProvider') {
+    return 'deterministic';
+  }
+  if (providerName === 'GpuEmbeddingProvider') {
+    return process.env.GPU_EMBEDDING_MODEL ?? 'Alibaba-NLP/gte-modernbert-base';
+  }
+  return process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
 }
 
 const BINARY_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.svg', '.webp', '.mp3', '.mp4', '.zip', '.gz', '.tar', '.db']);

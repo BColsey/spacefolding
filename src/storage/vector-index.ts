@@ -9,6 +9,7 @@
  *   similarity computed in-process.
  */
 
+import { createRequire } from 'node:module';
 import type Database from 'better-sqlite3';
 import { cosineSimilarity } from '../providers/deterministic-embedding.js';
 
@@ -24,6 +25,7 @@ export interface VectorIndex {
   remove(chunkId: string): void;
   search(queryEmbedding: number[], topK: number): VectorSearchResult[];
   size(): number;
+  dimensions(): number;
 }
 
 // ── sqlite-vec backed index ───────────────────────────────────
@@ -32,14 +34,17 @@ export interface VectorIndex {
  * Attempts to create a sqlite-vec backed vector index. Returns null if
  * the extension cannot be loaded (e.g. unsupported platform).
  */
-export async function tryCreateSqliteVecIndex(
+export function tryCreateSqliteVecIndex(
   db: Database.Database,
   dimensions: number,
-): Promise<VectorIndex | null> {
+): VectorIndex | null {
   try {
-    const sqliteVec = await import('sqlite-vec');
+    const require = createRequire(import.meta.url);
+    const sqliteVec = require('sqlite-vec') as { load: (db: Database.Database) => void };
     sqliteVec.load(db);
-    return new SqliteVecIndex(db, dimensions);
+    const index = new SqliteVecIndex(db, dimensions);
+    index.loadFromDb();
+    return index;
   } catch {
     return null;
   }
@@ -49,23 +54,26 @@ const VEC_TABLE = 'vec_chunk_embeddings';
 
 class SqliteVecIndex implements VectorIndex {
   private db: Database.Database;
-  private dimensions: number;
+  private dimensionCount: number;
   private count: number;
   private initialized = false;
 
   constructor(db: Database.Database, dimensions: number) {
     this.db = db;
-    this.dimensions = dimensions;
+    this.dimensionCount = dimensions;
     this.ensureTable();
     this.count = this.loadCount();
   }
 
   private ensureTable(): void {
     if (this.initialized) return;
+    // This table is a derived cache. Rebuilding it on initialization avoids
+    // stale rows and handles embedding-dimension changes across model switches.
+    this.db.exec(`DROP TABLE IF EXISTS ${VEC_TABLE}`);
     this.db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS ${VEC_TABLE} USING vec0(
         chunkId TEXT PRIMARY KEY,
-        embedding float[${this.dimensions}] distance_metric=cosine
+        embedding float[${this.dimensionCount}] distance_metric=cosine
       )
     `);
     this.initialized = true;
@@ -78,24 +86,47 @@ class SqliteVecIndex implements VectorIndex {
     return row?.cnt ?? 0;
   }
 
+  loadFromDb(): void {
+    const rows = this.db
+      .prepare('SELECT chunkId, embedding, dimensions FROM chunk_embeddings WHERE dimensions = ?')
+      .all(this.dimensionCount) as Array<{ chunkId: string; embedding: Buffer; dimensions: number }>;
+
+    const insert = this.db.prepare(
+      `INSERT OR REPLACE INTO ${VEC_TABLE}(chunkId, embedding) VALUES (?, ?)`
+    );
+    const tx = this.db.transaction(() => {
+      for (const row of rows) {
+        insert.run(row.chunkId, Buffer.from(row.embedding));
+      }
+    });
+    tx();
+    this.count = this.loadCount();
+  }
+
   add(chunkId: string, embedding: number[]): void {
+    if (embedding.length !== this.dimensionCount) {
+      throw new Error(
+        `Embedding dimensions ${embedding.length} do not match vector index dimensions ${this.dimensionCount}`
+      );
+    }
     const buf = new Float32Array(embedding);
     this.db
       .prepare(
         `INSERT OR REPLACE INTO ${VEC_TABLE}(chunkId, embedding) VALUES (?, ?)`
       )
       .run(chunkId, Buffer.from(buf.buffer));
-    this.count++;
+    this.count = this.loadCount();
   }
 
   remove(chunkId: string): void {
     this.db
       .prepare(`DELETE FROM ${VEC_TABLE} WHERE chunkId = ?`)
       .run(chunkId);
-    this.count = Math.max(0, this.count - 1);
+    this.count = this.loadCount();
   }
 
   search(queryEmbedding: number[], topK: number): VectorSearchResult[] {
+    if (queryEmbedding.length !== this.dimensionCount) return [];
     if (this.count === 0) return [];
     const buf = new Float32Array(queryEmbedding);
     const rows = this.db
@@ -121,6 +152,10 @@ class SqliteVecIndex implements VectorIndex {
   size(): number {
     return this.count;
   }
+
+  dimensions(): number {
+    return this.dimensionCount;
+  }
 }
 
 // ── In-memory brute-force index ───────────────────────────────
@@ -132,7 +167,14 @@ class SqliteVecIndex implements VectorIndex {
 export class BruteForceVectorIndex implements VectorIndex {
   private entries = new Map<string, number[]>();
 
+  constructor(private readonly dimensionCount: number) {}
+
   add(chunkId: string, embedding: number[]): void {
+    if (embedding.length !== this.dimensionCount) {
+      throw new Error(
+        `Embedding dimensions ${embedding.length} do not match vector index dimensions ${this.dimensionCount}`
+      );
+    }
     this.entries.set(chunkId, embedding);
   }
 
@@ -141,6 +183,7 @@ export class BruteForceVectorIndex implements VectorIndex {
   }
 
   search(queryEmbedding: number[], topK: number): VectorSearchResult[] {
+    if (queryEmbedding.length !== this.dimensionCount) return [];
     const results: VectorSearchResult[] = [];
     for (const [chunkId, embedding] of this.entries) {
       const score = cosineSimilarity(queryEmbedding, embedding);
@@ -154,11 +197,16 @@ export class BruteForceVectorIndex implements VectorIndex {
     return this.entries.size;
   }
 
+  dimensions(): number {
+    return this.dimensionCount;
+  }
+
   /** Hydrate the cache from the chunk_embeddings table. */
   loadFromDb(db: Database.Database): void {
+    this.entries.clear();
     const rows = db
-      .prepare('SELECT chunkId, embedding, dimensions FROM chunk_embeddings')
-      .all() as Array<{ chunkId: string; embedding: Buffer; dimensions: number }>;
+      .prepare('SELECT chunkId, embedding, dimensions FROM chunk_embeddings WHERE dimensions = ?')
+      .all(this.dimensionCount) as Array<{ chunkId: string; embedding: Buffer; dimensions: number }>;
 
     for (const row of rows) {
       const vec = Array.from(

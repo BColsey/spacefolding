@@ -10,11 +10,14 @@
 | `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID (for `local` provider) |
 | `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu` provider) |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
-| `PYTHON_PATH` | `python3` | Python executable for GPU embedder |
-| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
+| `PYTHON_PATH` | `python3` | Python executable for GPU embedding and LLMLingua subprocesses |
+| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, `llm`, or `llmlingua` |
+| `LLMLINGUA_MODEL` | `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` | Model ID for LLMLingua compression |
+| `LLMLINGUA_RATE` | `0.5` | Target compression rate for LLMLingua |
 | `CHUNK_MAX_TOKENS` | `2000` | Max tokens per sub-chunk when splitting |
 | `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between consecutive chunks |
 | `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, `markdown` |
+| `CHUNK_TREE_SITTER` | unset | Set to `1` to enable tree-sitter-backed code splitting when available |
 | `WEB_PORT` | `0` | Port for web UI (set to `8080` to enable) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | Port for SSE transport |
@@ -91,6 +94,21 @@ EMBEDDING_PROVIDER=deterministic
 ```
 Hash-based pseudo-vectors. No model download needed. Works offline. Near-random accuracy — only use as a last resort.
 
+### Embedding Backfill and Vector Index
+
+Embeddings are persisted in `chunk_embeddings`. Vector search uses a derived cache:
+
+- `sqlite-vec` is used when the native extension can load.
+- An in-memory brute-force cache is used as a fallback.
+- The derived index is rebuilt from persisted embeddings when dimensions change or the index is initialized, so `chunk_embeddings` remains the source of truth.
+
+Backfill embeddings after switching providers/models or after ingesting content without embeddings:
+
+```bash
+node dist/main.js backfill-embeddings
+EMBEDDING_PROVIDER=local node dist/main.js backfill-embeddings --model Xenova/bge-small-en-v1.5
+```
+
 ## Retrieval Defaults
 
 Project ingestion and retrieval are configured per MCP/CLI call rather than with environment variables:
@@ -132,6 +150,15 @@ Uses any OpenAI-compatible API to compress warm context with a real LLM. Produce
 | `LLM_COMPRESSION_HEADERS` | | JSON string of extra headers |
 
 Works with OpenAI, Anthropic (via proxy), Azure OpenAI, Ollama, LM Studio, or any OpenAI-compatible endpoint. Falls back to deterministic if the API call fails.
+
+**LLMLingua token compression:**
+```
+pip install llmlingua
+COMPRESSION_PROVIDER=llmlingua
+LLMLINGUA_MODEL=microsoft/llmlingua-2-xlm-roberta-large-meetingbank
+LLMLINGUA_RATE=0.5
+```
+Runs `scripts/llmlingua-compressor.py` as a Python JSON-RPC subprocess. This is optional and only needed when you want token-level compression comparisons.
 
 ## Docker Compose Configuration
 

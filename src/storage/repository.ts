@@ -42,16 +42,16 @@ export class SQLiteRepository {
   }
 
   /** Initialise the vector index. Tries sqlite-vec first, falls back to in-memory brute-force. */
-  async initVectorIndex(dimensions: number = 384): Promise<void> {
+  initVectorIndex(dimensions: number = 384): void {
     // Try sqlite-vec extension
-    const vecIndex = await tryCreateSqliteVecIndex(this.db, dimensions);
+    const vecIndex = tryCreateSqliteVecIndex(this.db, dimensions);
     if (vecIndex) {
       this.vectorIndex = vecIndex;
       return;
     }
 
     // Fallback: in-memory brute-force cache hydrated from existing embeddings
-    const bfIndex = new BruteForceVectorIndex();
+    const bfIndex = new BruteForceVectorIndex(dimensions);
     bfIndex.loadFromDb(this.db);
     this.vectorIndex = bfIndex;
   }
@@ -489,6 +489,10 @@ export class SQLiteRepository {
          VALUES (?, ?, ?, ?, ?)`
       )
       .run(chunkId, Buffer.from(buffer), model, embedding.length, Date.now());
+    if (this.vectorIndex && this.vectorIndex.dimensions() !== embedding.length) {
+      this.initVectorIndex(embedding.length);
+      return;
+    }
     if (this.vectorIndex) {
       this.vectorIndex.add(chunkId, embedding);
     }
@@ -505,6 +509,10 @@ export class SQLiteRepository {
 
   /** Vector similarity search — uses the ANN index if available, otherwise falls back to brute-force */
   searchByVector(queryEmbedding: number[], topK: number = 50): { chunkId: string; score: number }[] {
+    if (queryEmbedding.length === 0) return [];
+    if (!this.vectorIndex || this.vectorIndex.dimensions() !== queryEmbedding.length) {
+      this.initVectorIndex(queryEmbedding.length);
+    }
     if (this.vectorIndex) {
       return this.vectorIndex.search(queryEmbedding, topK);
     }

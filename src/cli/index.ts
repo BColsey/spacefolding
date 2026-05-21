@@ -24,6 +24,15 @@ import type { RetrievalStrategy } from '../core/query-planner.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import type { RetrievalMode } from '../core/retriever.js';
+import type { EmbeddingProvider } from '../types/index.js';
+
+type EmbeddingProviderName = 'local' | 'gpu' | 'deterministic';
+
+interface EmbeddingProviderConfig {
+  providerName: EmbeddingProviderName;
+  provider: EmbeddingProvider;
+  model: string;
+}
 
 function createCompressionProvider() {
   const provider = process.env.COMPRESSION_PROVIDER ?? 'deterministic';
@@ -66,21 +75,62 @@ function createCompressionProvider() {
   return new DeterministicCompressionProvider();
 }
 
+function getEmbeddingProviderName(): EmbeddingProviderName {
+  const provider = process.env.EMBEDDING_PROVIDER;
+  if (provider === 'gpu' || provider === 'deterministic') return provider;
+  return 'local';
+}
+
+function getDefaultEmbeddingModel(providerName: EmbeddingProviderName = getEmbeddingProviderName()): string {
+  if (providerName === 'gpu') {
+    return process.env.GPU_EMBEDDING_MODEL ?? 'Alibaba-NLP/gte-modernbert-base';
+  }
+  if (providerName === 'deterministic') {
+    return 'deterministic';
+  }
+  return process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
+}
+
+function createEmbeddingProviderConfig(modelOverride?: string): EmbeddingProviderConfig {
+  const providerName = getEmbeddingProviderName();
+  const model = providerName === 'deterministic'
+    ? 'deterministic'
+    : modelOverride ?? getDefaultEmbeddingModel(providerName);
+
+  if (providerName === 'gpu') {
+    return {
+      providerName,
+      model,
+      provider: new GpuEmbeddingProvider(
+        model,
+        process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
+      ),
+    };
+  }
+
+  if (providerName === 'deterministic') {
+    return {
+      providerName,
+      model,
+      provider: new DeterministicEmbeddingProvider(),
+    };
+  }
+
+  return {
+    providerName,
+    model,
+    provider: new LocalEmbeddingProvider(model),
+  };
+}
+
 function createPipeline(dbPath: string): PipelineOrchestrator {
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
-  const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'gpu'
-    ? new GpuEmbeddingProvider(
-        process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2',
-        process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
-      )
-    : process.env.EMBEDDING_PROVIDER === 'deterministic'
-      ? new DeterministicEmbeddingProvider()
-      : new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5');
+  const embedding = createEmbeddingProviderConfig();
   const compressionProvider = createCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
 
-  const scorer = new ContextScorer(DEFAULT_ROUTING_CONFIG, embeddingProvider, tokenEstimator);
+  const scorer = new ContextScorer(DEFAULT_ROUTING_CONFIG, embedding.provider, tokenEstimator);
   const router = new ContextRouter(DEFAULT_ROUTING_CONFIG);
   const ingester = new ContextIngester(tokenEstimator);
 
@@ -91,7 +141,8 @@ function createPipeline(dbPath: string): PipelineOrchestrator {
     compressionProvider,
     dependencyAnalyzer,
     ingester,
-    embeddingProvider
+    embedding.provider,
+    embedding.model
   );
 }
 
@@ -484,22 +535,22 @@ export function buildCLI(): Command {
   program
     .command('backfill-embeddings')
     .description('Backfill embeddings for chunks that lack them')
-    .option('--model <model>', 'Embedding model name', process.env.EMBEDDING_MODEL ?? 'deterministic')
+    .option('--model <model>', 'Embedding model/provider ID (default depends on EMBEDDING_PROVIDER)')
     .option('--batch-size <number>', 'Number of chunks to embed per batch', '50')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const batchSize = parseInt(opts.batchSize, 10);
-      const model = opts.model;
+      if (!Number.isFinite(batchSize) || batchSize <= 0) {
+        console.error(chalk.red('--batch-size must be a positive number'));
+        process.exit(1);
+      }
 
       const storage = createRepository(dbPath);
-      const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'gpu'
-        ? new GpuEmbeddingProvider(
-            process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2',
-            process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
-          )
-        : process.env.EMBEDDING_PROVIDER === 'deterministic'
-          ? new DeterministicEmbeddingProvider()
-          : new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5');
+      const embedding = createEmbeddingProviderConfig(opts.model as string | undefined);
+      if (opts.model && embedding.providerName === 'deterministic' && opts.model !== embedding.model) {
+        console.error(chalk.yellow(`Warning: EMBEDDING_PROVIDER=deterministic ignores --model ${opts.model}; storing as ${embedding.model}.`));
+      }
+      const model = embedding.model;
 
       const chunkIds = storage.getChunksWithoutEmbeddings(model);
       if (chunkIds.length === 0) {
@@ -529,7 +580,7 @@ export function buildCLI(): Command {
 
         if (batchTexts.length === 0) continue;
 
-        const embeddings = await embeddingProvider.embedBatch(batchTexts);
+        const embeddings = await embedding.provider.embedBatch(batchTexts);
 
         for (let j = 0; j < validIds.length; j++) {
           const embedding = embeddings[j];

@@ -58,7 +58,7 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
 | 🧠 **Smart Routing** | Score + route context into hot/warm/cold tiers |
 | 🔍 **Focused RAG** | Structural, vector, and full-text search with focused/broad/exhaustive selection modes |
 | ⚡ **GPU Embeddings** | CUDA-accelerated embeddings via Python subprocess — 12x faster than CPU |
-| 📦 **LLM Compression** | Use OpenAI, Ollama, or any compatible API to compress warm context |
+| 📦 **Compression Providers** | Deterministic/local summaries, OpenAI-compatible LLM compression, or LLMLingua |
 | 🔌 **MCP Server** | 12 tools for Claude Code integration via stdio or SSE |
 | ✂️ **Context Chunking** | Auto-split oversized files at code/markdown/paragraph boundaries |
 | 🐳 **Docker-first** | One-command setup with persistent storage |
@@ -277,6 +277,7 @@ spacefolding symbols <path>           # Extract code symbols
 spacefolding export <file.json>       # Export memory state
 spacefolding import <file.json>       # Import memory state
 spacefolding download-model           # Download embedding model
+spacefolding backfill-embeddings      # Embed chunks missing embeddings for the active model
 ```
 
 ---
@@ -297,6 +298,7 @@ Split chunks are linked via parent-child relationships and dependency edges. Chi
 CHUNK_MAX_TOKENS=2000     # Max tokens per sub-chunk (default: 2000)
 CHUNK_OVERLAP_TOKENS=200  # Overlap between chunks (default: 200)
 CHUNK_STRATEGY=auto       # auto, recursive, code, markdown (default: auto)
+CHUNK_TREE_SITTER=1       # Optional: use tree-sitter structural splitting for code
 ```
 
 ---
@@ -364,6 +366,7 @@ src/
 │   ├── scorer.ts              Multi-factor relevance scoring
 │   ├── router.ts              Hot/warm/cold tier routing
 │   ├── ingester.ts            Normalize + auto-chunk input
+│   ├── tree-sitter-chunker.ts Optional tree-sitter code chunking
 │   ├── retriever.ts           Structural/vector/text retrieval and score fusion
 │   ├── retrieval-policy.ts    Focused/broad/exhaustive context selection policy
 │   ├── budget.ts              Token-budget-aware result selection
@@ -376,14 +379,16 @@ src/
 │   ├── local-embedding.ts     ONNX embeddings (HuggingFace)
 │   ├── gpu-embedding.ts       CUDA embeddings via Python subprocess (GTE-ModernBERT)
 │   ├── llm-compression.ts     LLM-powered compression (OpenAI-compatible API)
+│   ├── llmlingua-compression.ts Token-level compression via Python LLMLingua
 │   ├── local-compression.ts   Enhanced deterministic summarization
 │   ├── deterministic-*.ts     Hash/keyword fallbacks (zero deps)
 │   ├── symbol-extractor.ts    Regex code symbol extraction
 │   └── token-estimator.ts     Token count estimation
 │
 ├── storage/               # Persistence + search
-│   ├── schema.ts              SQLite DDL + migrations (v1-v3)
-│   └── repository.ts          CRUD + vector store + FTS5
+│   ├── schema.ts              SQLite DDL + migrations (v1-v4)
+│   ├── repository.ts          CRUD + vector store + FTS5 + structural search
+│   └── vector-index.ts        sqlite-vec ANN cache with brute-force fallback
 │
 ├── pipeline/              # Orchestration
 │   └── orchestrator.ts        ingest→embed→score→route→compress→persist
@@ -403,7 +408,7 @@ src/
     └── index.ts
 ```
 
-**106 tests** across 11 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, integration, and usability features.
+**195 tests** across 15 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, vector-index behavior, integration, and usability features.
 
 **Benchmarks** in `benchmarks/` — 6 documents covering retrieval evaluation, ablation studies across 6 embedding models, and model comparison.
 
@@ -421,11 +426,14 @@ All configuration is via environment variables:
 | `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID (for `local`) |
 | `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu`) |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
-| `PYTHON_PATH` | `python3` | Python executable for GPU embedder |
-| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, or `llm` |
+| `PYTHON_PATH` | `python3` | Python executable for GPU embedding and LLMLingua subprocesses |
+| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, `llm`, or `llmlingua` |
+| `LLMLINGUA_MODEL` | `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` | Model ID for `COMPRESSION_PROVIDER=llmlingua` |
+| `LLMLINGUA_RATE` | `0.5` | Target compression rate for LLMLingua |
 | `CHUNK_MAX_TOKENS` | `2000` | Max tokens per sub-chunk |
 | `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between chunks |
 | `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, `markdown` |
+| `CHUNK_TREE_SITTER` | unset | Set to `1` to use tree-sitter code chunking when available |
 | `WEB_PORT` | `0` (off) | Port for web UI (e.g. `8080`) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | SSE transport port |
@@ -478,6 +486,19 @@ node dist/main.js download-model --model Xenova/all-MiniLM-L6-v2
 
 If no model is downloaded, Spacefolding uses **deterministic hash-based embeddings** as a zero-dependency fallback. It always works — but produces near-random vectors (R@10 = 0.362). Real embeddings are strongly recommended.
 
+### Embedding Backfill and Vector Indexing
+
+Embeddings are stored in SQLite and searched through a derived vector index. Spacefolding tries `sqlite-vec` for fast ANN search and falls back to an in-memory brute-force cache when the native extension is unavailable. The index is rebuilt from `chunk_embeddings` as needed, so the database table remains the source of truth.
+
+```bash
+# Fill embeddings for chunks that were ingested before embeddings existed,
+# or after switching EMBEDDING_PROVIDER / model.
+node dist/main.js backfill-embeddings
+
+# Backfill a specific local or GPU model.
+EMBEDDING_PROVIDER=local node dist/main.js backfill-embeddings --model Xenova/bge-small-en-v1.5
+```
+
 ---
 
 ## LLM Compression
@@ -504,6 +525,16 @@ If the API call fails (network, rate limit, invalid key), it **falls back to det
 | `LLM_COMPRESSION_API_KEY` | Your API key |
 | `LLM_COMPRESSION_MODEL` | Model name (e.g. `gpt-4o-mini`) |
 | `LLM_COMPRESSION_MAX_TOKENS` | Max response tokens (default: 500) |
+
+For token-level compression with LLMLingua:
+
+```bash
+pip install llmlingua
+COMPRESSION_PROVIDER=llmlingua \
+LLMLINGUA_MODEL=microsoft/llmlingua-2-xlm-roberta-large-meetingbank \
+LLMLINGUA_RATE=0.5 \
+node dist/main.js serve
+```
 
 ---
 
