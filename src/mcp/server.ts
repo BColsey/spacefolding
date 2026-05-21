@@ -20,7 +20,7 @@ function describeTool(description: string): string {
     : description;
 }
 
-const TOOL_DEFINITIONS = [
+export const TOOL_DEFINITIONS = [
   {
     name: 'score_context',
     description: describeTool(

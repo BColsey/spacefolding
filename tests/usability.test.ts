@@ -276,6 +276,57 @@ describe('Usability: deleteChunks', () => {
   });
 });
 
+describe('Usability: reingestFile', () => {
+  it('reuses unchanged split chunks and deletes stale chunks for a modified file', async () => {
+    const { pipeline } = createTestPipeline();
+    const path = 'docs/large-reference.txt';
+    const stableAlpha = 'stable alpha context\n'.repeat(300);
+    const stableBeta = 'stable beta context\n'.repeat(300);
+    const oldMutable = 'old mutable implementation detail\n'.repeat(140);
+    const newMutable = 'new mutable implementation detail\n'.repeat(140);
+
+    await pipeline.ingest(
+      'file',
+      [stableAlpha, oldMutable, stableBeta].join('\n\n'),
+      'reference',
+      path
+    );
+    const before = pipeline.getAllChunks().filter((chunk) => chunk.path === path);
+    const reusableBefore = before
+      .filter((chunk) => !chunk.metadata.split && /stable (alpha|beta)/.test(chunk.text))
+      .map((chunk) => chunk.id);
+
+    const result = await pipeline.reingestFile(
+      path,
+      [stableAlpha, newMutable, stableBeta].join('\n\n'),
+      'reference'
+    );
+    const after = pipeline.getAllChunks().filter((chunk) => chunk.path === path);
+    const afterIds = new Set(after.map((chunk) => chunk.id));
+
+    expect(result.changed).toBe(true);
+    expect(result.reusedChunks).toBeGreaterThanOrEqual(1);
+    expect(result.createdChunks).toBeGreaterThanOrEqual(2); // New parent + changed child
+    expect(result.deletedChunks).toBeGreaterThanOrEqual(2); // Old parent + stale child
+    expect(reusableBefore.filter((id) => afterIds.has(id)).length).toBeGreaterThanOrEqual(1);
+    expect(after.some((chunk) => chunk.text.includes('new mutable implementation detail'))).toBe(true);
+    expect(after.some((chunk) => chunk.text.includes('old mutable implementation detail'))).toBe(false);
+  });
+
+  it('returns unchanged when the file content hash already exists', async () => {
+    const { pipeline } = createTestPipeline();
+    const content = 'same content';
+
+    await pipeline.ingest('file', content, 'reference', 'docs/same.txt');
+    const result = await pipeline.reingestFile('docs/same.txt', content, 'reference');
+
+    expect(result.changed).toBe(false);
+    expect(result.createdChunks).toBe(0);
+    expect(result.deletedChunks).toBe(0);
+    expect(pipeline.getAllChunks().filter((chunk) => chunk.path === 'docs/same.txt')).toHaveLength(1);
+  });
+});
+
 describe('Usability: eviction', () => {
   it('evicts oldest chunks when over limit', async () => {
     const { pipeline } = createTestPipeline();

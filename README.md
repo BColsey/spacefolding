@@ -63,7 +63,7 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
 | ✂️ **Context Chunking** | Auto-split oversized files at code/markdown/paragraph boundaries |
 | 🐳 **Docker-first** | One-command setup with persistent storage |
 | 🧊 **Local Embeddings** | ONNX models run in-process — no GPU or cloud needed |
-| 🔄 **File Watching** | Auto-ingest file changes with chokidar |
+| 🔄 **File Watching** | Auto-ingest new files and incrementally re-ingest modified split files with chokidar |
 | 🔀 **Git-Aware** | Parse diffs, score changed files higher |
 | 🔍 **Symbol Extraction** | Pull functions, classes, interfaces from source files |
 | 🌐 **Web UI** | Browser-based chunk inspection and routing visualization |
@@ -349,7 +349,7 @@ We evaluate two separate questions: raw ranking quality and focused context usef
 | NDCG@10 | 0.590 | **0.747** | +26.7% |
 | MRR | 0.546 | **0.763** | +39.8% |
 
-For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` returns 24/24 expected implementation files with 15.7k average tokens, 1.00 average recall, and 0.390 average precision.
+For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` returns 24/24 expected implementation files with 15.5k average tokens, 1.00 average recall, and 0.363 average precision.
 
 See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full results, [benchmarks/MODEL-COMPARISON.md](benchmarks/MODEL-COMPARISON.md) for model comparisons, and [benchmarks/ABLATION.md](benchmarks/ABLATION.md) for the ablation study.
 
@@ -403,7 +403,7 @@ src/
     └── index.ts
 ```
 
-**102 tests** across 10 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, integration, and usability features.
+**106 tests** across 11 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, integration, and usability features.
 
 **Benchmarks** in `benchmarks/` — 6 documents covering retrieval evaluation, ablation studies across 6 embedding models, and model comparison.
 

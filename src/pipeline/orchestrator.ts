@@ -45,6 +45,16 @@ export interface ProjectIngestResult {
   projectContextFiles: number;
 }
 
+export interface FileReingestResult {
+  path: string;
+  changed: boolean;
+  chunks: string[];
+  reusedChunks: number;
+  createdChunks: number;
+  deletedChunks: number;
+  totalChunks: number;
+}
+
 export class PipelineOrchestrator {
   private retriever: HybridRetriever;
   private embeddingModel: string;
@@ -251,7 +261,7 @@ export class PipelineOrchestrator {
   ): Promise<ContextChunk> {
     // Deduplication: file content is scoped by path so identical files at
     // different paths remain distinct chunks.
-    const contentHash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const contentHash = this.contentHash(text);
     const existing = this.storage.findChunkByContentHash(contentHash, path);
     if (existing) return existing;
 
@@ -268,7 +278,7 @@ export class PipelineOrchestrator {
       result.split.parent.metadata.contentHash = contentHash;
       this.storage.storeChunk(result.split.parent); // No embedding for parent
       for (const child of result.split.children) {
-        child.metadata.contentHash = createHash('sha256').update(child.text).digest('hex').slice(0, 16);
+        child.metadata.contentHash = this.contentHash(child.text);
         await this.storeChunkWithEmbedding(child);
         this.storage.storeDependency({
           fromId: result.split.parent.id,
@@ -283,6 +293,132 @@ export class PipelineOrchestrator {
     await this.storeChunkWithEmbedding(chunk);
     this.enforceMaxChunks();
     return chunk;
+  }
+
+  /**
+   * Re-ingest a changed file while preserving unchanged split chunks.
+   * This prevents file-watch updates from re-embedding every chunk in a large file.
+   */
+  async reingestFile(
+    path: string,
+    text: string,
+    type?: string,
+    language?: string
+  ): Promise<FileReingestResult> {
+    const fullContentHash = this.contentHash(text);
+    const existingPathChunks = this.storage.queryChunks({ path });
+    const alreadyCurrent = existingPathChunks.some((chunk) =>
+      this.chunkContentHash(chunk) === fullContentHash && (chunk.metadata?.split || !chunk.parentId)
+    );
+
+    if (alreadyCurrent) {
+      return {
+        path,
+        changed: false,
+        chunks: existingPathChunks.map((chunk) => chunk.id),
+        reusedChunks: existingPathChunks.length,
+        createdChunks: 0,
+        deletedChunks: 0,
+        totalChunks: existingPathChunks.length,
+      };
+    }
+
+    const reusableByHash = new Map<string, ContextChunk[]>();
+    for (const chunk of existingPathChunks) {
+      if (chunk.metadata?.split) continue;
+      const hash = this.chunkContentHash(chunk);
+      if (!hash) continue;
+      const entries = reusableByHash.get(hash) ?? [];
+      entries.push(chunk);
+      reusableByHash.set(hash, entries);
+    }
+
+    const takeReusable = (hash: string): ContextChunk | null => {
+      const entries = reusableByHash.get(hash) ?? [];
+      const reusable = entries.shift();
+      return reusable ?? null;
+    };
+
+    const result = this.ingester.ingestFile(path, text, language, type as ChunkType | undefined);
+    const keptIds = new Set<string>();
+    const storedChunkIds: string[] = [];
+    let reusedChunks = 0;
+    let createdChunks = 0;
+
+    if (result.split) {
+      const parent = result.split.parent;
+      parent.metadata.contentHash = fullContentHash;
+      const storedChildren: ContextChunk[] = [];
+
+      for (const child of result.split.children) {
+        const childHash = this.contentHash(child.text);
+        const reusable = takeReusable(childHash);
+        if (reusable) {
+          const updated: ContextChunk = {
+            ...reusable,
+            source: child.source,
+            type: child.type,
+            path: child.path,
+            language: child.language,
+            tokensEstimate: child.tokensEstimate,
+            parentId: parent.id,
+            childrenIds: [],
+            metadata: { ...reusable.metadata, ...child.metadata, contentHash: childHash },
+          };
+          this.storage.updateChunk(updated);
+          keptIds.add(updated.id);
+          storedChunkIds.push(updated.id);
+          storedChildren.push(updated);
+          reusedChunks++;
+          continue;
+        }
+
+        child.metadata.contentHash = childHash;
+        await this.storeChunkWithEmbedding(child);
+        keptIds.add(child.id);
+        storedChunkIds.push(child.id);
+        storedChildren.push(child);
+        createdChunks++;
+      }
+
+      parent.childrenIds = storedChildren.map((child) => child.id);
+      this.storage.storeChunk(parent);
+      keptIds.add(parent.id);
+      storedChunkIds.unshift(parent.id);
+      createdChunks++;
+
+      for (const child of storedChildren) {
+        this.storage.storeDependency({
+          fromId: parent.id,
+          toId: child.id,
+          type: 'contains',
+          weight: 1.0,
+        });
+      }
+    } else {
+      const chunk = result.primary;
+      chunk.metadata.contentHash = fullContentHash;
+      await this.storeChunkWithEmbedding(chunk);
+      keptIds.add(chunk.id);
+      storedChunkIds.push(chunk.id);
+      createdChunks++;
+    }
+
+    const staleIds = existingPathChunks
+      .filter((chunk) => !keptIds.has(chunk.id))
+      .map((chunk) => chunk.id);
+    const deletedChunks = this.deleteChunks(staleIds);
+    this.enforceMaxChunks();
+
+    return {
+      path,
+      changed: true,
+      chunks: storedChunkIds,
+      reusedChunks,
+      createdChunks,
+      deletedChunks,
+      totalChunks: storedChunkIds.length,
+    };
   }
 
   getAllChunks(): ContextChunk[] {
@@ -430,6 +566,12 @@ export class PipelineOrchestrator {
     return deleted;
   }
 
+  /** Delete all chunks currently associated with a file path. */
+  deleteChunksForPath(path: string): number {
+    const chunks = this.storage.queryChunks({ path });
+    return this.deleteChunks(chunks.map((chunk) => chunk.id));
+  }
+
   /** Enforce max chunk count by evicting oldest non-hot chunks */
   private enforceMaxChunks(): void {
     const maxChunks = parseInt(process.env.MAX_CHUNKS ?? '10000', 10);
@@ -524,6 +666,15 @@ export class PipelineOrchestrator {
     } catch {
       this.storage.deleteCodeStructure(chunk.id);
     }
+  }
+
+  private contentHash(text: string): string {
+    return createHash('sha256').update(text).digest('hex').slice(0, 16);
+  }
+
+  private chunkContentHash(chunk: ContextChunk): string | null {
+    const hash = chunk.metadata?.contentHash;
+    return typeof hash === 'string' ? hash : null;
   }
 
   private annotateChunkTree(chunk: ContextChunk, metadata: Record<string, unknown>): void {

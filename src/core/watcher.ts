@@ -30,7 +30,8 @@ export class FileWatcher {
     this.watcher.on('add', (filePath) => this.scheduleIngest(filePath, 'add'));
     this.watcher.on('change', (filePath) => this.scheduleIngest(filePath, 'change'));
     this.watcher.on('unlink', (filePath) => {
-      process.stderr.write(`Unlinked ${filePath}; stored chunks were not deleted.\n`);
+      const deleted = this.pipeline.deleteChunksForPath(filePath);
+      process.stderr.write(`Unlinked ${filePath}; deleted ${deleted} stored chunks.\n`);
     });
     this.watcher.on('error', (error) => {
       process.stderr.write(`Watcher error: ${String(error)}\n`);
@@ -57,17 +58,24 @@ export class FileWatcher {
       filePath,
       setTimeout(() => {
         this.pending.delete(filePath);
-        this.ingestFile(filePath, event);
+        void this.ingestFile(filePath, event);
       }, 300)
     );
   }
 
-  private ingestFile(filePath: string, event: 'add' | 'change'): void {
+  private async ingestFile(filePath: string, event: 'add' | 'change'): Promise<void> {
     try {
       if (!existsSync(filePath)) return;
       const content = readFileSync(filePath, 'utf-8');
-      this.pipeline.ingest('file', content, undefined, filePath);
-      process.stderr.write(`Watched ${event}: ${filePath}\n`);
+      if (event === 'change') {
+        const result = await this.pipeline.reingestFile(filePath, content);
+        process.stderr.write(
+          `Watched ${event}: ${filePath} (${result.reusedChunks} reused, ${result.createdChunks} created, ${result.deletedChunks} deleted)\n`
+        );
+      } else {
+        await this.pipeline.ingest('file', content, undefined, filePath);
+        process.stderr.write(`Watched ${event}: ${filePath}\n`);
+      }
     } catch (error) {
       process.stderr.write(`Failed to ingest ${filePath}: ${String(error)}\n`);
     }
