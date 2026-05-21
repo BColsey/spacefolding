@@ -166,7 +166,7 @@ export class PipelineOrchestrator {
     task: TaskDescription,
     type?: string
   ): Promise<{ chunk: ContextChunk; result: ScoreResult }> {
-    const result = this.ingester.ingestText(source, text, type as ContextChunk['type']);
+    const result = await this.ingester.ingestTextAsync(source, text, type as ContextChunk['type']);
     const chunk = result.split ? result.split.parent : result.primary;
     const chunks = result.split
       ? [result.split.parent, ...result.split.children]
@@ -267,8 +267,8 @@ export class PipelineOrchestrator {
 
     const result: IngestResult =
       path !== undefined
-        ? this.ingester.ingestFile(path, text, language, type as ChunkType | undefined)
-        : this.ingester.ingestText(source, text, type as ContextChunk['type']);
+        ? await this.ingester.ingestFileAsync(path, text, language, type as ChunkType | undefined)
+        : await this.ingester.ingestTextAsync(source, text, type as ContextChunk['type']);
 
     const chunk = result.primary;
     chunk.metadata.contentHash = contentHash;
@@ -339,7 +339,7 @@ export class PipelineOrchestrator {
       return reusable ?? null;
     };
 
-    const result = this.ingester.ingestFile(path, text, language, type as ChunkType | undefined);
+    const result = await this.ingester.ingestFileAsync(path, text, language, type as ChunkType | undefined);
     const keptIds = new Set<string>();
     const storedChunkIds: string[] = [];
     let reusedChunks = 0;

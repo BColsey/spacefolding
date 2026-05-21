@@ -1,6 +1,1362 @@
 {
   "tasks": [
     {
+      "id": "T04",
+      "task": "Where is the context chunking logic that splits large files?",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/core/ingester.ts",
+        "src/pipeline/orchestrator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "chunker",
+        "split",
+        "maybeSplit",
+        "maxTokens",
+        "overlap"
+      ],
+      "irrelevant_files": [
+        "src/providers/token-estimator.ts",
+        "src/mcp/server.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "T10",
+      "task": "Find all the CLI commands and their descriptions",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/cli/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "command",
+        "description",
+        "program",
+        "Commander"
+      ],
+      "irrelevant_files": [
+        "src/core/chunker.ts",
+        "src/providers/token-estimator.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "T14",
+      "task": "Where are dependency links stored and queried?",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/storage/repository.ts",
+        "src/types/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "storeDependency",
+        "getDependencies",
+        "DependencyLink",
+        "dependencies"
+      ],
+      "irrelevant_files": [
+        "src/core/chunker.ts",
+        "src/providers/local-embedding.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "F01",
+      "task": "Where is authenticateSession defined?",
+      "intent": "code_search",
+      "relevant_files": [
+        "benchmarks/fixtures/typescript/auth-service.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "authenticateSession",
+        "AuthService"
+      ],
+      "irrelevant_files": [
+        "benchmarks/fixtures/javascript/event-bus.js"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "F02",
+      "task": "Find the Python CacheService implementation",
+      "intent": "code_search",
+      "relevant_files": [
+        "benchmarks/fixtures/python/cache.py"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "CacheService",
+        "fetch_cached_user"
+      ],
+      "irrelevant_files": [
+        "benchmarks/fixtures/go/auth/service.go"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "F04",
+      "task": "Locate the Java authenticateRequest method",
+      "intent": "code_search",
+      "relevant_files": [
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "authenticateRequest",
+        "AuthController"
+      ],
+      "irrelevant_files": [
+        "benchmarks/fixtures/python/cache.py"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "F05",
+      "task": "Where is ValidateSession in the Go auth package?",
+      "intent": "code_search",
+      "relevant_files": [
+        "benchmarks/fixtures/go/auth/service.go"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ValidateSession",
+        "SessionService"
+      ],
+      "irrelevant_files": [
+        "benchmarks/fixtures/typescript/token-store.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "G008",
+      "task": "which file contains the exportState function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/cli/commands/export-import.ts",
+        "src/core/budget.ts",
+        "src/core/classifier.ts",
+        "src/mcp/server.ts",
+        "src/providers/symbol-extractor.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "exportState",
+        "function",
+        "which",
+        "file",
+        "contains",
+        "exportstate"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G009",
+      "task": "locate the function that handles importState",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/cli/commands/export-import.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "importState",
+        "function",
+        "locate",
+        "that",
+        "handles",
+        "importstate"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G010",
+      "task": "show me the buildCLI function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/cli/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "buildCLI",
+        "function",
+        "show",
+        "buildcli"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G011",
+      "task": "find the fillBudget function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "benchmarks/fixtures/python/cache.py",
+        "src/main.ts",
+        "src/providers/symbol-extractor.ts",
+        "src/providers/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "fillBudget",
+        "function",
+        "find",
+        "fillbudget"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G012",
+      "task": "find the compressOmitted function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "compressOmitted",
+        "function",
+        "find",
+        "compressomitted"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G013",
+      "task": "which file contains the BudgetResult interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "BudgetResult",
+        "interface",
+        "which",
+        "file",
+        "contains",
+        "budgetresult"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G014",
+      "task": "show me the CompressOmittedOptions interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/core/chunker.ts",
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "CompressOmittedOptions",
+        "interface",
+        "show",
+        "compressomittedoptions"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G015",
+      "task": "show me the BudgetOptions interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "BudgetOptions",
+        "interface",
+        "show",
+        "budgetoptions"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G016",
+      "task": "show me the maybeSplit function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/core/git-aware.ts",
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "maybeSplit",
+        "function",
+        "show",
+        "maybesplit"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G017",
+      "task": "find the maybeSplitAsync function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "maybeSplitAsync",
+        "function",
+        "find",
+        "maybesplitasync"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G018",
+      "task": "grep for ChunkingConfig",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ChunkingConfig",
+        "interface",
+        "grep",
+        "chunkingconfig"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G019",
+      "task": "show me the SplitResult interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/providers/gpu-embedding.ts",
+        "src/core/retriever.ts",
+        "src/core/classifier.ts",
+        "src/mcp/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "SplitResult",
+        "interface",
+        "show",
+        "splitresult"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G020",
+      "task": "locate the constant that handles DEFAULT_CHUNKING_CONFIG",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DEFAULT_CHUNKING_CONFIG",
+        "constant",
+        "locate",
+        "that",
+        "handles",
+        "default_chunking_config"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G021",
+      "task": "locate the function that handles classifyChunk",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "classifyChunk",
+        "function",
+        "locate",
+        "that",
+        "handles",
+        "classifychunk"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G022",
+      "task": "grep for classifyChunks",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/classifier.ts",
+        "src/pipeline/orchestrator.ts",
+        "src/core/index.ts",
+        "src/storage/index.ts",
+        "src/providers/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "classifyChunks",
+        "function",
+        "grep",
+        "classifychunks"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G023",
+      "task": "grep for parseGitDiff",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "parseGitDiff",
+        "function",
+        "grep",
+        "parsegitdiff"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G024",
+      "task": "find where scoreGitChanges is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/git-aware.ts",
+        "src/core/budget.ts",
+        "src/core/tree-sitter-chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "scoreGitChanges",
+        "function",
+        "find",
+        "where",
+        "scoregitchanges",
+        "used"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G025",
+      "task": "find the getRecentGitChanges function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "getRecentGitChanges",
+        "function",
+        "find",
+        "getrecentgitchanges"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G026",
+      "task": "find the ContextIngester class",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/ingester.ts",
+        "benchmarks/fixtures/go/auth/service.go",
+        "benchmarks/fixtures/javascript/event-bus.js",
+        "src/providers/llmlingua-compression.ts",
+        "src/core/watcher.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextIngester",
+        "class",
+        "find",
+        "contextingester"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G027",
+      "task": "find the IngestResult interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "IngestResult",
+        "interface",
+        "find",
+        "ingestresult"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G028",
+      "task": "locate the function that handles detectIntent",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "detectIntent",
+        "function",
+        "locate",
+        "that",
+        "handles",
+        "detectintent"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G029",
+      "task": "grep for expandQuery",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "expandQuery",
+        "function",
+        "grep",
+        "expandquery"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G030",
+      "task": "locate the function that handles parseStructuralQuery",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/storage/index.ts",
+        "src/providers/llmlingua-compression.ts",
+        "src/core/budget.ts",
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "parseStructuralQuery",
+        "function",
+        "locate",
+        "that",
+        "handles",
+        "parsestructuralquery"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G031",
+      "task": "grep for estimateComplexity",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/watcher.ts",
+        "src/core/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "estimateComplexity",
+        "function",
+        "grep",
+        "estimatecomplexity"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G032",
+      "task": "find the getAdaptiveStrategy function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/scorer.ts",
+        "src/core/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "getAdaptiveStrategy",
+        "function",
+        "find",
+        "getadaptivestrategy"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G033",
+      "task": "which file contains the adaptiveTopK function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/web/server.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs",
+        "benchmarks/fixtures/rust/src/lib.rs",
+        "src/storage/vector-index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "adaptiveTopK",
+        "function",
+        "which",
+        "file",
+        "contains",
+        "adaptivetopk"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G034",
+      "task": "grep for planQuery",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "planQuery",
+        "function",
+        "grep",
+        "planquery"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G035",
+      "task": "grep for QueryPlan",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java",
+        "src/storage/current-version.ts",
+        "src/core/chunker.ts",
+        "src/providers/gpu-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "QueryPlan",
+        "interface",
+        "grep",
+        "queryplan"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G036",
+      "task": "where is QueryIntent defined",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "QueryIntent",
+        "type",
+        "where",
+        "queryintent",
+        "defined"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G037",
+      "task": "find where RetrievalStrategy is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalStrategy",
+        "type",
+        "find",
+        "where",
+        "retrievalstrategy",
+        "used"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G038",
+      "task": "show me the createRetrievalSelectionPolicy function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/core/chunker.ts",
+        "benchmarks/fixtures/typescript/token-store.ts",
+        "src/providers/dependency-analyzer.ts",
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "createRetrievalSelectionPolicy",
+        "function",
+        "show",
+        "createretrievalselectionpolicy"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G039",
+      "task": "find where selectRetrievalCandidates is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/core/watcher.ts",
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "selectRetrievalCandidates",
+        "function",
+        "find",
+        "where",
+        "selectretrievalcandidates",
+        "used"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G040",
+      "task": "find the budgetForSelectedCandidates function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "budgetForSelectedCandidates",
+        "function",
+        "find",
+        "budgetforselectedcandidates"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G041",
+      "task": "grep for RetrievalSelectionPolicy",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "benchmarks/fixtures/typescript/token-store.ts",
+        "src/pipeline/index.ts",
+        "benchmarks/fixtures/rust/src/lib.rs",
+        "benchmarks/fixtures/rust/src/tokens.rs"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionPolicy",
+        "interface",
+        "grep",
+        "retrievalselectionpolicy"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G042",
+      "task": "show me the RetrievalSelectionResult interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionResult",
+        "interface",
+        "show",
+        "retrievalselectionresult"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G043",
+      "task": "grep for RetrievalComplexity",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalComplexity",
+        "type",
+        "grep",
+        "retrievalcomplexity"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G044",
+      "task": "show me the reciprocalRankFusion function",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retriever.ts",
+        "src/core/index.ts",
+        "src/core/router.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "reciprocalRankFusion",
+        "function",
+        "show",
+        "reciprocalrankfusion"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G045",
+      "task": "locate the class that handles HybridRetriever",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "HybridRetriever",
+        "class",
+        "locate",
+        "that",
+        "handles",
+        "hybridretriever"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G046",
+      "task": "find the RetrievalResult interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalResult",
+        "interface",
+        "find",
+        "retrievalresult"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G047",
+      "task": "find where RetrievalOptions is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retriever.ts",
+        "src/storage/vector-index.ts",
+        "benchmarks/fixtures/javascript/listeners.js",
+        "src/core/router.ts",
+        "src/storage/current-version.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalOptions",
+        "interface",
+        "find",
+        "where",
+        "retrievaloptions",
+        "used"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G048",
+      "task": "which file contains the RetrievalSource type",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retriever.ts",
+        "src/providers/deterministic-compression.ts",
+        "benchmarks/fixtures/python/cache.py",
+        "src/core/index.ts",
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSource",
+        "type",
+        "which",
+        "file",
+        "contains",
+        "retrievalsource"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G049",
+      "task": "grep for RetrievalMode",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/retriever.ts",
+        "src/pipeline/orchestrator.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs",
+        "src/storage/vector-index.ts",
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalMode",
+        "type",
+        "grep",
+        "retrievalmode"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G050",
+      "task": "find the ContextRouter class",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/router.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextRouter",
+        "class",
+        "find",
+        "contextrouter"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G051",
+      "task": "where is DEFAULT_ROUTING_CONFIG defined",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/router.ts",
+        "src/core/git-aware.ts",
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DEFAULT_ROUTING_CONFIG",
+        "constant",
+        "where",
+        "default_routing_config",
+        "defined"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G052",
+      "task": "find where ContextScorer is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextScorer",
+        "class",
+        "find",
+        "where",
+        "contextscorer",
+        "used"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G053",
+      "task": "find where resetTreeSitterChunker is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/tree-sitter-chunker.ts",
+        "src/core/classifier.ts",
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "resetTreeSitterChunker",
+        "function",
+        "find",
+        "where",
+        "resettreesitterchunker",
+        "used"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G054",
+      "task": "where is splitCodeWithTreeSitter defined",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/tree-sitter-chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "splitCodeWithTreeSitter",
+        "function",
+        "where",
+        "splitcodewithtreesitter",
+        "defined"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G055",
+      "task": "find where FileWatcher is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/core/watcher.ts",
+        "src/core/scorer.ts",
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "FileWatcher",
+        "class",
+        "find",
+        "where",
+        "filewatcher",
+        "used"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G056",
+      "task": "where is startMCPServer defined",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/mcp/server.ts",
+        "benchmarks/fixtures/javascript/listeners.js",
+        "src/storage/schema.ts",
+        "benchmarks/fixtures/python/cache.py",
+        "src/providers/deterministic-compression.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "startMCPServer",
+        "function",
+        "where",
+        "startmcpserver",
+        "defined"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G057",
+      "task": "show me the TOOL_DEFINITIONS constant",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/mcp/server.ts",
+        "src/providers/dependency-analyzer.ts",
+        "src/pipeline/orchestrator.ts",
+        "src/cli/commands/export-import.ts",
+        "src/core/watcher.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "TOOL_DEFINITIONS",
+        "constant",
+        "show",
+        "tool_definitions"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G058",
+      "task": "where is PipelineOrchestrator defined",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/core/query-planner.ts",
+        "src/storage/repository.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java",
+        "src/main.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "PipelineOrchestrator",
+        "class",
+        "where",
+        "pipelineorchestrator",
+        "defined"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G059",
+      "task": "find where ProjectIngestOptions is used",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/storage/repository.ts",
+        "benchmarks/fixtures/go/auth/service.go",
+        "src/providers/symbol-extractor.ts",
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestOptions",
+        "interface",
+        "find",
+        "where",
+        "projectingestoptions",
+        "used"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G060",
+      "task": "locate the interface that handles ProjectIngestResult",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/pipeline/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestResult",
+        "interface",
+        "locate",
+        "that",
+        "handles",
+        "projectingestresult"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G061",
+      "task": "show me the FileReingestResult interface",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/providers/symbol-extractor.ts",
+        "src/providers/llm-compression.ts",
+        "src/providers/local-embedding.ts",
+        "benchmarks/fixtures/python/cache.py"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "FileReingestResult",
+        "interface",
+        "show",
+        "filereingestresult"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G062",
+      "task": "where is SimpleDependencyAnalyzer defined",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/providers/dependency-analyzer.ts",
+        "src/providers/llmlingua-compression.ts",
+        "src/providers/deterministic-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "SimpleDependencyAnalyzer",
+        "class",
+        "where",
+        "simpledependencyanalyzer",
+        "defined"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G063",
+      "task": "find the DeterministicCompressionProvider class",
+      "intent": "code_search",
+      "relevant_files": [
+        "src/providers/deterministic-compression.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DeterministicCompressionProvider",
+        "class",
+        "find",
+        "deterministiccompressionprovider"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
       "id": "T01",
       "task": "Fix the authentication bug causing 401 errors in the login flow",
       "intent": "debug",
@@ -31,87 +1387,6 @@
       "source": "expert"
     },
     {
-      "id": "T02",
-      "task": "How does the scoring engine weight different factors?",
-      "intent": "explain",
-      "relevant_files": [
-        "src/core/scorer.ts",
-        "src/core/router.ts"
-      ],
-      "relevant_types": [
-        "code",
-        "fact"
-      ],
-      "relevant_keywords": [
-        "semantic",
-        "constraint",
-        "recency",
-        "redundancy",
-        "dependency",
-        "weight"
-      ],
-      "irrelevant_files": [
-        "src/web/server.ts",
-        "src/cli/commands/export-import.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T03",
-      "task": "Add a new embedding provider that uses OpenAI embeddings",
-      "intent": "implement",
-      "relevant_files": [
-        "src/providers/deterministic-embedding.ts",
-        "src/providers/local-embedding.ts",
-        "src/types/index.ts",
-        "src/providers/index.ts"
-      ],
-      "relevant_types": [
-        "code",
-        "reference"
-      ],
-      "relevant_keywords": [
-        "EmbeddingProvider",
-        "embed",
-        "embedBatch",
-        "interface",
-        "provider"
-      ],
-      "irrelevant_files": [
-        "src/core/watcher.ts",
-        "src/storage/schema.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T04",
-      "task": "Where is the context chunking logic that splits large files?",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/core/chunker.ts",
-        "src/core/ingester.ts",
-        "src/pipeline/orchestrator.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "chunker",
-        "split",
-        "maybeSplit",
-        "maxTokens",
-        "overlap"
-      ],
-      "irrelevant_files": [
-        "src/providers/token-estimator.ts",
-        "src/mcp/server.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
       "id": "T05",
       "task": "Why is a constraint chunk being routed to cold instead of hot?",
       "intent": "debug",
@@ -133,58 +1408,6 @@
       "irrelevant_files": [
         "src/core/watcher.ts",
         "src/web/server.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T06",
-      "task": "Implement a new MCP tool for deleting chunks",
-      "intent": "implement",
-      "relevant_files": [
-        "src/mcp/server.ts",
-        "src/types/index.ts",
-        "src/storage/repository.ts"
-      ],
-      "relevant_types": [
-        "code",
-        "reference"
-      ],
-      "relevant_keywords": [
-        "MCP",
-        "tool",
-        "CallToolRequestSchema",
-        "deleteChunk",
-        "server"
-      ],
-      "irrelevant_files": [
-        "src/core/chunker.ts",
-        "src/providers/deterministic-embedding.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T07",
-      "task": "How does the hybrid retriever combine vector search with full-text search?",
-      "intent": "explain",
-      "relevant_files": [
-        "src/core/retriever.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "HybridRetriever",
-        "reciprocalRankFusion",
-        "vector",
-        "fts",
-        "searchByVector",
-        "searchByText"
-      ],
-      "irrelevant_files": [
-        "src/core/watcher.ts",
-        "src/providers/symbol-extractor.ts"
       ],
       "difficulty": "hard",
       "source": "expert"
@@ -217,6 +1440,1367 @@
       "source": "expert"
     },
     {
+      "id": "T13",
+      "task": "Fix the token estimator underestimating token counts for code",
+      "intent": "debug",
+      "relevant_files": [
+        "src/providers/token-estimator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "estimate",
+        "tokens",
+        "length",
+        "charsPerToken"
+      ],
+      "irrelevant_files": [
+        "src/core/scorer.ts",
+        "src/mcp/server.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "T17",
+      "task": "Fix the SSE transport not properly cleaning up sessions",
+      "intent": "debug",
+      "relevant_files": [
+        "src/mcp/server.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "SSE",
+        "transport",
+        "sessionId",
+        "onclose",
+        "transports"
+      ],
+      "irrelevant_files": [
+        "src/core/scorer.ts",
+        "src/providers/deterministic-embedding.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "G069",
+      "task": "debug the exportState function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/cli/commands/export-import.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "exportState",
+        "function",
+        "debug",
+        "exportstate"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G070",
+      "task": "there is an error in the importState function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/cli/commands/export-import.ts",
+        "src/core/ingester.ts",
+        "src/core/retriever.ts",
+        "src/providers/local-compression.ts",
+        "benchmarks/fixtures/go/auth/service.go"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "importState",
+        "function",
+        "there",
+        "error",
+        "importstate"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G071",
+      "task": "fix the issue with buildCLI",
+      "intent": "debug",
+      "relevant_files": [
+        "src/cli/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "buildCLI",
+        "function",
+        "issue",
+        "with",
+        "buildcli"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G072",
+      "task": "the fillBudget function throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/core/query-planner.ts",
+        "src/core/watcher.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "fillBudget",
+        "function",
+        "fillbudget",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G073",
+      "task": "there is an error in the compressOmitted function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "compressOmitted",
+        "function",
+        "there",
+        "error",
+        "compressomitted"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G074",
+      "task": "fix the issue with BudgetResult",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "BudgetResult",
+        "interface",
+        "issue",
+        "with",
+        "budgetresult"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G075",
+      "task": "fix the issue with CompressOmittedOptions",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/providers/deterministic-reranker.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs",
+        "src/providers/deterministic-embedding.ts",
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "CompressOmittedOptions",
+        "interface",
+        "issue",
+        "with",
+        "compressomittedoptions"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G076",
+      "task": "BudgetOptions is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/storage/vector-index.ts",
+        "src/mcp/server.ts",
+        "src/core/scorer.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "BudgetOptions",
+        "interface",
+        "budgetoptions",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G077",
+      "task": "fix the bug in maybeSplit",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "benchmarks/fixtures/typescript/token-store.ts",
+        "src/providers/deterministic-compression.ts",
+        "benchmarks/fixtures/javascript/listeners.js",
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "maybeSplit",
+        "function",
+        "maybesplit"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G078",
+      "task": "fix the issue with maybeSplitAsync",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "maybeSplitAsync",
+        "function",
+        "issue",
+        "with",
+        "maybesplitasync"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G079",
+      "task": "fix the bug in ChunkingConfig",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/cli/index.ts",
+        "benchmarks/fixtures/typescript/auth-service.ts",
+        "src/core/git-aware.ts",
+        "src/types/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ChunkingConfig",
+        "interface",
+        "chunkingconfig"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G080",
+      "task": "there is an error in the SplitResult interface",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/core/watcher.ts",
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "SplitResult",
+        "interface",
+        "there",
+        "error",
+        "splitresult"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G081",
+      "task": "there is an error in the DEFAULT_CHUNKING_CONFIG constant",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DEFAULT_CHUNKING_CONFIG",
+        "constant",
+        "there",
+        "error",
+        "default_chunking_config"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G082",
+      "task": "classifyChunk is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/classifier.ts",
+        "src/core/retrieval-policy.ts",
+        "src/core/tree-sitter-chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "classifyChunk",
+        "function",
+        "classifychunk",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G083",
+      "task": "there is an error in the classifyChunks function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/classifier.ts",
+        "src/core/index.ts",
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "classifyChunks",
+        "function",
+        "there",
+        "error",
+        "classifychunks"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G084",
+      "task": "the parseGitDiff function throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/git-aware.ts",
+        "src/core/retriever.ts",
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "parseGitDiff",
+        "function",
+        "parsegitdiff",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G085",
+      "task": "there is an error in the scoreGitChanges function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/git-aware.ts",
+        "src/core/watcher.ts",
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "scoreGitChanges",
+        "function",
+        "there",
+        "error",
+        "scoregitchanges"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G086",
+      "task": "debug the getRecentGitChanges function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "getRecentGitChanges",
+        "function",
+        "debug",
+        "getrecentgitchanges"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G087",
+      "task": "debug the ContextIngester function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/ingester.ts",
+        "src/core/retriever.ts",
+        "src/core/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextIngester",
+        "class",
+        "debug",
+        "contextingester",
+        "function"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G088",
+      "task": "the IngestResult interface throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "IngestResult",
+        "interface",
+        "ingestresult",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G089",
+      "task": "detectIntent is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/retrieval-policy.ts",
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "detectIntent",
+        "function",
+        "detectintent",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G090",
+      "task": "fix the issue with expandQuery",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/watcher.ts",
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "expandQuery",
+        "function",
+        "issue",
+        "with",
+        "expandquery"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G091",
+      "task": "there is an error in the parseStructuralQuery function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/index.ts",
+        "src/core/tree-sitter-chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "parseStructuralQuery",
+        "function",
+        "there",
+        "error",
+        "parsestructuralquery"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G092",
+      "task": "there is an error in the estimateComplexity function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/scorer.ts",
+        "benchmarks/fixtures/rust/src/lib.rs",
+        "src/mcp/server.ts",
+        "src/types/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "estimateComplexity",
+        "function",
+        "there",
+        "error",
+        "estimatecomplexity"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G093",
+      "task": "fix the issue with getAdaptiveStrategy",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/providers/deterministic-embedding.ts",
+        "src/core/index.ts",
+        "src/storage/repository.ts",
+        "src/storage/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "getAdaptiveStrategy",
+        "function",
+        "issue",
+        "with",
+        "getadaptivestrategy"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G094",
+      "task": "fix the bug in adaptiveTopK",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/pipeline/orchestrator.ts",
+        "src/core/classifier.ts",
+        "src/web/server.ts",
+        "src/cli/commands/export-import.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "adaptiveTopK",
+        "function",
+        "adaptivetopk"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G095",
+      "task": "fix the issue with planQuery",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/providers/dependency-analyzer.ts",
+        "src/core/budget.ts",
+        "benchmarks/fixtures/typescript/token-store.ts",
+        "src/mcp/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "planQuery",
+        "function",
+        "issue",
+        "with",
+        "planquery"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G096",
+      "task": "there is an error in the QueryPlan interface",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "QueryPlan",
+        "interface",
+        "there",
+        "error",
+        "queryplan"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G097",
+      "task": "the QueryIntent type throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/classifier.ts",
+        "src/core/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "QueryIntent",
+        "type",
+        "queryintent",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G098",
+      "task": "the RetrievalStrategy type throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/types/index.ts",
+        "src/providers/local-compression.ts",
+        "src/providers/token-estimator.ts",
+        "src/providers/gpu-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalStrategy",
+        "type",
+        "retrievalstrategy",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G099",
+      "task": "there is an error in the createRetrievalSelectionPolicy function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/core/budget.ts",
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "createRetrievalSelectionPolicy",
+        "function",
+        "there",
+        "error",
+        "createretrievalselectionpolicy"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G100",
+      "task": "debug the selectRetrievalCandidates function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/mcp/index.ts",
+        "src/core/watcher.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/tokens/TokenVerifier.java",
+        "src/providers/token-estimator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "selectRetrievalCandidates",
+        "function",
+        "debug",
+        "selectretrievalcandidates"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G101",
+      "task": "fix the bug in budgetForSelectedCandidates",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "budgetForSelectedCandidates",
+        "function",
+        "budgetforselectedcandidates"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G102",
+      "task": "fix the issue with RetrievalSelectionPolicy",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionPolicy",
+        "interface",
+        "issue",
+        "with",
+        "retrievalselectionpolicy"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G103",
+      "task": "fix the bug in RetrievalSelectionResult",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/main.ts",
+        "benchmarks/fixtures/typescript/auth-service.ts",
+        "benchmarks/fixtures/rust/src/lib.rs",
+        "src/providers/local-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionResult",
+        "interface",
+        "retrievalselectionresult"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G104",
+      "task": "fix the bug in RetrievalComplexity",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/web/server.ts",
+        "src/core/query-planner.ts",
+        "src/storage/index.ts",
+        "src/providers/local-compression.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalComplexity",
+        "type",
+        "retrievalcomplexity"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G105",
+      "task": "the reciprocalRankFusion function throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "reciprocalRankFusion",
+        "function",
+        "reciprocalrankfusion",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G106",
+      "task": "debug the HybridRetriever function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "HybridRetriever",
+        "class",
+        "debug",
+        "hybridretriever",
+        "function"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G107",
+      "task": "debug the RetrievalResult function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retriever.ts",
+        "src/core/retrieval-policy.ts",
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalResult",
+        "interface",
+        "debug",
+        "retrievalresult",
+        "function"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G108",
+      "task": "there is an error in the RetrievalOptions interface",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalOptions",
+        "interface",
+        "there",
+        "error",
+        "retrievaloptions"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G109",
+      "task": "fix the issue with RetrievalSource",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSource",
+        "type",
+        "issue",
+        "with",
+        "retrievalsource"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G110",
+      "task": "debug the RetrievalMode function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalMode",
+        "type",
+        "debug",
+        "retrievalmode",
+        "function"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G111",
+      "task": "ContextRouter is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/router.ts",
+        "src/core/query-planner.ts",
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextRouter",
+        "class",
+        "contextrouter",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G112",
+      "task": "fix the issue with DEFAULT_ROUTING_CONFIG",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/router.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DEFAULT_ROUTING_CONFIG",
+        "constant",
+        "issue",
+        "with",
+        "default_routing_config"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G113",
+      "task": "ContextScorer is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/scorer.ts",
+        "src/core/retriever.ts",
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextScorer",
+        "class",
+        "contextscorer",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G114",
+      "task": "resetTreeSitterChunker is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/tree-sitter-chunker.ts",
+        "src/cli/index.ts",
+        "src/core/chunker.ts",
+        "src/providers/index.ts",
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "resetTreeSitterChunker",
+        "function",
+        "resettreesitterchunker",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G115",
+      "task": "there is an error in the splitCodeWithTreeSitter function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/tree-sitter-chunker.ts",
+        "src/core/classifier.ts",
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "splitCodeWithTreeSitter",
+        "function",
+        "there",
+        "error",
+        "splitcodewithtreesitter"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G116",
+      "task": "FileWatcher is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/core/watcher.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "FileWatcher",
+        "class",
+        "filewatcher",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G117",
+      "task": "startMCPServer is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/mcp/server.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "startMCPServer",
+        "function",
+        "startmcpserver",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G118",
+      "task": "debug the TOOL_DEFINITIONS function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/mcp/server.ts",
+        "src/providers/token-estimator.ts",
+        "src/core/watcher.ts",
+        "src/providers/deterministic-compression.ts",
+        "src/core/router.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "TOOL_DEFINITIONS",
+        "constant",
+        "debug",
+        "tool_definitions",
+        "function"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G119",
+      "task": "PipelineOrchestrator is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/core/git-aware.ts",
+        "src/core/router.ts",
+        "src/core/tree-sitter-chunker.ts",
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "PipelineOrchestrator",
+        "class",
+        "pipelineorchestrator",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G120",
+      "task": "the ProjectIngestOptions interface throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/core/index.ts",
+        "src/providers/symbol-extractor.ts",
+        "src/core/retrieval-policy.ts",
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestOptions",
+        "interface",
+        "projectingestoptions",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G121",
+      "task": "debug the ProjectIngestResult function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestResult",
+        "interface",
+        "debug",
+        "projectingestresult",
+        "function"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G122",
+      "task": "the FileReingestResult interface throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/pipeline/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "FileReingestResult",
+        "interface",
+        "filereingestresult",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G123",
+      "task": "fix the issue with SimpleDependencyAnalyzer",
+      "intent": "debug",
+      "relevant_files": [
+        "src/providers/dependency-analyzer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "SimpleDependencyAnalyzer",
+        "class",
+        "issue",
+        "with",
+        "simpledependencyanalyzer"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G124",
+      "task": "DeterministicCompressionProvider is returning wrong values",
+      "intent": "debug",
+      "relevant_files": [
+        "src/providers/deterministic-compression.ts",
+        "src/providers/deterministic-embedding.ts",
+        "src/providers/gpu-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DeterministicCompressionProvider",
+        "class",
+        "deterministiccompressionprovider",
+        "returning",
+        "wrong",
+        "values"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G125",
+      "task": "the cosineSimilarity function throws an exception",
+      "intent": "debug",
+      "relevant_files": [
+        "src/providers/deterministic-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "cosineSimilarity",
+        "function",
+        "cosinesimilarity",
+        "throws",
+        "exception"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G126",
+      "task": "debug the DeterministicEmbeddingProvider function",
+      "intent": "debug",
+      "relevant_files": [
+        "src/providers/deterministic-embedding.ts",
+        "src/core/query-planner.ts",
+        "src/storage/current-version.ts",
+        "src/mcp/server.ts",
+        "benchmarks/fixtures/python/cache.py"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DeterministicEmbeddingProvider",
+        "class",
+        "debug",
+        "deterministicembeddingprovider",
+        "function"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "T02",
+      "task": "How does the scoring engine weight different factors?",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/scorer.ts",
+        "src/core/router.ts"
+      ],
+      "relevant_types": [
+        "code",
+        "fact"
+      ],
+      "relevant_keywords": [
+        "semantic",
+        "constraint",
+        "recency",
+        "redundancy",
+        "dependency",
+        "weight"
+      ],
+      "irrelevant_files": [
+        "src/web/server.ts",
+        "src/cli/commands/export-import.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "T07",
+      "task": "How does the hybrid retriever combine vector search with full-text search?",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "HybridRetriever",
+        "reciprocalRankFusion",
+        "vector",
+        "fts",
+        "searchByVector",
+        "searchByText"
+      ],
+      "irrelevant_files": [
+        "src/core/watcher.ts",
+        "src/providers/symbol-extractor.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
       "id": "T09",
       "task": "What database schema migrations exist and how are they applied?",
       "intent": "explain",
@@ -239,54 +2823,6 @@
       "irrelevant_files": [
         "src/core/scorer.ts",
         "src/mcp/server.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T10",
-      "task": "Find all the CLI commands and their descriptions",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/cli/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "command",
-        "description",
-        "program",
-        "Commander"
-      ],
-      "irrelevant_files": [
-        "src/core/chunker.ts",
-        "src/providers/token-estimator.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T11",
-      "task": "Add support for Python code chunking in the context splitter",
-      "intent": "implement",
-      "relevant_files": [
-        "src/core/chunker.ts",
-        "src/core/ingester.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "splitCode",
-        "findCodeBoundaries",
-        "python",
-        "def ",
-        "class "
-      ],
-      "irrelevant_files": [
-        "src/mcp/server.ts",
-        "src/web/server.ts"
       ],
       "difficulty": "hard",
       "source": "expert"
@@ -316,48 +2852,1375 @@
       "source": "expert"
     },
     {
-      "id": "T13",
-      "task": "Fix the token estimator underestimating token counts for code",
-      "intent": "debug",
+      "id": "T16",
+      "task": "How does the classifier detect chunk types?",
+      "intent": "explain",
       "relevant_files": [
-        "src/providers/token-estimator.ts"
+        "src/core/classifier.ts"
       ],
       "relevant_types": [
         "code"
       ],
       "relevant_keywords": [
-        "estimate",
-        "tokens",
-        "length",
-        "charsPerToken"
+        "classifyChunk",
+        "ChunkType",
+        "constraint",
+        "instruction",
+        "code",
+        "log"
       ],
       "irrelevant_files": [
-        "src/core/scorer.ts",
-        "src/mcp/server.ts"
+        "src/core/chunker.ts",
+        "src/web/server.ts"
       ],
       "difficulty": "hard",
       "source": "expert"
     },
     {
-      "id": "T14",
-      "task": "Where are dependency links stored and queried?",
-      "intent": "code_search",
+      "id": "T18",
+      "task": "What environment variables control the system behavior?",
+      "intent": "explain",
       "relevant_files": [
-        "src/storage/repository.ts",
+        "src/cli/index.ts",
+        ".env.example"
+      ],
+      "relevant_types": [
+        "reference"
+      ],
+      "relevant_keywords": [
+        "DB_PATH",
+        "MODEL_PATH",
+        "EMBEDDING_PROVIDER",
+        "COMPRESSION_PROVIDER",
+        "CHUNK"
+      ],
+      "irrelevant_files": [
+        "src/core/scorer.ts",
+        "src/providers/symbol-extractor.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "T20",
+      "task": "How does the web UI display chunk routing information?",
+      "intent": "explain",
+      "relevant_files": [
+        "src/web/server.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "web",
+        "HTML",
+        "chunk",
+        "routing",
+        "tier",
+        "SPA"
+      ],
+      "irrelevant_files": [
+        "src/core/scorer.ts",
+        "src/providers/deterministic-embedding.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "F03",
+      "task": "How is verify_login implemented in Rust?",
+      "intent": "explain",
+      "relevant_files": [
+        "benchmarks/fixtures/rust/src/lib.rs",
+        "benchmarks/fixtures/rust/src/tokens.rs"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "verify_login",
+        "Token"
+      ],
+      "irrelevant_files": [
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "G135",
+      "task": "describe the exportState implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/cli/commands/export-import.ts",
+        "src/core/query-planner.ts",
+        "src/core/budget.ts",
+        "benchmarks/fixtures/python/storage/backend.py",
+        "src/web/server.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "exportState",
+        "function",
+        "describe",
+        "exportstate",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G136",
+      "task": "how does importState work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/cli/commands/export-import.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "importState",
+        "function",
+        "does",
+        "importstate",
+        "work"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G137",
+      "task": "explain the buildCLI function",
+      "intent": "explain",
+      "relevant_files": [
+        "src/cli/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "buildCLI",
+        "function",
+        "explain",
+        "buildcli"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G138",
+      "task": "understand how fillBudget interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/pipeline/orchestrator.ts",
+        "src/storage/current-version.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs",
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "fillBudget",
+        "function",
+        "understand",
+        "fillbudget",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G139",
+      "task": "what does compressOmitted do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/mcp/index.ts",
+        "benchmarks/fixtures/javascript/event-bus.js",
+        "src/providers/dependency-analyzer.ts",
+        "src/providers/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "compressOmitted",
+        "function",
+        "what",
+        "does",
+        "compressomitted"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G140",
+      "task": "explain the BudgetResult interface",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/providers/gpu-embedding.ts",
+        "src/pipeline/orchestrator.ts",
+        "benchmarks/fixtures/python/storage/backend.py",
+        "src/storage/schema.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "BudgetResult",
+        "interface",
+        "explain",
+        "budgetresult"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G141",
+      "task": "what does CompressOmittedOptions do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/budget.ts",
+        "src/providers/local-embedding.ts",
+        "src/providers/llm-compression.ts",
+        "benchmarks/fixtures/javascript/listeners.js",
+        "benchmarks/fixtures/python/cache.py"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "CompressOmittedOptions",
+        "interface",
+        "what",
+        "does",
+        "compressomittedoptions"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G142",
+      "task": "understand how BudgetOptions interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "BudgetOptions",
+        "interface",
+        "understand",
+        "budgetoptions",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G143",
+      "task": "how does maybeSplit work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/core/query-planner.ts",
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "maybeSplit",
+        "function",
+        "does",
+        "maybesplit",
+        "work"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G144",
+      "task": "describe the maybeSplitAsync implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/core/ingester.ts",
+        "src/core/tree-sitter-chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "maybeSplitAsync",
+        "function",
+        "describe",
+        "maybesplitasync",
+        "implementation"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G145",
+      "task": "how does ChunkingConfig work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ChunkingConfig",
+        "interface",
+        "does",
+        "chunkingconfig",
+        "work"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G146",
+      "task": "describe the SplitResult implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "SplitResult",
+        "interface",
+        "describe",
+        "splitresult",
+        "implementation"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G147",
+      "task": "how does DEFAULT_CHUNKING_CONFIG work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/core/git-aware.ts",
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DEFAULT_CHUNKING_CONFIG",
+        "constant",
+        "does",
+        "default_chunking_config",
+        "work"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G148",
+      "task": "explain the classifyChunk function",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/classifier.ts",
+        "src/core/git-aware.ts",
+        "src/pipeline/index.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/tokens/TokenVerifier.java",
+        "benchmarks/fixtures/go/auth/service.go"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "classifyChunk",
+        "function",
+        "explain",
+        "classifychunk"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G149",
+      "task": "what does classifyChunks do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "classifyChunks",
+        "function",
+        "what",
+        "does",
+        "classifychunks"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G150",
+      "task": "what does parseGitDiff do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/git-aware.ts",
+        "src/core/budget.ts",
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "parseGitDiff",
+        "function",
+        "what",
+        "does",
+        "parsegitdiff"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G151",
+      "task": "explain the scoreGitChanges function",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/git-aware.ts",
+        "src/core/chunker.ts",
+        "src/storage/vector-index.ts",
+        "src/types/index.ts",
+        "src/providers/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "scoreGitChanges",
+        "function",
+        "explain",
+        "scoregitchanges"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G152",
+      "task": "understand how getRecentGitChanges interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/git-aware.ts",
+        "src/core/watcher.ts",
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "getRecentGitChanges",
+        "function",
+        "understand",
+        "getrecentgitchanges",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G153",
+      "task": "explain the ContextIngester class",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextIngester",
+        "class",
+        "explain",
+        "contextingester"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G154",
+      "task": "explain the IngestResult interface",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/ingester.ts",
+        "src/core/query-planner.ts",
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "IngestResult",
+        "interface",
+        "explain",
+        "ingestresult"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G155",
+      "task": "what does detectIntent do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/scorer.ts",
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "detectIntent",
+        "function",
+        "what",
+        "does",
+        "detectintent"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G156",
+      "task": "describe the expandQuery implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "expandQuery",
+        "function",
+        "describe",
+        "expandquery",
+        "implementation"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G157",
+      "task": "what does parseStructuralQuery do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "parseStructuralQuery",
+        "function",
+        "what",
+        "does",
+        "parsestructuralquery"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G158",
+      "task": "how does estimateComplexity work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/chunker.ts",
+        "src/core/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "estimateComplexity",
+        "function",
+        "does",
+        "estimatecomplexity",
+        "work"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G159",
+      "task": "understand how getAdaptiveStrategy interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "getAdaptiveStrategy",
+        "function",
+        "understand",
+        "getadaptivestrategy",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G160",
+      "task": "understand how adaptiveTopK interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/index.ts",
+        "benchmarks/fixtures/javascript/event-bus.js",
+        "src/providers/llmlingua-compression.ts",
         "src/types/index.ts"
       ],
       "relevant_types": [
         "code"
       ],
       "relevant_keywords": [
-        "storeDependency",
-        "getDependencies",
-        "DependencyLink",
-        "dependencies"
+        "adaptiveTopK",
+        "function",
+        "understand",
+        "adaptivetopk",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G161",
+      "task": "explain the planQuery function",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/providers/deterministic-compression.ts",
+        "benchmarks/fixtures/python/storage/backend.py",
+        "src/core/ingester.ts",
+        "src/providers/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "planQuery",
+        "function",
+        "explain",
+        "planquery"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G162",
+      "task": "how does QueryPlan work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/tokens/TokenVerifier.java",
+        "src/storage/repository.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs",
+        "src/mcp/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "QueryPlan",
+        "interface",
+        "does",
+        "queryplan",
+        "work"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G163",
+      "task": "describe the QueryIntent implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/watcher.ts",
+        "src/core/router.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "QueryIntent",
+        "type",
+        "describe",
+        "queryintent",
+        "implementation"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G164",
+      "task": "understand how RetrievalStrategy interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/index.ts",
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalStrategy",
+        "type",
+        "understand",
+        "retrievalstrategy",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G165",
+      "task": "explain the createRetrievalSelectionPolicy function",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "createRetrievalSelectionPolicy",
+        "function",
+        "explain",
+        "createretrievalselectionpolicy"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G166",
+      "task": "what does selectRetrievalCandidates do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "selectRetrievalCandidates",
+        "function",
+        "what",
+        "does",
+        "selectretrievalcandidates"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G167",
+      "task": "explain the budgetForSelectedCandidates function",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "budgetForSelectedCandidates",
+        "function",
+        "explain",
+        "budgetforselectedcandidates"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G168",
+      "task": "how does RetrievalSelectionPolicy work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionPolicy",
+        "interface",
+        "does",
+        "retrievalselectionpolicy",
+        "work"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G169",
+      "task": "what does RetrievalSelectionResult do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/core/git-aware.ts",
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionResult",
+        "interface",
+        "what",
+        "does",
+        "retrievalselectionresult"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G170",
+      "task": "how does RetrievalComplexity work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalComplexity",
+        "type",
+        "does",
+        "retrievalcomplexity",
+        "work"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G171",
+      "task": "what does reciprocalRankFusion do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "reciprocalRankFusion",
+        "function",
+        "what",
+        "does",
+        "reciprocalrankfusion"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G172",
+      "task": "describe the HybridRetriever implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retriever.ts",
+        "src/web/server.ts",
+        "src/core/router.ts",
+        "benchmarks/fixtures/typescript/auth-service.ts",
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "HybridRetriever",
+        "class",
+        "describe",
+        "hybridretriever",
+        "implementation"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G173",
+      "task": "describe the RetrievalResult implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalResult",
+        "interface",
+        "describe",
+        "retrievalresult",
+        "implementation"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G174",
+      "task": "describe the RetrievalOptions implementation",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalOptions",
+        "interface",
+        "describe",
+        "retrievaloptions",
+        "implementation"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G175",
+      "task": "explain the RetrievalSource type",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSource",
+        "type",
+        "explain",
+        "retrievalsource"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G176",
+      "task": "what does RetrievalMode do",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/retriever.ts",
+        "src/storage/vector-index.ts",
+        "src/providers/symbol-extractor.ts",
+        "src/storage/current-version.ts",
+        "src/providers/gpu-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalMode",
+        "type",
+        "what",
+        "does",
+        "retrievalmode"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G177",
+      "task": "how does ContextRouter work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/router.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextRouter",
+        "class",
+        "does",
+        "contextrouter",
+        "work"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G178",
+      "task": "explain the DEFAULT_ROUTING_CONFIG constant",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/router.ts",
+        "src/core/tree-sitter-chunker.ts",
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "DEFAULT_ROUTING_CONFIG",
+        "constant",
+        "explain",
+        "default_routing_config"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G179",
+      "task": "understand how ContextScorer interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/scorer.ts",
+        "src/core/ingester.ts",
+        "src/core/budget.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ContextScorer",
+        "class",
+        "understand",
+        "contextscorer",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G180",
+      "task": "explain the resetTreeSitterChunker function",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/tree-sitter-chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "resetTreeSitterChunker",
+        "function",
+        "explain",
+        "resettreesitterchunker"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G181",
+      "task": "understand how splitCodeWithTreeSitter interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/tree-sitter-chunker.ts",
+        "src/providers/llmlingua-compression.ts",
+        "src/providers/symbol-extractor.ts",
+        "src/storage/current-version.ts",
+        "benchmarks/fixtures/python/storage/backend.py"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "splitCodeWithTreeSitter",
+        "function",
+        "understand",
+        "splitcodewithtreesitter",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G182",
+      "task": "understand how FileWatcher interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/core/watcher.ts",
+        "src/core/chunker.ts",
+        "src/core/tree-sitter-chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "FileWatcher",
+        "class",
+        "understand",
+        "filewatcher",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G183",
+      "task": "understand how startMCPServer interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/mcp/server.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "startMCPServer",
+        "function",
+        "understand",
+        "startmcpserver",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G184",
+      "task": "explain the TOOL_DEFINITIONS constant",
+      "intent": "explain",
+      "relevant_files": [
+        "src/mcp/server.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "TOOL_DEFINITIONS",
+        "constant",
+        "explain",
+        "tool_definitions"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G185",
+      "task": "how does PipelineOrchestrator work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/pipeline/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "PipelineOrchestrator",
+        "class",
+        "does",
+        "pipelineorchestrator",
+        "work"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G186",
+      "task": "understand how ProjectIngestOptions interacts with the system",
+      "intent": "explain",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/core/retrieval-policy.ts",
+        "src/providers/llmlingua-compression.ts",
+        "src/core/git-aware.ts",
+        "src/providers/token-estimator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestOptions",
+        "interface",
+        "understand",
+        "projectingestoptions",
+        "interacts",
+        "with",
+        "system"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G187",
+      "task": "explain the ProjectIngestResult interface",
+      "intent": "explain",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/pipeline/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestResult",
+        "interface",
+        "explain",
+        "projectingestresult"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G188",
+      "task": "how does FileReingestResult work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "FileReingestResult",
+        "interface",
+        "does",
+        "filereingestresult",
+        "work"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G189",
+      "task": "how does SimpleDependencyAnalyzer work",
+      "intent": "explain",
+      "relevant_files": [
+        "src/providers/dependency-analyzer.ts",
+        "src/mcp/server.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs",
+        "src/cli/commands/export-import.ts",
+        "src/providers/structural-indexer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "SimpleDependencyAnalyzer",
+        "class",
+        "does",
+        "simpledependencyanalyzer",
+        "work"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "T03",
+      "task": "Add a new embedding provider that uses OpenAI embeddings",
+      "intent": "implement",
+      "relevant_files": [
+        "src/providers/deterministic-embedding.ts",
+        "src/providers/local-embedding.ts",
+        "src/types/index.ts",
+        "src/providers/index.ts"
+      ],
+      "relevant_types": [
+        "code",
+        "reference"
+      ],
+      "relevant_keywords": [
+        "EmbeddingProvider",
+        "embed",
+        "embedBatch",
+        "interface",
+        "provider"
+      ],
+      "irrelevant_files": [
+        "src/core/watcher.ts",
+        "src/storage/schema.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "T06",
+      "task": "Implement a new MCP tool for deleting chunks",
+      "intent": "implement",
+      "relevant_files": [
+        "src/mcp/server.ts",
+        "src/types/index.ts",
+        "src/storage/repository.ts"
+      ],
+      "relevant_types": [
+        "code",
+        "reference"
+      ],
+      "relevant_keywords": [
+        "MCP",
+        "tool",
+        "CallToolRequestSchema",
+        "deleteChunk",
+        "server"
       ],
       "irrelevant_files": [
         "src/core/chunker.ts",
-        "src/providers/local-embedding.ts"
+        "src/providers/deterministic-embedding.ts"
+      ],
+      "difficulty": "hard",
+      "source": "expert"
+    },
+    {
+      "id": "T11",
+      "task": "Add support for Python code chunking in the context splitter",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/chunker.ts",
+        "src/core/ingester.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "splitCode",
+        "findCodeBoundaries",
+        "python",
+        "def ",
+        "class "
+      ],
+      "irrelevant_files": [
+        "src/mcp/server.ts",
+        "src/web/server.ts"
       ],
       "difficulty": "hard",
       "source": "expert"
@@ -389,80 +4252,6 @@
       "source": "expert"
     },
     {
-      "id": "T16",
-      "task": "How does the classifier detect chunk types?",
-      "intent": "explain",
-      "relevant_files": [
-        "src/core/classifier.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "classifyChunk",
-        "ChunkType",
-        "constraint",
-        "instruction",
-        "code",
-        "log"
-      ],
-      "irrelevant_files": [
-        "src/core/chunker.ts",
-        "src/web/server.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T17",
-      "task": "Fix the SSE transport not properly cleaning up sessions",
-      "intent": "debug",
-      "relevant_files": [
-        "src/mcp/server.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "SSE",
-        "transport",
-        "sessionId",
-        "onclose",
-        "transports"
-      ],
-      "irrelevant_files": [
-        "src/core/scorer.ts",
-        "src/providers/deterministic-embedding.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "T18",
-      "task": "What environment variables control the system behavior?",
-      "intent": "explain",
-      "relevant_files": [
-        "src/cli/index.ts",
-        ".env.example"
-      ],
-      "relevant_types": [
-        "reference"
-      ],
-      "relevant_keywords": [
-        "DB_PATH",
-        "MODEL_PATH",
-        "EMBEDDING_PROVIDER",
-        "COMPRESSION_PROVIDER",
-        "CHUNK"
-      ],
-      "irrelevant_files": [
-        "src/core/scorer.ts",
-        "src/providers/symbol-extractor.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
       "id": "T19",
       "task": "Add export/import support for the dependency graph",
       "intent": "implement",
@@ -489,34 +4278,9 @@
       "source": "expert"
     },
     {
-      "id": "T20",
-      "task": "How does the web UI display chunk routing information?",
-      "intent": "explain",
-      "relevant_files": [
-        "src/web/server.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "web",
-        "HTML",
-        "chunk",
-        "routing",
-        "tier",
-        "SPA"
-      ],
-      "irrelevant_files": [
-        "src/core/scorer.ts",
-        "src/providers/deterministic-embedding.ts"
-      ],
-      "difficulty": "hard",
-      "source": "expert"
-    },
-    {
-      "id": "G001",
-      "task": "the exportState function throws an exception",
-      "intent": "debug",
+      "id": "G195",
+      "task": "add tests for exportState",
+      "intent": "implement",
       "relevant_files": [
         "src/cli/commands/export-import.ts"
       ],
@@ -526,17 +4290,16 @@
       "relevant_keywords": [
         "exportState",
         "function",
-        "exportstate",
-        "throws",
-        "exception"
+        "tests",
+        "exportstate"
       ],
-      "difficulty": "medium",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G002",
-      "task": "fix the issue with importState",
-      "intent": "debug",
+      "id": "G196",
+      "task": "optimize the importState function",
+      "intent": "implement",
       "relevant_files": [
         "src/cli/commands/export-import.ts"
       ],
@@ -546,23 +4309,18 @@
       "relevant_keywords": [
         "importState",
         "function",
-        "issue",
-        "with",
+        "optimize",
         "importstate"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G003",
-      "task": "show me the buildCLI function",
-      "intent": "code_search",
+      "id": "G197",
+      "task": "extend buildCLI to support new features",
+      "intent": "implement",
       "relevant_files": [
-        "src/cli/index.ts",
-        "src/core/query-planner.ts",
-        "src/providers/deterministic-compression.ts",
-        "src/providers/local-embedding.ts",
-        "src/core/watcher.ts"
+        "src/cli/index.ts"
       ],
       "relevant_types": [
         "code"
@@ -570,20 +4328,22 @@
       "relevant_keywords": [
         "buildCLI",
         "function",
-        "show",
-        "buildcli"
+        "extend",
+        "buildcli",
+        "support",
+        "features"
       ],
-      "difficulty": "hard",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G004",
-      "task": "which file contains the fillBudget function",
-      "intent": "code_search",
+      "id": "G198",
+      "task": "add tests for fillBudget",
+      "intent": "implement",
       "relevant_files": [
         "src/core/budget.ts",
-        "src/core/scorer.ts",
-        "src/core/index.ts"
+        "src/core/classifier.ts",
+        "src/core/retrieval-policy.ts"
       ],
       "relevant_types": [
         "code"
@@ -591,22 +4351,18 @@
       "relevant_keywords": [
         "fillBudget",
         "function",
-        "which",
-        "file",
-        "contains",
+        "tests",
         "fillbudget"
       ],
       "difficulty": "medium",
       "source": "generated"
     },
     {
-      "id": "G005",
-      "task": "explain the compressOmitted function",
-      "intent": "explain",
+      "id": "G199",
+      "task": "add caching to compressOmitted",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/budget.ts",
-        "src/core/ingester.ts",
-        "src/core/classifier.ts"
+        "src/core/budget.ts"
       ],
       "relevant_types": [
         "code"
@@ -614,18 +4370,22 @@
       "relevant_keywords": [
         "compressOmitted",
         "function",
-        "explain",
+        "caching",
         "compressomitted"
       ],
-      "difficulty": "medium",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G006",
-      "task": "fix the issue with BudgetResult",
-      "intent": "debug",
+      "id": "G200",
+      "task": "improve error handling in BudgetResult",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/budget.ts"
+        "src/core/budget.ts",
+        "src/storage/current-version.ts",
+        "src/core/chunker.ts",
+        "src/core/git-aware.ts",
+        "src/core/router.ts"
       ],
       "relevant_types": [
         "code"
@@ -633,23 +4393,20 @@
       "relevant_keywords": [
         "BudgetResult",
         "interface",
-        "issue",
-        "with",
+        "improve",
+        "error",
+        "handling",
         "budgetresult"
       ],
-      "difficulty": "easy",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G007",
-      "task": "how does CompressOmittedOptions work",
-      "intent": "explain",
+      "id": "G201",
+      "task": "refactor the CompressOmittedOptions interface",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/budget.ts",
-        "src/cli/index.ts",
-        "src/types/index.ts",
-        "src/core/git-aware.ts",
-        "src/providers/index.ts"
+        "src/core/budget.ts"
       ],
       "relevant_types": [
         "code"
@@ -657,19 +4414,22 @@
       "relevant_keywords": [
         "CompressOmittedOptions",
         "interface",
-        "does",
-        "compressomittedoptions",
-        "work"
+        "refactor",
+        "compressomittedoptions"
       ],
-      "difficulty": "hard",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G008",
-      "task": "fix the issue with BudgetOptions",
-      "intent": "debug",
+      "id": "G202",
+      "task": "improve error handling in BudgetOptions",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/budget.ts"
+        "src/core/budget.ts",
+        "src/pipeline/index.ts",
+        "src/core/router.ts",
+        "src/providers/local-compression.ts",
+        "src/cli/index.ts"
       ],
       "relevant_types": [
         "code"
@@ -677,19 +4437,22 @@
       "relevant_keywords": [
         "BudgetOptions",
         "interface",
-        "issue",
-        "with",
+        "improve",
+        "error",
+        "handling",
         "budgetoptions"
       ],
-      "difficulty": "easy",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G009",
-      "task": "fix the bug in maybeSplit",
-      "intent": "debug",
+      "id": "G203",
+      "task": "refactor the maybeSplit function",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/chunker.ts"
+        "src/core/chunker.ts",
+        "src/core/git-aware.ts",
+        "src/core/tree-sitter-chunker.ts"
       ],
       "relevant_types": [
         "code"
@@ -697,17 +4460,41 @@
       "relevant_keywords": [
         "maybeSplit",
         "function",
+        "refactor",
         "maybesplit"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G204",
+      "task": "add caching to maybeSplitAsync",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/chunker.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "maybeSplitAsync",
+        "function",
+        "caching",
+        "maybesplitasync"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G010",
-      "task": "ChunkingConfig is returning wrong values",
-      "intent": "debug",
+      "id": "G205",
+      "task": "optimize the ChunkingConfig function",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/chunker.ts"
+        "src/core/chunker.ts",
+        "src/providers/token-estimator.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/tokens/TokenVerifier.java",
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java",
+        "src/core/ingester.ts"
       ],
       "relevant_types": [
         "code"
@@ -715,20 +4502,23 @@
       "relevant_keywords": [
         "ChunkingConfig",
         "interface",
+        "optimize",
         "chunkingconfig",
-        "returning",
-        "wrong",
-        "values"
+        "function"
       ],
-      "difficulty": "easy",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G011",
-      "task": "add tests for SplitResult",
+      "id": "G206",
+      "task": "refactor the SplitResult interface",
       "intent": "implement",
       "relevant_files": [
-        "src/core/chunker.ts"
+        "src/core/chunker.ts",
+        "src/providers/deterministic-reranker.ts",
+        "src/storage/repository.ts",
+        "benchmarks/fixtures/javascript/event-bus.js",
+        "src/providers/structural-indexer.ts"
       ],
       "relevant_types": [
         "code"
@@ -736,20 +4526,20 @@
       "relevant_keywords": [
         "SplitResult",
         "interface",
-        "tests",
+        "refactor",
         "splitresult"
       ],
-      "difficulty": "easy",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G012",
-      "task": "improve error handling in DEFAULT_CHUNKING_CONFIG",
+      "id": "G207",
+      "task": "add caching to DEFAULT_CHUNKING_CONFIG",
       "intent": "implement",
       "relevant_files": [
         "src/core/chunker.ts",
-        "src/core/router.ts",
-        "src/core/budget.ts"
+        "src/core/ingester.ts",
+        "src/core/tree-sitter-chunker.ts"
       ],
       "relevant_types": [
         "code"
@@ -757,22 +4547,18 @@
       "relevant_keywords": [
         "DEFAULT_CHUNKING_CONFIG",
         "constant",
-        "improve",
-        "error",
-        "handling",
+        "caching",
         "default_chunking_config"
       ],
       "difficulty": "medium",
       "source": "generated"
     },
     {
-      "id": "G013",
-      "task": "find where classifyChunk is used",
-      "intent": "code_search",
+      "id": "G208",
+      "task": "extend classifyChunk to support new features",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/classifier.ts",
-        "src/core/index.ts",
-        "src/core/git-aware.ts"
+        "src/core/classifier.ts"
       ],
       "relevant_types": [
         "code"
@@ -780,22 +4566,24 @@
       "relevant_keywords": [
         "classifyChunk",
         "function",
-        "find",
-        "where",
+        "extend",
         "classifychunk",
-        "used"
+        "support",
+        "features"
       ],
-      "difficulty": "medium",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G014",
-      "task": "refactor the classifyChunks function",
+      "id": "G209",
+      "task": "add tests for classifyChunks",
       "intent": "implement",
       "relevant_files": [
         "src/core/classifier.ts",
-        "src/core/chunker.ts",
-        "src/core/router.ts"
+        "src/providers/llmlingua-compression.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java",
+        "src/web/server.ts",
+        "src/providers/deterministic-reranker.ts"
       ],
       "relevant_types": [
         "code"
@@ -803,20 +4591,22 @@
       "relevant_keywords": [
         "classifyChunks",
         "function",
-        "refactor",
+        "tests",
         "classifychunks"
       ],
-      "difficulty": "medium",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G015",
-      "task": "improve error handling in parseGitDiff",
+      "id": "G210",
+      "task": "add tests for parseGitDiff",
       "intent": "implement",
       "relevant_files": [
         "src/core/git-aware.ts",
-        "src/core/budget.ts",
-        "src/core/classifier.ts"
+        "src/providers/token-estimator.ts",
+        "src/core/classifier.ts",
+        "src/mcp/index.ts",
+        "src/providers/llmlingua-compression.ts"
       ],
       "relevant_types": [
         "code"
@@ -824,18 +4614,16 @@
       "relevant_keywords": [
         "parseGitDiff",
         "function",
-        "improve",
-        "error",
-        "handling",
+        "tests",
         "parsegitdiff"
       ],
-      "difficulty": "medium",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G016",
-      "task": "fix the bug in scoreGitChanges",
-      "intent": "debug",
+      "id": "G211",
+      "task": "extend scoreGitChanges to support new features",
+      "intent": "implement",
       "relevant_files": [
         "src/core/git-aware.ts"
       ],
@@ -845,21 +4633,22 @@
       "relevant_keywords": [
         "scoreGitChanges",
         "function",
-        "scoregitchanges"
+        "extend",
+        "scoregitchanges",
+        "support",
+        "features"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G017",
-      "task": "describe the getRecentGitChanges implementation",
-      "intent": "explain",
+      "id": "G212",
+      "task": "add caching to getRecentGitChanges",
+      "intent": "implement",
       "relevant_files": [
         "src/core/git-aware.ts",
-        "src/core/query-planner.ts",
-        "src/providers/deterministic-compression.ts",
-        "src/core/index.ts",
-        "src/core/budget.ts"
+        "src/core/watcher.ts",
+        "src/core/retriever.ts"
       ],
       "relevant_types": [
         "code"
@@ -867,23 +4656,22 @@
       "relevant_keywords": [
         "getRecentGitChanges",
         "function",
-        "describe",
-        "getrecentgitchanges",
-        "implementation"
+        "caching",
+        "getrecentgitchanges"
       ],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "source": "generated"
     },
     {
-      "id": "G018",
-      "task": "ContextIngester is returning wrong values",
-      "intent": "debug",
+      "id": "G213",
+      "task": "extend ContextIngester to support new features",
+      "intent": "implement",
       "relevant_files": [
         "src/core/ingester.ts",
-        "src/storage/repository.ts",
-        "src/cli/commands/export-import.ts",
-        "src/providers/deterministic-compression.ts",
-        "src/core/budget.ts"
+        "benchmarks/fixtures/javascript/event-bus.js",
+        "src/core/retriever.ts",
+        "src/providers/deterministic-embedding.ts",
+        "src/storage/vector-index.ts"
       ],
       "relevant_types": [
         "code"
@@ -891,22 +4679,22 @@
       "relevant_keywords": [
         "ContextIngester",
         "class",
+        "extend",
         "contextingester",
-        "returning",
-        "wrong",
-        "values"
+        "support",
+        "features"
       ],
       "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G019",
-      "task": "optimize the IngestResult function",
+      "id": "G214",
+      "task": "add tests for IngestResult",
       "intent": "implement",
       "relevant_files": [
         "src/core/ingester.ts",
-        "src/core/retriever.ts",
-        "src/core/watcher.ts"
+        "src/core/router.ts",
+        "src/core/retriever.ts"
       ],
       "relevant_types": [
         "code"
@@ -914,23 +4702,20 @@
       "relevant_keywords": [
         "IngestResult",
         "interface",
-        "optimize",
-        "ingestresult",
-        "function"
+        "tests",
+        "ingestresult"
       ],
       "difficulty": "medium",
       "source": "generated"
     },
     {
-      "id": "G020",
-      "task": "how does detectIntent work",
-      "intent": "explain",
+      "id": "G215",
+      "task": "add tests for detectIntent",
+      "intent": "implement",
       "relevant_files": [
         "src/core/query-planner.ts",
-        "src/main.ts",
-        "src/providers/token-estimator.ts",
-        "src/providers/local-compression.ts",
-        "src/core/chunker.ts"
+        "src/core/watcher.ts",
+        "src/core/retriever.ts"
       ],
       "relevant_types": [
         "code"
@@ -938,19 +4723,22 @@
       "relevant_keywords": [
         "detectIntent",
         "function",
-        "does",
-        "detectintent",
-        "work"
+        "tests",
+        "detectintent"
       ],
-      "difficulty": "hard",
+      "difficulty": "medium",
       "source": "generated"
     },
     {
-      "id": "G021",
-      "task": "how does expandQuery work",
-      "intent": "explain",
+      "id": "G216",
+      "task": "optimize the expandQuery function",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/query-planner.ts"
+        "src/core/query-planner.ts",
+        "src/mcp/index.ts",
+        "src/storage/index.ts",
+        "src/providers/symbol-extractor.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java"
       ],
       "relevant_types": [
         "code"
@@ -958,23 +4746,41 @@
       "relevant_keywords": [
         "expandQuery",
         "function",
-        "does",
-        "expandquery",
-        "work"
+        "optimize",
+        "expandquery"
       ],
-      "difficulty": "easy",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G022",
-      "task": "explain the estimateComplexity function",
-      "intent": "explain",
+      "id": "G217",
+      "task": "refactor the parseStructuralQuery function",
+      "intent": "implement",
       "relevant_files": [
         "src/core/query-planner.ts",
-        "src/core/budget.ts",
-        "src/providers/llm-compression.ts",
-        "src/core/git-aware.ts",
-        "src/providers/deterministic-compression.ts"
+        "src/core/scorer.ts",
+        "src/core/classifier.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "parseStructuralQuery",
+        "function",
+        "refactor",
+        "parsestructuralquery"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G218",
+      "task": "extend estimateComplexity to support new features",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/index.ts",
+        "src/core/watcher.ts"
       ],
       "relevant_types": [
         "code"
@@ -982,38 +4788,60 @@
       "relevant_keywords": [
         "estimateComplexity",
         "function",
-        "explain",
-        "estimatecomplexity"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G023",
-      "task": "fix the issue with planQuery",
-      "intent": "debug",
-      "relevant_files": [
-        "src/core/query-planner.ts",
-        "src/core/retriever.ts",
-        "src/core/classifier.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "planQuery",
-        "function",
-        "issue",
-        "with",
-        "planquery"
+        "extend",
+        "estimatecomplexity",
+        "support",
+        "features"
       ],
       "difficulty": "medium",
       "source": "generated"
     },
     {
-      "id": "G024",
-      "task": "understand how QueryPlan interacts with the system",
-      "intent": "explain",
+      "id": "G219",
+      "task": "optimize the getAdaptiveStrategy function",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/chunker.ts",
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "getAdaptiveStrategy",
+        "function",
+        "optimize",
+        "getadaptivestrategy"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G220",
+      "task": "add tests for adaptiveTopK",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/query-planner.ts",
+        "src/core/chunker.ts",
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "adaptiveTopK",
+        "function",
+        "tests",
+        "adaptivetopk"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G221",
+      "task": "add tests for planQuery",
+      "intent": "implement",
       "relevant_files": [
         "src/core/query-planner.ts"
       ],
@@ -1021,27 +4849,48 @@
         "code"
       ],
       "relevant_keywords": [
-        "QueryPlan",
-        "interface",
-        "understand",
-        "queryplan",
-        "interacts",
-        "with",
-        "system"
+        "planQuery",
+        "function",
+        "tests",
+        "planquery"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G025",
-      "task": "fix the issue with QueryIntent",
-      "intent": "debug",
+      "id": "G222",
+      "task": "optimize the QueryPlan function",
+      "intent": "implement",
       "relevant_files": [
         "src/core/query-planner.ts",
-        "src/core/ingester.ts",
+        "benchmarks/fixtures/javascript/listeners.js",
+        "src/types/index.ts",
+        "src/storage/schema.ts",
+        "src/pipeline/orchestrator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "QueryPlan",
+        "interface",
+        "optimize",
+        "queryplan",
+        "function"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G223",
+      "task": "add tests for QueryIntent",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/query-planner.ts",
         "src/web/server.ts",
-        "src/core/router.ts",
-        "src/storage/index.ts"
+        "src/providers/symbol-extractor.ts",
+        "src/pipeline/index.ts",
+        "src/cli/index.ts"
       ],
       "relevant_types": [
         "code"
@@ -1049,21 +4898,176 @@
       "relevant_keywords": [
         "QueryIntent",
         "type",
-        "issue",
-        "with",
+        "tests",
         "queryintent"
       ],
       "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G026",
-      "task": "how does reciprocalRankFusion work",
-      "intent": "explain",
+      "id": "G224",
+      "task": "extend RetrievalStrategy to support new features",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/query-planner.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalStrategy",
+        "type",
+        "extend",
+        "retrievalstrategy",
+        "support",
+        "features"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G225",
+      "task": "optimize the createRetrievalSelectionPolicy function",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/core/git-aware.ts",
+        "src/core/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "createRetrievalSelectionPolicy",
+        "function",
+        "optimize",
+        "createretrievalselectionpolicy"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G226",
+      "task": "refactor the selectRetrievalCandidates function",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/types/index.ts",
+        "src/providers/index.ts",
+        "src/core/query-planner.ts",
+        "src/core/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "selectRetrievalCandidates",
+        "function",
+        "refactor",
+        "selectretrievalcandidates"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G227",
+      "task": "optimize the budgetForSelectedCandidates function",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/core/query-planner.ts",
+        "src/providers/deterministic-compression.ts",
+        "src/providers/local-embedding.ts",
+        "benchmarks/fixtures/javascript/event-bus.js"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "budgetForSelectedCandidates",
+        "function",
+        "optimize",
+        "budgetforselectedcandidates"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G228",
+      "task": "add caching to RetrievalSelectionPolicy",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/providers/structural-indexer.ts",
+        "src/core/index.ts",
+        "src/main.ts",
+        "src/pipeline/orchestrator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionPolicy",
+        "interface",
+        "caching",
+        "retrievalselectionpolicy"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G229",
+      "task": "add caching to RetrievalSelectionResult",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts",
+        "src/core/query-planner.ts",
+        "src/core/chunker.ts",
+        "src/mcp/index.ts",
+        "src/core/scorer.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSelectionResult",
+        "interface",
+        "caching",
+        "retrievalselectionresult"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G230",
+      "task": "optimize the RetrievalComplexity function",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalComplexity",
+        "type",
+        "optimize",
+        "retrievalcomplexity",
+        "function"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G231",
+      "task": "add caching to reciprocalRankFusion",
+      "intent": "implement",
       "relevant_files": [
         "src/core/retriever.ts",
-        "src/core/query-planner.ts",
-        "src/core/classifier.ts"
+        "src/providers/local-embedding.ts",
+        "benchmarks/fixtures/rust/src/lib.rs",
+        "src/mcp/index.ts",
+        "src/core/index.ts"
       ],
       "relevant_types": [
         "code"
@@ -1071,23 +5075,18 @@
       "relevant_keywords": [
         "reciprocalRankFusion",
         "function",
-        "does",
-        "reciprocalrankfusion",
-        "work"
+        "caching",
+        "reciprocalrankfusion"
       ],
-      "difficulty": "medium",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G027",
-      "task": "find the HybridRetriever class",
-      "intent": "code_search",
+      "id": "G232",
+      "task": "add caching to HybridRetriever",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/retriever.ts",
-        "src/pipeline/orchestrator.ts",
-        "src/storage/index.ts",
-        "src/core/chunker.ts",
-        "src/providers/deterministic-compression.ts"
+        "src/core/retriever.ts"
       ],
       "relevant_types": [
         "code"
@@ -1095,16 +5094,16 @@
       "relevant_keywords": [
         "HybridRetriever",
         "class",
-        "find",
+        "caching",
         "hybridretriever"
       ],
-      "difficulty": "hard",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G028",
-      "task": "RetrievalResult is returning wrong values",
-      "intent": "debug",
+      "id": "G233",
+      "task": "add caching to RetrievalResult",
+      "intent": "implement",
       "relevant_files": [
         "src/core/retriever.ts"
       ],
@@ -1114,20 +5113,22 @@
       "relevant_keywords": [
         "RetrievalResult",
         "interface",
-        "retrievalresult",
-        "returning",
-        "wrong",
-        "values"
+        "caching",
+        "retrievalresult"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G029",
-      "task": "describe the RetrievalOptions implementation",
-      "intent": "explain",
+      "id": "G234",
+      "task": "refactor the RetrievalOptions interface",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/retriever.ts"
+        "src/core/retriever.ts",
+        "src/types/index.ts",
+        "src/mcp/index.ts",
+        "src/storage/repository.ts",
+        "src/providers/deterministic-embedding.ts"
       ],
       "relevant_types": [
         "code"
@@ -1135,23 +5136,60 @@
       "relevant_keywords": [
         "RetrievalOptions",
         "interface",
-        "describe",
-        "retrievaloptions",
-        "implementation"
+        "refactor",
+        "retrievaloptions"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G235",
+      "task": "add caching to RetrievalSource",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/retriever.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalSource",
+        "type",
+        "caching",
+        "retrievalsource"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G030",
-      "task": "there is an error in the ContextRouter class",
-      "intent": "debug",
+      "id": "G236",
+      "task": "add caching to RetrievalMode",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/router.ts",
-        "src/core/index.ts",
-        "src/providers/dependency-analyzer.ts",
-        "src/providers/deterministic-embedding.ts",
-        "src/main.ts"
+        "src/core/retriever.ts",
+        "src/providers/local-embedding.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java",
+        "src/providers/index.ts",
+        "src/providers/gpu-embedding.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "RetrievalMode",
+        "type",
+        "caching",
+        "retrievalmode"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G237",
+      "task": "refactor the ContextRouter class",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/router.ts"
       ],
       "relevant_types": [
         "code"
@@ -1159,21 +5197,22 @@
       "relevant_keywords": [
         "ContextRouter",
         "class",
-        "there",
-        "error",
+        "refactor",
         "contextrouter"
       ],
-      "difficulty": "hard",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G031",
-      "task": "which file contains the DEFAULT_ROUTING_CONFIG constant",
-      "intent": "code_search",
+      "id": "G238",
+      "task": "extend DEFAULT_ROUTING_CONFIG to support new features",
+      "intent": "implement",
       "relevant_files": [
         "src/core/router.ts",
-        "src/core/ingester.ts",
-        "src/core/index.ts"
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java",
+        "benchmarks/fixtures/javascript/event-bus.js",
+        "src/core/query-planner.ts",
+        "benchmarks/fixtures/python/storage/backend.py"
       ],
       "relevant_types": [
         "code"
@@ -1181,20 +5220,24 @@
       "relevant_keywords": [
         "DEFAULT_ROUTING_CONFIG",
         "constant",
-        "which",
-        "file",
-        "contains",
-        "default_routing_config"
+        "extend",
+        "default_routing_config",
+        "support",
+        "features"
       ],
-      "difficulty": "medium",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G032",
-      "task": "where is ContextScorer defined",
-      "intent": "code_search",
+      "id": "G239",
+      "task": "add tests for ContextScorer",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/scorer.ts"
+        "src/core/scorer.ts",
+        "src/providers/deterministic-compression.ts",
+        "benchmarks/fixtures/rust/src/tokens.rs",
+        "src/providers/local-compression.ts",
+        "benchmarks/fixtures/typescript/auth-service.ts"
       ],
       "relevant_types": [
         "code"
@@ -1202,23 +5245,64 @@
       "relevant_keywords": [
         "ContextScorer",
         "class",
-        "where",
-        "contextscorer",
-        "defined"
+        "tests",
+        "contextscorer"
       ],
-      "difficulty": "easy",
+      "difficulty": "hard",
       "source": "generated"
     },
     {
-      "id": "G033",
-      "task": "fix the bug in FileWatcher",
-      "intent": "debug",
+      "id": "G240",
+      "task": "extend resetTreeSitterChunker to support new features",
+      "intent": "implement",
       "relevant_files": [
-        "src/core/watcher.ts",
-        "src/mcp/server.ts",
-        "src/providers/symbol-extractor.ts",
-        "src/providers/llm-compression.ts",
-        "src/cli/index.ts"
+        "src/core/tree-sitter-chunker.ts",
+        "src/core/scorer.ts",
+        "src/core/retrieval-policy.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "resetTreeSitterChunker",
+        "function",
+        "extend",
+        "resettreesitterchunker",
+        "support",
+        "features"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G241",
+      "task": "extend splitCodeWithTreeSitter to support new features",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/tree-sitter-chunker.ts",
+        "src/core/scorer.ts",
+        "src/core/git-aware.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "splitCodeWithTreeSitter",
+        "function",
+        "extend",
+        "splitcodewithtreesitter",
+        "support",
+        "features"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G242",
+      "task": "add tests for FileWatcher",
+      "intent": "implement",
+      "relevant_files": [
+        "src/core/watcher.ts"
       ],
       "relevant_types": [
         "code"
@@ -1226,15 +5310,16 @@
       "relevant_keywords": [
         "FileWatcher",
         "class",
+        "tests",
         "filewatcher"
       ],
-      "difficulty": "hard",
+      "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G034",
-      "task": "find where startMCPServer is used",
-      "intent": "code_search",
+      "id": "G243",
+      "task": "optimize the startMCPServer function",
+      "intent": "implement",
       "relevant_files": [
         "src/mcp/server.ts",
         "src/mcp/index.ts"
@@ -1245,20 +5330,42 @@
       "relevant_keywords": [
         "startMCPServer",
         "function",
-        "find",
-        "where",
-        "startmcpserver",
-        "used"
+        "optimize",
+        "startmcpserver"
       ],
       "difficulty": "medium",
       "source": "generated"
     },
     {
-      "id": "G035",
-      "task": "PipelineOrchestrator is returning wrong values",
-      "intent": "debug",
+      "id": "G244",
+      "task": "optimize the TOOL_DEFINITIONS function",
+      "intent": "implement",
       "relevant_files": [
-        "src/pipeline/orchestrator.ts"
+        "src/mcp/server.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "TOOL_DEFINITIONS",
+        "constant",
+        "optimize",
+        "tool_definitions",
+        "function"
+      ],
+      "difficulty": "easy",
+      "source": "generated"
+    },
+    {
+      "id": "G245",
+      "task": "add caching to PipelineOrchestrator",
+      "intent": "implement",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "benchmarks/fixtures/java/src/main/java/com/example/AuthController.java",
+        "src/providers/symbol-extractor.ts",
+        "benchmarks/fixtures/javascript/event-bus.js",
+        "src/providers/index.ts"
       ],
       "relevant_types": [
         "code"
@@ -1266,18 +5373,79 @@
       "relevant_keywords": [
         "PipelineOrchestrator",
         "class",
-        "pipelineorchestrator",
-        "returning",
-        "wrong",
-        "values"
+        "caching",
+        "pipelineorchestrator"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G246",
+      "task": "refactor the ProjectIngestOptions interface",
+      "intent": "implement",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestOptions",
+        "interface",
+        "refactor",
+        "projectingestoptions"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G036",
-      "task": "the SimpleDependencyAnalyzer class throws an exception",
-      "intent": "debug",
+      "id": "G247",
+      "task": "optimize the ProjectIngestResult function",
+      "intent": "implement",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/core/watcher.ts",
+        "src/core/query-planner.ts",
+        "src/core/router.ts",
+        "src/providers/deterministic-compression.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "ProjectIngestResult",
+        "interface",
+        "optimize",
+        "projectingestresult",
+        "function"
+      ],
+      "difficulty": "hard",
+      "source": "generated"
+    },
+    {
+      "id": "G248",
+      "task": "add tests for FileReingestResult",
+      "intent": "implement",
+      "relevant_files": [
+        "src/pipeline/orchestrator.ts",
+        "src/pipeline/index.ts"
+      ],
+      "relevant_types": [
+        "code"
+      ],
+      "relevant_keywords": [
+        "FileReingestResult",
+        "interface",
+        "tests",
+        "filereingestresult"
+      ],
+      "difficulty": "medium",
+      "source": "generated"
+    },
+    {
+      "id": "G249",
+      "task": "add caching to SimpleDependencyAnalyzer",
+      "intent": "implement",
       "relevant_files": [
         "src/providers/dependency-analyzer.ts"
       ],
@@ -1287,21 +5455,20 @@
       "relevant_keywords": [
         "SimpleDependencyAnalyzer",
         "class",
-        "simpledependencyanalyzer",
-        "throws",
-        "exception"
+        "caching",
+        "simpledependencyanalyzer"
       ],
       "difficulty": "easy",
       "source": "generated"
     },
     {
-      "id": "G037",
-      "task": "which file contains the DeterministicCompressionProvider class",
-      "intent": "code_search",
+      "id": "G250",
+      "task": "add caching to DeterministicCompressionProvider",
+      "intent": "implement",
       "relevant_files": [
         "src/providers/deterministic-compression.ts",
-        "src/providers/llm-compression.ts",
-        "src/providers/dependency-analyzer.ts"
+        "src/providers/llmlingua-compression.ts",
+        "src/providers/deterministic-embedding.ts"
       ],
       "relevant_types": [
         "code"
@@ -1309,1559 +5476,8 @@
       "relevant_keywords": [
         "DeterministicCompressionProvider",
         "class",
-        "which",
-        "file",
-        "contains",
+        "caching",
         "deterministiccompressionprovider"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G038",
-      "task": "what does cosineSimilarity do",
-      "intent": "explain",
-      "relevant_files": [
-        "src/providers/deterministic-embedding.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "cosineSimilarity",
-        "function",
-        "what",
-        "does",
-        "cosinesimilarity"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G039",
-      "task": "optimize the DeterministicEmbeddingProvider function",
-      "intent": "implement",
-      "relevant_files": [
-        "src/providers/deterministic-embedding.ts",
-        "src/core/chunker.ts",
-        "src/core/watcher.ts",
-        "src/providers/symbol-extractor.ts",
-        "src/providers/gpu-embedding.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "DeterministicEmbeddingProvider",
-        "class",
-        "optimize",
-        "deterministicembeddingprovider",
-        "function"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G040",
-      "task": "add caching to DeterministicRerankerProvider",
-      "intent": "implement",
-      "relevant_files": [
-        "src/providers/deterministic-reranker.ts",
-        "src/providers/dependency-analyzer.ts",
-        "src/providers/gpu-embedding.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "DeterministicRerankerProvider",
-        "class",
-        "caching",
-        "deterministicrerankerprovider"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G041",
-      "task": "extend GpuEmbeddingProvider to support new features",
-      "intent": "implement",
-      "relevant_files": [
-        "src/providers/gpu-embedding.ts",
-        "src/providers/llm-compression.ts",
-        "src/providers/token-estimator.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "GpuEmbeddingProvider",
-        "class",
-        "extend",
-        "gpuembeddingprovider",
-        "support",
-        "features"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G042",
-      "task": "explain the LLMCompressionProvider class",
-      "intent": "explain",
-      "relevant_files": [
-        "src/providers/llm-compression.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "LLMCompressionProvider",
-        "class",
-        "explain",
-        "llmcompressionprovider"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G043",
-      "task": "what does LLMCompressionConfig do",
-      "intent": "explain",
-      "relevant_files": [
-        "src/providers/llm-compression.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "LLMCompressionConfig",
-        "interface",
-        "what",
-        "does",
-        "llmcompressionconfig"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G044",
-      "task": "find the LocalCompressionProvider class",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/providers/local-compression.ts",
-        "src/providers/llm-compression.ts",
-        "src/providers/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "LocalCompressionProvider",
-        "class",
-        "find",
-        "localcompressionprovider"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G045",
-      "task": "how does downloadModel work",
-      "intent": "explain",
-      "relevant_files": [
-        "src/providers/local-embedding.ts",
-        "src/providers/dependency-analyzer.ts",
-        "src/providers/deterministic-compression.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "downloadModel",
-        "function",
-        "does",
-        "downloadmodel",
-        "work"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G046",
-      "task": "what does LocalEmbeddingProvider do",
-      "intent": "explain",
-      "relevant_files": [
-        "src/providers/local-embedding.ts",
-        "src/pipeline/orchestrator.ts",
-        "src/core/index.ts",
-        "src/cli/index.ts",
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "LocalEmbeddingProvider",
-        "class",
-        "what",
-        "does",
-        "localembeddingprovider"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G047",
-      "task": "find where extractSymbols is used",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/providers/symbol-extractor.ts",
-        "src/providers/gpu-embedding.ts",
-        "src/providers/deterministic-reranker.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "extractSymbols",
-        "function",
-        "find",
-        "where",
-        "extractsymbols",
-        "used"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G048",
-      "task": "explain the buildSymbolIndex function",
-      "intent": "explain",
-      "relevant_files": [
-        "src/providers/symbol-extractor.ts",
-        "src/providers/local-embedding.ts",
-        "src/providers/llm-compression.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "buildSymbolIndex",
-        "function",
-        "explain",
-        "buildsymbolindex"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G049",
-      "task": "explain the SymbolInfo interface",
-      "intent": "explain",
-      "relevant_files": [
-        "src/providers/symbol-extractor.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "SymbolInfo",
-        "interface",
-        "explain",
-        "symbolinfo"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G050",
-      "task": "debug the DeterministicTokenEstimator function",
-      "intent": "debug",
-      "relevant_files": [
-        "src/providers/token-estimator.ts",
-        "src/providers/index.ts",
-        "src/core/chunker.ts",
-        "src/core/classifier.ts",
-        "src/pipeline/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "DeterministicTokenEstimator",
-        "class",
-        "debug",
-        "deterministictokenestimator",
-        "function"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G051",
-      "task": "improve error handling in CURRENT_VERSION",
-      "intent": "implement",
-      "relevant_files": [
-        "src/storage/current-version.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CURRENT_VERSION",
-        "constant",
-        "improve",
-        "error",
-        "handling",
-        "current_version"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G052",
-      "task": "debug the createRepository function",
-      "intent": "debug",
-      "relevant_files": [
-        "src/storage/repository.ts",
-        "src/storage/current-version.ts",
-        "src/storage/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "createRepository",
-        "function",
-        "debug",
-        "createrepository"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G053",
-      "task": "find where SQLiteRepository is used",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/repository.ts",
-        "src/storage/current-version.ts",
-        "src/storage/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "SQLiteRepository",
-        "class",
-        "find",
-        "where",
-        "sqliterepository",
-        "used"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G054",
-      "task": "what does Migration do",
-      "intent": "explain",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/cli/commands/export-import.ts",
-        "src/core/classifier.ts",
-        "src/providers/index.ts",
-        "src/core/budget.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "Migration",
-        "interface",
-        "what",
-        "does",
-        "migration"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G055",
-      "task": "how does CREATE_TABLE_CHUNKS work",
-      "intent": "explain",
-      "relevant_files": [
-        "src/storage/schema.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_TABLE_CHUNKS",
-        "constant",
-        "does",
-        "create_table_chunks",
-        "work"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G056",
-      "task": "fix the bug in CREATE_TABLE_DEPENDENCIES",
-      "intent": "debug",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/storage/current-version.ts",
-        "src/storage/repository.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_TABLE_DEPENDENCIES",
-        "constant",
-        "create_table_dependencies"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G057",
-      "task": "describe the CREATE_TABLE_ROUTING_HISTORY implementation",
-      "intent": "explain",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/storage/repository.ts",
-        "src/storage/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_TABLE_ROUTING_HISTORY",
-        "constant",
-        "describe",
-        "create_table_routing_history",
-        "implementation"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G058",
-      "task": "where is CREATE_TABLE_COMPRESSION_CACHE defined",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/storage/repository.ts",
-        "src/storage/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_TABLE_COMPRESSION_CACHE",
-        "constant",
-        "where",
-        "create_table_compression_cache",
-        "defined"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G059",
-      "task": "CREATE_INDEX_CHUNKS_SOURCE is returning wrong values",
-      "intent": "debug",
-      "relevant_files": [
-        "src/storage/schema.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_CHUNKS_SOURCE",
-        "constant",
-        "create_index_chunks_source",
-        "returning",
-        "wrong",
-        "values"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G060",
-      "task": "improve error handling in CREATE_INDEX_CHUNKS_TYPE",
-      "intent": "implement",
-      "relevant_files": [
-        "src/storage/schema.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_CHUNKS_TYPE",
-        "constant",
-        "improve",
-        "error",
-        "handling",
-        "create_index_chunks_type"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G061",
-      "task": "add caching to CREATE_INDEX_CHUNKS_PATH",
-      "intent": "implement",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/core/watcher.ts",
-        "src/types/index.ts",
-        "src/storage/current-version.ts",
-        "src/providers/deterministic-compression.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_CHUNKS_PATH",
-        "constant",
-        "caching",
-        "create_index_chunks_path"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G062",
-      "task": "understand how CREATE_INDEX_DEPS_FROM interacts with the system",
-      "intent": "explain",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/storage/repository.ts",
-        "src/storage/current-version.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_DEPS_FROM",
-        "constant",
-        "understand",
-        "create_index_deps_from",
-        "interacts",
-        "with",
-        "system"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G063",
-      "task": "describe the CREATE_INDEX_DEPS_TO implementation",
-      "intent": "explain",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/providers/symbol-extractor.ts",
-        "src/providers/local-compression.ts",
-        "src/providers/deterministic-embedding.ts",
-        "src/cli/commands/export-import.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_DEPS_TO",
-        "constant",
-        "describe",
-        "create_index_deps_to",
-        "implementation"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G064",
-      "task": "debug the CREATE_TABLE_EMBEDDINGS function",
-      "intent": "debug",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/mcp/index.ts",
-        "src/providers/gpu-embedding.ts",
-        "src/core/ingester.ts",
-        "src/providers/local-embedding.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_TABLE_EMBEDDINGS",
-        "constant",
-        "debug",
-        "create_table_embeddings",
-        "function"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G065",
-      "task": "show me the CREATE_INDEX_EMBEDDINGS_MODEL constant",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/mcp/server.ts",
-        "src/providers/token-estimator.ts",
-        "src/providers/local-embedding.ts",
-        "src/providers/local-compression.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_EMBEDDINGS_MODEL",
-        "constant",
-        "show",
-        "create_index_embeddings_model"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G066",
-      "task": "locate the constant that handles CREATE_FTS_TABLE",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/storage/current-version.ts",
-        "src/storage/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_FTS_TABLE",
-        "constant",
-        "locate",
-        "that",
-        "handles",
-        "create_fts_table"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G067",
-      "task": "where is CREATE_FTS_INSERT_TRIGGER defined",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/storage/repository.ts",
-        "src/storage/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_FTS_INSERT_TRIGGER",
-        "constant",
-        "where",
-        "create_fts_insert_trigger",
-        "defined"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G068",
-      "task": "where is CREATE_FTS_DELETE_TRIGGER defined",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_FTS_DELETE_TRIGGER",
-        "constant",
-        "where",
-        "create_fts_delete_trigger",
-        "defined"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G069",
-      "task": "locate the constant that handles CREATE_FTS_UPDATE_TRIGGER",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/providers/index.ts",
-        "src/providers/token-estimator.ts",
-        "src/cli/commands/export-import.ts",
-        "src/providers/symbol-extractor.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_FTS_UPDATE_TRIGGER",
-        "constant",
-        "locate",
-        "that",
-        "handles",
-        "create_fts_update_trigger"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G070",
-      "task": "find where CREATE_INDEX_ROUTING_CHUNK is used",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_ROUTING_CHUNK",
-        "constant",
-        "find",
-        "where",
-        "create_index_routing_chunk",
-        "used"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G071",
-      "task": "find the CREATE_INDEX_ROUTING_TIMESTAMP constant",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/storage/schema.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CREATE_INDEX_ROUTING_TIMESTAMP",
-        "constant",
-        "find",
-        "create_index_routing_timestamp"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G072",
-      "task": "describe the MIGRATIONS implementation",
-      "intent": "explain",
-      "relevant_files": [
-        "src/storage/schema.ts",
-        "src/providers/local-embedding.ts",
-        "src/core/query-planner.ts",
-        "src/providers/llm-compression.ts",
-        "src/core/scorer.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MIGRATIONS",
-        "constant",
-        "describe",
-        "migrations",
-        "implementation"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G073",
-      "task": "which file contains the ContextChunk interface",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/storage/repository.ts",
-        "src/cli/commands/export-import.ts",
-        "src/storage/schema.ts",
-        "src/providers/token-estimator.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "ContextChunk",
-        "interface",
-        "which",
-        "file",
-        "contains",
-        "contextchunk"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G074",
-      "task": "add caching to DependencyLink",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "DependencyLink",
-        "interface",
-        "caching",
-        "dependencylink"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G075",
-      "task": "find where RoutingDecision is used",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "RoutingDecision",
-        "interface",
-        "find",
-        "where",
-        "routingdecision",
-        "used"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G076",
-      "task": "there is an error in the ScoreResult interface",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "ScoreResult",
-        "interface",
-        "there",
-        "error",
-        "scoreresult"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G077",
-      "task": "extend CompressionResult to support new features",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/core/chunker.ts",
-        "src/storage/schema.ts",
-        "src/cli/index.ts",
-        "src/cli/commands/export-import.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CompressionResult",
-        "interface",
-        "extend",
-        "compressionresult",
-        "support",
-        "features"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G078",
-      "task": "which file contains the TaskDescription interface",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "TaskDescription",
-        "interface",
-        "which",
-        "file",
-        "contains",
-        "taskdescription"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G079",
-      "task": "where is ContextFilter defined",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "ContextFilter",
-        "interface",
-        "where",
-        "contextfilter",
-        "defined"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G080",
-      "task": "extend RoutingWeights to support new features",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/core/watcher.ts",
-        "src/storage/schema.ts",
-        "src/providers/token-estimator.ts",
-        "src/core/router.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "RoutingWeights",
-        "interface",
-        "extend",
-        "routingweights",
-        "support",
-        "features"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G081",
-      "task": "locate the interface that handles RoutingThresholds",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "RoutingThresholds",
-        "interface",
-        "locate",
-        "that",
-        "handles",
-        "routingthresholds"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G082",
-      "task": "describe the RoutingConfig implementation",
-      "intent": "explain",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "RoutingConfig",
-        "interface",
-        "describe",
-        "routingconfig",
-        "implementation"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G083",
-      "task": "find the EmbeddingProvider interface",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "EmbeddingProvider",
-        "interface",
-        "find",
-        "embeddingprovider"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G084",
-      "task": "find the RerankerProvider interface",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "RerankerProvider",
-        "interface",
-        "find",
-        "rerankerprovider"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G085",
-      "task": "fix the issue with CompressionProvider",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/providers/llm-compression.ts",
-        "src/core/scorer.ts",
-        "src/storage/schema.ts",
-        "src/storage/repository.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "CompressionProvider",
-        "interface",
-        "issue",
-        "with",
-        "compressionprovider"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G086",
-      "task": "extend TokenEstimator to support new features",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/core/ingester.ts",
-        "src/providers/token-estimator.ts",
-        "src/web/server.ts",
-        "src/core/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "TokenEstimator",
-        "interface",
-        "extend",
-        "tokenestimator",
-        "support",
-        "features"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G087",
-      "task": "there is an error in the DependencyAnalyzer interface",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/providers/local-compression.ts",
-        "src/mcp/index.ts",
-        "src/core/ingester.ts",
-        "src/storage/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "DependencyAnalyzer",
-        "interface",
-        "there",
-        "error",
-        "dependencyanalyzer"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G088",
-      "task": "where is StorageProvider defined",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "StorageProvider",
-        "interface",
-        "where",
-        "storageprovider",
-        "defined"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G089",
-      "task": "refactor the MCPScoreInput interface",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPScoreInput",
-        "interface",
-        "refactor",
-        "mcpscoreinput"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G090",
-      "task": "which file contains the MCPCompressInput interface",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/cli/index.ts",
-        "src/mcp/server.ts",
-        "src/providers/local-compression.ts",
-        "src/core/retriever.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPCompressInput",
-        "interface",
-        "which",
-        "file",
-        "contains",
-        "mcpcompressinput"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G091",
-      "task": "add caching to MCPMemoryInput",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/core/retriever.ts",
-        "src/main.ts",
-        "src/core/chunker.ts",
-        "src/pipeline/orchestrator.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPMemoryInput",
-        "interface",
-        "caching",
-        "mcpmemoryinput"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G092",
-      "task": "improve error handling in MCPMemoryOutput",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPMemoryOutput",
-        "interface",
-        "improve",
-        "error",
-        "handling",
-        "mcpmemoryoutput"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G093",
-      "task": "show me the MCPIngestInput interface",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPIngestInput",
-        "interface",
-        "show",
-        "mcpingestinput"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G094",
-      "task": "there is an error in the MCPIngestOutput interface",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/core/git-aware.ts",
-        "src/providers/index.ts",
-        "src/core/ingester.ts",
-        "src/providers/dependency-analyzer.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPIngestOutput",
-        "interface",
-        "there",
-        "error",
-        "mcpingestoutput"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G095",
-      "task": "the MCPGraphInput interface throws an exception",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/core/budget.ts",
-        "src/core/query-planner.ts",
-        "src/core/watcher.ts",
-        "src/providers/local-embedding.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPGraphInput",
-        "interface",
-        "mcpgraphinput",
-        "throws",
-        "exception"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G096",
-      "task": "extend MCPGraphOutput to support new features",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPGraphOutput",
-        "interface",
-        "extend",
-        "mcpgraphoutput",
-        "support",
-        "features"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G097",
-      "task": "locate the interface that handles MCPExplainInput",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/core/chunker.ts",
-        "src/core/budget.ts",
-        "src/storage/current-version.ts",
-        "src/pipeline/orchestrator.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPExplainInput",
-        "interface",
-        "locate",
-        "that",
-        "handles",
-        "mcpexplaininput"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G098",
-      "task": "optimize the MCPExplainOutput function",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPExplainOutput",
-        "interface",
-        "optimize",
-        "mcpexplainoutput",
-        "function"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G099",
-      "task": "AppConfig is returning wrong values",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "AppConfig",
-        "interface",
-        "appconfig",
-        "returning",
-        "wrong",
-        "values"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G100",
-      "task": "show me the SymbolInfo interface",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/cli/commands/export-import.ts",
-        "src/storage/current-version.ts",
-        "src/core/git-aware.ts",
-        "src/pipeline/orchestrator.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "SymbolInfo",
-        "interface",
-        "show",
-        "symbolinfo"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G101",
-      "task": "optimize the GitChange function",
-      "intent": "implement",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "GitChange",
-        "interface",
-        "optimize",
-        "gitchange",
-        "function"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G102",
-      "task": "debug the ExportData function",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "ExportData",
-        "interface",
-        "debug",
-        "exportdata",
-        "function"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G103",
-      "task": "describe the ChunkType implementation",
-      "intent": "explain",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "ChunkType",
-        "type",
-        "describe",
-        "chunktype",
-        "implementation"
-      ],
-      "difficulty": "easy",
-      "source": "generated"
-    },
-    {
-      "id": "G104",
-      "task": "fix the issue with ContextTier",
-      "intent": "debug",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/cli/commands/export-import.ts",
-        "src/storage/index.ts",
-        "src/providers/deterministic-reranker.ts",
-        "src/storage/current-version.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "ContextTier",
-        "type",
-        "issue",
-        "with",
-        "contexttier"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G105",
-      "task": "describe the DependencyType implementation",
-      "intent": "explain",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "DependencyType",
-        "type",
-        "describe",
-        "dependencytype",
-        "implementation"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G106",
-      "task": "show me the MCPScoreOutput type",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPScoreOutput",
-        "type",
-        "show",
-        "mcpscoreoutput"
-      ],
-      "difficulty": "medium",
-      "source": "generated"
-    },
-    {
-      "id": "G107",
-      "task": "which file contains the MCPCompressOutput type",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/types/index.ts",
-        "src/cli/commands/export-import.ts",
-        "src/providers/gpu-embedding.ts",
-        "src/cli/index.ts",
-        "src/core/retriever.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "MCPCompressOutput",
-        "type",
-        "which",
-        "file",
-        "contains",
-        "mcpcompressoutput"
-      ],
-      "difficulty": "hard",
-      "source": "generated"
-    },
-    {
-      "id": "G108",
-      "task": "where is startWebServer defined",
-      "intent": "code_search",
-      "relevant_files": [
-        "src/web/server.ts"
-      ],
-      "relevant_types": [
-        "code"
-      ],
-      "relevant_keywords": [
-        "startWebServer",
-        "function",
-        "where",
-        "startwebserver",
-        "defined"
       ],
       "difficulty": "medium",
       "source": "generated"

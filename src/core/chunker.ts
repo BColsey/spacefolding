@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ChunkType, ContextChunk, TokenEstimator } from '../types/index.js';
 import { classifyChunk } from './classifier.js';
+import { splitCodeWithTreeSitter } from './tree-sitter-chunker.js';
 
 export interface ChunkingConfig {
   maxTokens: number;
@@ -22,6 +23,7 @@ export interface SplitResult {
 /**
  * Split oversized text into sub-chunks with parent-child linking.
  * Returns null if the text doesn't need splitting.
+ * Synchronous — uses regex-based splitting only.
  */
 export function maybeSplit(
   text: string,
@@ -36,7 +38,60 @@ export function maybeSplit(
   }
 ): SplitResult | null {
   if (tokensEstimate <= config.maxTokens) return null;
+  return doSplit(text, config, tokenEstimator, overrides);
+}
 
+/**
+ * Async version that tries tree-sitter structural splitting when
+ * CHUNK_TREE_SITTER=1 is set. Falls back to regex if unavailable.
+ * Returns null if the text doesn't need splitting.
+ */
+export async function maybeSplitAsync(
+  text: string,
+  tokensEstimate: number,
+  config: ChunkingConfig,
+  tokenEstimator: TokenEstimator,
+  overrides: {
+    source: string;
+    type?: ChunkType;
+    path?: string;
+    language?: string;
+  }
+): Promise<SplitResult | null> {
+  if (tokensEstimate <= config.maxTokens) return null;
+
+  const strategy = config.strategy === 'auto'
+    ? detectStrategy(overrides.path, overrides.language, text)
+    : config.strategy;
+
+  // Try tree-sitter for code when enabled
+  if (strategy === 'code' && process.env.CHUNK_TREE_SITTER === '1') {
+    const treeSitterPieces = await splitCodeWithTreeSitter(
+      text, config.maxTokens, config.overlapTokens, tokenEstimator, overrides.language
+    );
+    if (treeSitterPieces && treeSitterPieces.length > 1) {
+      return buildSplitResult(text, treeSitterPieces, config, tokenEstimator, overrides, 'tree-sitter');
+    }
+    // Fall through to regex if tree-sitter returns null or only 1 piece
+  }
+
+  return doSplit(text, config, tokenEstimator, overrides);
+}
+
+/**
+ * Internal sync split implementation shared by maybeSplit and maybeSplitAsync fallback.
+ */
+function doSplit(
+  text: string,
+  config: ChunkingConfig,
+  tokenEstimator: TokenEstimator,
+  overrides: {
+    source: string;
+    type?: ChunkType;
+    path?: string;
+    language?: string;
+  }
+): SplitResult | null {
   const strategy = config.strategy === 'auto'
     ? detectStrategy(overrides.path, overrides.language, text)
     : config.strategy;
@@ -44,6 +99,22 @@ export function maybeSplit(
   const pieces = split(text, strategy, config.maxTokens, config.overlapTokens, tokenEstimator, overrides.language);
   if (pieces.length <= 1) return null;
 
+  return buildSplitResult(text, pieces, config, tokenEstimator, overrides, strategy);
+}
+
+function buildSplitResult(
+  text: string,
+  pieces: string[],
+  _config: ChunkingConfig,
+  tokenEstimator: TokenEstimator,
+  overrides: {
+    source: string;
+    type?: ChunkType;
+    path?: string;
+    language?: string;
+  },
+  strategy: string
+): SplitResult {
   const parentId = randomUUID();
   const parentText = `[split from ${pieces.length} sub-chunks] ${text.slice(0, 200)}...`;
   const parent: ContextChunk = {

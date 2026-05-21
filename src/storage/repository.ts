@@ -15,9 +15,12 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { MIGRATIONS, CURRENT_VERSION } from './schema.js';
 import { cosineSimilarity } from '../providers/deterministic-embedding.js';
+import type { VectorIndex } from './vector-index.js';
+import { BruteForceVectorIndex, tryCreateSqliteVecIndex } from './vector-index.js';
 
 export class SQLiteRepository {
   private db: Database.Database;
+  private vectorIndex: VectorIndex | null = null;
 
   constructor(dbPath: string = './data/spacefolding.db') {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -36,6 +39,21 @@ export class SQLiteRepository {
       }
     }
     this.db.pragma(`user_version = ${CURRENT_VERSION}`);
+  }
+
+  /** Initialise the vector index. Tries sqlite-vec first, falls back to in-memory brute-force. */
+  async initVectorIndex(dimensions: number = 384): Promise<void> {
+    // Try sqlite-vec extension
+    const vecIndex = await tryCreateSqliteVecIndex(this.db, dimensions);
+    if (vecIndex) {
+      this.vectorIndex = vecIndex;
+      return;
+    }
+
+    // Fallback: in-memory brute-force cache hydrated from existing embeddings
+    const bfIndex = new BruteForceVectorIndex();
+    bfIndex.loadFromDb(this.db);
+    this.vectorIndex = bfIndex;
   }
 
   storeChunk(chunk: ContextChunk): void {
@@ -122,6 +140,9 @@ export class SQLiteRepository {
     this.deleteCodeStructure(id);
     this.db.prepare('DELETE FROM chunks WHERE id = ?').run(id);
     this.removeAllDependenciesForChunk(id);
+    if (this.vectorIndex) {
+      this.vectorIndex.remove(id);
+    }
   }
 
   storeDependency(link: DependencyLink): void {
@@ -468,6 +489,9 @@ export class SQLiteRepository {
          VALUES (?, ?, ?, ?, ?)`
       )
       .run(chunkId, Buffer.from(buffer), model, embedding.length, Date.now());
+    if (this.vectorIndex) {
+      this.vectorIndex.add(chunkId, embedding);
+    }
   }
 
   getEmbedding(chunkId: string): { embedding: number[]; model: string } | null {
@@ -479,8 +503,13 @@ export class SQLiteRepository {
     return { embedding: Array.from(float32), model: row.model };
   }
 
-  /** Brute-force vector search — returns topK chunk IDs ranked by cosine similarity */
+  /** Vector similarity search — uses the ANN index if available, otherwise falls back to brute-force */
   searchByVector(queryEmbedding: number[], topK: number = 50): { chunkId: string; score: number }[] {
+    if (this.vectorIndex) {
+      return this.vectorIndex.search(queryEmbedding, topK);
+    }
+
+    // Legacy brute-force: loads ALL embeddings from DB each time
     const rows = this.db
       .prepare('SELECT chunkId, embedding, dimensions FROM chunk_embeddings')
       .all() as Array<{ chunkId: string; embedding: Buffer; dimensions: number }>;

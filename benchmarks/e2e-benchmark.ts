@@ -73,6 +73,7 @@ interface TaskComparison {
 interface CliOptions {
   strategy: 'structural' | 'hybrid' | 'vector' | 'text' | 'graph';
   json: boolean;
+  dataset?: string;
 }
 
 // ── Test Tasks ───────────────────────────────────────────────────
@@ -240,6 +241,8 @@ function parseArgs(argv: string[]): CliOptions {
       options.strategy = argv[++i] as CliOptions['strategy'];
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--dataset' && argv[i + 1]) {
+      options.dataset = argv[++i];
     }
   }
   return options;
@@ -273,9 +276,26 @@ async function runE2EBenchmark(options: CliOptions) {
     if (!options.json) console.log(...args);
   };
 
+  // Resolve task list: --dataset or hardcoded TASKS
+  let tasks: E2ETask[] = TASKS;
+  if (options.dataset) {
+    const datasetPath = options.dataset.startsWith('/')
+      ? options.dataset
+      : join(projectRoot, options.dataset);
+    const datasetRaw: { tasks: Array<{ id: string; task: string; description?: string; intent: string; relevant_files: string[] }> } =
+      JSON.parse(readFileSync(datasetPath, 'utf-8'));
+    tasks = datasetRaw.tasks.map((t, idx) => ({
+      id: t.id,
+      name: t.intent + ': ' + (t.task || t.description || '').slice(0, 40),
+      description: t.task || t.description || '',
+      expectedFiles: t.relevant_files,
+      expectedChanges: `Complete the ${t.intent} task described above.`,
+    }));
+  }
+
   log(`\n${'='.repeat(78)}`);
   log(`  END-TO-END A/B BENCHMARK`);
-  log(`  Tasks: ${TASKS.length} | Strategy: ${options.strategy}`);
+  log(`  Tasks: ${tasks.length} | Strategy: ${options.strategy}${options.dataset ? ` | Dataset: ${options.dataset}` : ''}`);
   log(`  Measures: file recall, token efficiency, precision`);
   log(`${'='.repeat(78)}\n`);
 
@@ -377,7 +397,7 @@ async function runE2EBenchmark(options: CliOptions) {
 
   const TOKEN_BUDGET = 50_000; // Realistic budget for a coding task
 
-  for (const task of TASKS) {
+  for (const task of tasks) {
     log(
       `${'─'.repeat(78)}\n  Task ${task.id}: ${task.name}\n${'─'.repeat(78)}`
     );

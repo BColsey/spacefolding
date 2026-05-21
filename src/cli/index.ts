@@ -12,6 +12,7 @@ import { DeterministicEmbeddingProvider } from '../providers/deterministic-embed
 import { DeterministicCompressionProvider } from '../providers/deterministic-compression.js';
 import { LocalCompressionProvider } from '../providers/local-compression.js';
 import { LLMCompressionProvider } from '../providers/llm-compression.js';
+import { LlmLinguaCompressionProvider } from '../providers/llmlingua-compression.js';
 import { SimpleDependencyAnalyzer } from '../providers/dependency-analyzer.js';
 import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
@@ -52,6 +53,14 @@ function createCompressionProvider() {
 
   if (provider === 'local') {
     return new LocalCompressionProvider(process.env.COMPRESSION_MODEL ?? 'Xenova/bge-small-en-v1.5');
+  }
+
+  if (provider === 'llmlingua') {
+    return new LlmLinguaCompressionProvider(
+      process.env.LLMLINGUA_MODEL ?? 'microsoft/llmlingua-2-xlm-roberta-large-meetingbank',
+      process.env.PYTHON_PATH ?? 'python3',
+      parseFloat(process.env.LLMLINGUA_RATE ?? '0.5'),
+    );
   }
 
   return new DeterministicCompressionProvider();
@@ -470,6 +479,71 @@ export function buildCLI(): Command {
         console.log(JSON.stringify({ status: 'error', message: String(err) }));
         process.exit(1);
       }
+    });
+
+  program
+    .command('backfill-embeddings')
+    .description('Backfill embeddings for chunks that lack them')
+    .option('--model <model>', 'Embedding model name', process.env.EMBEDDING_MODEL ?? 'deterministic')
+    .option('--batch-size <number>', 'Number of chunks to embed per batch', '50')
+    .action(async (opts, cmd) => {
+      const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+      const batchSize = parseInt(opts.batchSize, 10);
+      const model = opts.model;
+
+      const storage = createRepository(dbPath);
+      const embeddingProvider = process.env.EMBEDDING_PROVIDER === 'gpu'
+        ? new GpuEmbeddingProvider(
+            process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2',
+            process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
+          )
+        : process.env.EMBEDDING_PROVIDER === 'deterministic'
+          ? new DeterministicEmbeddingProvider()
+          : new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5');
+
+      const chunkIds = storage.getChunksWithoutEmbeddings(model);
+      if (chunkIds.length === 0) {
+        console.log(chalk.green('✓ All chunks already have embeddings'));
+        storage.close();
+        return;
+      }
+
+      console.log(chalk.blue(`Found ${chunkIds.length} chunks without embeddings (model: ${model})`));
+
+      let embedded = 0;
+      let totalTokens = 0;
+
+      for (let i = 0; i < chunkIds.length; i += batchSize) {
+        const batchIds = chunkIds.slice(i, i + batchSize);
+        const batchTexts: string[] = [];
+        const validIds: string[] = [];
+
+        for (const chunkId of batchIds) {
+          const chunk = storage.getChunk(chunkId);
+          if (chunk) {
+            batchTexts.push(chunk.text);
+            validIds.push(chunkId);
+            totalTokens += chunk.tokensEstimate;
+          }
+        }
+
+        if (batchTexts.length === 0) continue;
+
+        const embeddings = await embeddingProvider.embedBatch(batchTexts);
+
+        for (let j = 0; j < validIds.length; j++) {
+          const embedding = embeddings[j];
+          if (embedding && embedding.length > 0) {
+            storage.storeEmbedding(validIds[j], embedding, model);
+            embedded++;
+          }
+        }
+
+        console.log(chalk.green(`✓ Backfilled ${embedded}/${chunkIds.length} chunks (${totalTokens} tokens embedded)`));
+      }
+
+      console.log(chalk.green(`\nDone: ${embedded} chunks embedded (${totalTokens} tokens total)`));
+      storage.close();
     });
 
   return program;

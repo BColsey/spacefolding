@@ -5,13 +5,17 @@
  * symbols (functions, classes, interfaces, exports) and creating
  * realistic queries with those symbols as ground truth.
  *
+ * Supports TypeScript, JavaScript, Python, Java, Rust, and Go files.
+ *
  * Usage:
- *   npx tsx benchmarks/generate-tasks.ts [--output dataset-large.json]
+ *   npx tsx benchmarks/generate-tasks.ts [--sources src,benchmarks/fixtures] [--count 250] [--output dataset-large.json]
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, extname } from 'node:path';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { join, dirname, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// ── Types ────────────────────────────────────────────────────────
 
 interface Task {
   id: string;
@@ -33,6 +37,14 @@ interface ExpertTask {
   relevant_keywords: string[];
   irrelevant_files?: string[];
 }
+
+interface GenOptions {
+  sources: string[];
+  count: number;
+  output: string;
+}
+
+// ── Deterministic RNG ────────────────────────────────────────────
 
 function hashString(value: string): number {
   let hash = 2166136261;
@@ -59,7 +71,8 @@ function deterministicShuffle<T>(items: T[], seed: string): T[] {
   );
 }
 
-// Intent templates for generating queries
+// ── Intent templates ─────────────────────────────────────────────
+
 const TEMPLATES: Record<string, string[]> = {
   code_search: [
     'find the {symbol} {kind}',
@@ -95,54 +108,136 @@ const TEMPLATES: Record<string, string[]> = {
   ],
 };
 
-// Extract symbols from TypeScript source
+const INTENTS = Object.keys(TEMPLATES);
+const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.java', '.rs', '.go']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '__pycache__', 'target', 'build']);
+
+// ── Symbol extraction (multi-language) ───────────────────────────
+
 function extractSymbols(content: string, filePath: string): { name: string; kind: string }[] {
   const symbols: { name: string; kind: string }[] = [];
+  const ext = extname(filePath);
 
-  // Export declarations
-  const exportMatches = content.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g);
-  for (const m of exportMatches) symbols.push({ name: m[1], kind: 'function' });
-
-  const exportClassMatches = content.matchAll(/export\s+(?:abstract\s+)?class\s+(\w+)/g);
-  for (const m of exportClassMatches) symbols.push({ name: m[1], kind: 'class' });
-
-  const exportInterfaceMatches = content.matchAll(/export\s+interface\s+(\w+)/g);
-  for (const m of exportInterfaceMatches) symbols.push({ name: m[1], kind: 'interface' });
-
-  const exportTypeMatches = content.matchAll(/export\s+type\s+(\w+)/g);
-  for (const m of exportTypeMatches) symbols.push({ name: m[1], kind: 'type' });
-
-  const exportConstMatches = content.matchAll(/export\s+const\s+(\w+)/g);
-  for (const m of exportConstMatches) symbols.push({ name: m[1], kind: 'constant' });
+  if (ext === '.ts' || ext === '.tsx') {
+    extractTypeScriptSymbols(content, symbols);
+  } else if (ext === '.js' || ext === '.jsx') {
+    extractJavaScriptSymbols(content, symbols);
+  } else if (ext === '.py') {
+    extractPythonSymbols(content, symbols);
+  } else if (ext === '.java') {
+    extractJavaSymbols(content, symbols);
+  } else if (ext === '.rs') {
+    extractRustSymbols(content, symbols);
+  } else if (ext === '.go') {
+    extractGoSymbols(content, symbols);
+  }
 
   return symbols;
 }
 
+function extractTypeScriptSymbols(content: string, symbols: { name: string; kind: string }[]): void {
+  for (const m of content.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'function' });
+  for (const m of content.matchAll(/export\s+(?:abstract\s+)?class\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'class' });
+  for (const m of content.matchAll(/export\s+interface\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'interface' });
+  for (const m of content.matchAll(/export\s+type\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'type' });
+  for (const m of content.matchAll(/export\s+const\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'constant' });
+}
+
+function extractJavaScriptSymbols(content: string, symbols: { name: string; kind: string }[]): void {
+  for (const m of content.matchAll(/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'function' });
+  for (const m of content.matchAll(/(?:export\s+)?class\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'class' });
+  for (const m of content.matchAll(/(?:export\s+)?const\s+(\w+)\s*=/g))
+    symbols.push({ name: m[1], kind: 'constant' });
+  // CommonJS exports
+  for (const m of content.matchAll(/exports\.(\w+)\s*=/g))
+    symbols.push({ name: m[1], kind: 'function' });
+  for (const m of content.matchAll(/module\.exports\.(\w+)\s*=/g))
+    symbols.push({ name: m[1], kind: 'function' });
+}
+
+function extractPythonSymbols(content: string, symbols: { name: string; kind: string }[]): void {
+  for (const m of content.matchAll(/^class\s+(\w+)/gm))
+    symbols.push({ name: m[1], kind: 'class' });
+  for (const m of content.matchAll(/^\s+def\s+(\w+)/gm))
+    symbols.push({ name: m[1], kind: 'method' });
+  for (const m of content.matchAll(/^def\s+(\w+)/gm))
+    symbols.push({ name: m[1], kind: 'function' });
+}
+
+function extractJavaSymbols(content: string, symbols: { name: string; kind: string }[]): void {
+  for (const m of content.matchAll(/(?:public|private|protected)?\s*(?:static\s+)?(?:class|interface|enum)\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'class' });
+  for (const m of content.matchAll(/(?:public|private|protected)\s+(?:static\s+)?(?:\w+(?:<[^>]+>)?\s+)+(\w+)\s*\(/g))
+    symbols.push({ name: m[1], kind: 'method' });
+}
+
+function extractRustSymbols(content: string, symbols: { name: string; kind: string }[]): void {
+  for (const m of content.matchAll(/pub\s+(?:async\s+)?fn\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'function' });
+  for (const m of content.matchAll(/fn\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'function' });
+  for (const m of content.matchAll(/pub\s+struct\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'struct' });
+  for (const m of content.matchAll(/struct\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'struct' });
+  for (const m of content.matchAll(/pub\s+enum\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'enum' });
+  for (const m of content.matchAll(/pub\s+trait\s+(\w+)/g))
+    symbols.push({ name: m[1], kind: 'trait' });
+}
+
+function extractGoSymbols(content: string, symbols: { name: string; kind: string }[]): void {
+  for (const m of content.matchAll(/func\s+(?:\([^)]+\)\s+)?(\w+)/g))
+    symbols.push({ name: m[1], kind: 'function' });
+  for (const m of content.matchAll(/type\s+(\w+)\s+struct/g))
+    symbols.push({ name: m[1], kind: 'struct' });
+  for (const m of content.matchAll(/type\s+(\w+)\s+interface/g))
+    symbols.push({ name: m[1], kind: 'interface' });
+}
+
+// ── File walking ─────────────────────────────────────────────────
+
 function walkDir(dir: string): string[] {
   const results: string[] = [];
+  if (!existsSync(dir)) return results;
   for (const entry of readdirSync(dir)) {
     const fullPath = join(dir, entry);
     const stat = statSync(fullPath);
     if (stat.isDirectory()) {
-      if (!['node_modules', '.git', 'dist'].includes(entry)) results.push(...walkDir(fullPath));
-    } else if (extname(entry) === '.ts') results.push(fullPath);
+      if (!SKIP_DIRS.has(entry)) results.push(...walkDir(fullPath));
+    } else if (SOURCE_EXTENSIONS.has(extname(entry))) {
+      results.push(fullPath);
+    }
   }
   return results;
 }
 
-function generateTasks(srcDir: string): Task[] {
-  const files = walkDir(srcDir);
-  const tasks: Task[] = [];
-  let taskId = 0;
+// ── Task generation ──────────────────────────────────────────────
 
-  // Map file paths to relative paths
+function generateTasks(sourceDirs: string[], projectRoot: string): Task[] {
+  // Collect files from all source directories
+  const files: string[] = [];
+  for (const dir of sourceDirs) {
+    files.push(...walkDir(dir));
+  }
+
+  // Map file paths to relative paths from project root
   const fileMap = new Map<string, string>();
   for (const filePath of files) {
-    const relativePath = filePath.replace(/.*\/spacefolding\//, '');
+    const relativePath = relative(projectRoot, filePath);
     fileMap.set(filePath, relativePath);
   }
 
   const allRelativePaths = [...fileMap.values()];
+  const tasks: Task[] = [];
+  let taskId = 0;
 
   for (const filePath of files) {
     const relativePath = fileMap.get(filePath)!;
@@ -150,72 +245,124 @@ function generateTasks(srcDir: string): Task[] {
     const symbols = extractSymbols(content, relativePath);
 
     for (const symbol of symbols) {
-      const rng = createRng(`${relativePath}:${symbol.name}`);
-      const intents = Object.keys(TEMPLATES);
-      const intent = intents[Math.floor(rng() * intents.length)];
-      const templates = TEMPLATES[intent];
-      const template = templates[Math.floor(rng() * templates.length)];
+      // Generate one task per intent for each symbol to ensure balanced distribution
+      for (const intent of INTENTS) {
+        const rng = createRng(`${relativePath}:${symbol.name}:${intent}`);
+        const templates = TEMPLATES[intent];
+        const template = templates[Math.floor(rng() * templates.length)];
 
-      const query = template
-        .replace('{symbol}', symbol.name)
-        .replace('{kind}', symbol.kind);
+        const query = template
+          .replace('{symbol}', symbol.name)
+          .replace('{kind}', symbol.kind);
 
-      // Determine difficulty based on number of relevant files
-      // The primary file is always relevant; add cross-references for harder tasks
-      const relevantFiles = [relativePath];
-      const difficulty: Task['difficulty'] = ['easy', 'medium', 'hard'][Math.floor(rng() * 3)] as Task['difficulty'];
+        // Determine difficulty
+        const relevantFiles = [relativePath];
+        const difficulty: Task['difficulty'] =
+          ['easy', 'medium', 'hard'][Math.floor(rng() * 3)] as Task['difficulty'];
 
-      if (difficulty === 'medium') {
-        // Add 1-2 files from the same directory
-        const sameDir = allRelativePaths.filter(p =>
-          p !== relativePath && dirname(p) === dirname(relativePath)
-        );
-        const extra = deterministicShuffle(sameDir, `${relativePath}:${symbol.name}:medium`).slice(0, Math.min(2, sameDir.length));
-        relevantFiles.push(...extra);
-      } else if (difficulty === 'hard') {
-        // Add 2-4 files from anywhere
-        const others = allRelativePaths.filter(p => p !== relativePath);
-        const extra = deterministicShuffle(others, `${relativePath}:${symbol.name}:hard`).slice(0, Math.min(4, others.length));
-        relevantFiles.push(...extra);
+        if (difficulty === 'medium') {
+          const sameDir = allRelativePaths.filter(p =>
+            p !== relativePath && dirname(p) === dirname(relativePath)
+          );
+          const extra = deterministicShuffle(sameDir, `${relativePath}:${symbol.name}:${intent}:medium`)
+            .slice(0, Math.min(2, sameDir.length));
+          relevantFiles.push(...extra);
+        } else if (difficulty === 'hard') {
+          const others = allRelativePaths.filter(p => p !== relativePath);
+          const extra = deterministicShuffle(others, `${relativePath}:${symbol.name}:${intent}:hard`)
+            .slice(0, Math.min(4, others.length));
+          relevantFiles.push(...extra);
+        }
+
+        const keywords = [symbol.name, symbol.kind]
+          .concat(query.toLowerCase().split(/\s+/).filter(w => w.length > 3))
+          .filter((v, i, a) => a.indexOf(v) === i);
+
+        taskId++;
+        tasks.push({
+          id: `G${String(taskId).padStart(3, '0')}`,
+          task: query,
+          intent,
+          relevant_files: [...new Set(relevantFiles)],
+          relevant_types: ['code'],
+          relevant_keywords: keywords.slice(0, 8),
+          difficulty,
+          source: 'generated',
+        });
       }
-
-      // Extract keywords from the symbol and query
-      const keywords = [symbol.name, symbol.kind]
-        .concat(query.toLowerCase().split(/\s+/).filter(w => w.length > 3))
-        .filter((v, i, a) => a.indexOf(v) === i);
-
-      taskId++;
-      tasks.push({
-        id: `G${String(taskId).padStart(3, '0')}`,
-        task: query,
-        intent,
-        relevant_files: [...new Set(relevantFiles)],
-        relevant_types: ['code'],
-        relevant_keywords: keywords.slice(0, 8),
-        difficulty,
-        source: 'generated',
-      });
     }
   }
 
   return tasks;
 }
 
+// ── CLI arg parsing ──────────────────────────────────────────────
+
+function parseArgs(argv: string[]): GenOptions {
+  const benchDir = dirname(fileURLToPath(import.meta.url));
+  const projectRoot = join(benchDir, '..');
+
+  const options: GenOptions = {
+    sources: [
+      join(projectRoot, 'src'),
+      join(projectRoot, 'benchmarks', 'fixtures'),
+    ],
+    count: 250,
+    output: join(benchDir, 'dataset-large.json'),
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--sources' && argv[i + 1]) {
+      options.sources = argv[++i].split(',').map(s => {
+        // Resolve relative to project root if not absolute
+        return s.startsWith('/') ? s : join(projectRoot, s);
+      });
+    } else if (arg === '--count' && argv[i + 1]) {
+      options.count = parseInt(argv[++i], 10);
+    } else if (arg === '--output' && argv[i + 1]) {
+      const outPath = argv[++i];
+      options.output = outPath.startsWith('/') ? outPath : join(projectRoot, outPath);
+    }
+  }
+
+  return options;
+}
+
+// ── Main ─────────────────────────────────────────────────────────
+
 function main() {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const srcDir = join(benchDir, '..', 'src');
+  const projectRoot = join(benchDir, '..');
+  const options = parseArgs(process.argv.slice(2));
 
-  // Load expert tasks
+  // Load expert tasks from dataset.json
+  const expertPath = join(benchDir, 'dataset.json');
   const expertData: { tasks: ExpertTask[] } = JSON.parse(
-    readFileSync(join(benchDir, 'dataset.json'), 'utf-8')
+    readFileSync(expertPath, 'utf-8')
   );
 
-  // Generate synthetic tasks
-  const generatedTasks = generateTasks(srcDir);
+  // Also load fixture expert tasks if present
+  const fixtureExpertPath = join(benchDir, 'fixtures', 'dataset.json');
+  let fixtureExpertTasks: ExpertTask[] = [];
+  if (existsSync(fixtureExpertPath)) {
+    const fixtureData: { tasks: ExpertTask[] } = JSON.parse(
+      readFileSync(fixtureExpertPath, 'utf-8')
+    );
+    fixtureExpertTasks = fixtureData.tasks;
+  }
 
-  // Combine
+  // Generate synthetic tasks from all source directories
+  const generatedTasks = generateTasks(options.sources, projectRoot);
+
+  // Combine: all expert tasks + generated
   const allTasks: Task[] = [
     ...expertData.tasks.map((t): Task => ({
+      ...t,
+      difficulty: 'hard' as const,
+      source: 'expert' as const,
+    })),
+    ...fixtureExpertTasks.map((t): Task => ({
       ...t,
       difficulty: 'hard' as const,
       source: 'expert' as const,
@@ -232,24 +379,58 @@ function main() {
     return true;
   });
 
+  // Balance intents and cap at count
+  const targetPerIntent = Math.ceil(options.count / INTENTS.length);
+
+  // Group by intent, preserving expert tasks always
+  const byIntent = new Map<string, Task[]>();
+  for (const intent of INTENTS) byIntent.set(intent, []);
+  for (const task of deduped) {
+    byIntent.get(task.intent)!.push(task);
+  }
+
+  // Within each intent bucket: expert tasks first, then fill from generated
+  const balanced: Task[] = [];
+  for (const intent of INTENTS) {
+    const bucket = byIntent.get(intent)!;
+    const experts = bucket.filter(t => t.source === 'expert');
+    const generated = bucket.filter(t => t.source === 'generated');
+    balanced.push(...experts);
+    const remaining = targetPerIntent - experts.length;
+    if (remaining > 0) {
+      balanced.push(...generated.slice(0, remaining));
+    }
+  }
+
+  // Re-number IDs after balancing
+  for (let i = 0; i < balanced.length; i++) {
+    const t = balanced[i];
+    if (t.source === 'generated') {
+      t.id = `G${String(i + 1).padStart(3, '0')}`;
+    }
+  }
+
+  // Hard cap
+  const capped = balanced.slice(0, options.count);
+
   // Stats
   const stats = {
-    total: deduped.length,
-    expert: deduped.filter(t => t.source === 'expert').length,
-    generated: deduped.filter(t => t.source === 'generated').length,
+    total: capped.length,
+    expert: capped.filter(t => t.source === 'expert').length,
+    generated: capped.filter(t => t.source === 'generated').length,
     byIntent: {} as Record<string, number>,
     byDifficulty: { easy: 0, medium: 0, hard: 0 } as Record<string, number>,
   };
 
-  for (const t of deduped) {
+  for (const t of capped) {
     stats.byIntent[t.intent] = (stats.byIntent[t.intent] ?? 0) + 1;
     stats.byDifficulty[t.difficulty]++;
   }
 
-  const outputPath = join(benchDir, 'dataset-large.json');
-  writeFileSync(outputPath, JSON.stringify({ tasks: deduped }, null, 2));
+  writeFileSync(options.output, JSON.stringify({ tasks: capped }, null, 2));
 
-  console.log(`Generated ${outputPath}`);
+  console.log(`Generated ${options.output}`);
+  console.log(`Sources: ${options.sources.join(', ')}`);
   console.log(JSON.stringify(stats, null, 2));
 }
 

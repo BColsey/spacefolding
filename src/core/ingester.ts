@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import type { ChunkType, ContextChunk, TokenEstimator } from '../types/index.js';
 import { classifyChunk } from './classifier.js';
-import { maybeSplit, DEFAULT_CHUNKING_CONFIG } from './chunker.js';
+import { maybeSplit, maybeSplitAsync, DEFAULT_CHUNKING_CONFIG } from './chunker.js';
 import type { SplitResult } from './chunker.js';
 
 const EXT_TO_LANG: Record<string, string> = {
@@ -65,6 +65,33 @@ export class ContextIngester {
     };
   }
 
+  /**
+   * Async version that uses tree-sitter when CHUNK_TREE_SITTER=1.
+   * Falls back to sync regex-based splitting if tree-sitter is unavailable.
+   */
+  async ingestTextAsync(source: string, text: string, type?: ChunkType): Promise<IngestResult> {
+    const resolvedType = type ?? classifyChunk(text, source);
+    const tokensEstimate = this.tokenEstimator.estimate(text);
+    const split = await maybeSplitAsync(text, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
+      source,
+      type: resolvedType,
+    });
+    if (split) return { primary: split.parent, split };
+    return {
+      primary: {
+        id: randomUUID(),
+        source,
+        type: resolvedType,
+        text,
+        timestamp: Date.now(),
+        tokensEstimate,
+        childrenIds: [],
+        metadata: {},
+      },
+      split: null,
+    };
+  }
+
   ingestFile(
     filePath: string,
     content: string,
@@ -75,6 +102,43 @@ export class ContextIngester {
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
     const split = maybeSplit(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
+      source: 'file',
+      type,
+      path: filePath,
+      language: lang,
+    });
+    if (split) return { primary: split.parent, split };
+    return {
+      primary: {
+        id: randomUUID(),
+        source: 'file',
+        type,
+        text: content,
+        timestamp: Date.now(),
+        path: filePath,
+        language: lang,
+        tokensEstimate,
+        childrenIds: [],
+        metadata: {},
+      },
+      split: null,
+    };
+  }
+
+  /**
+   * Async version that uses tree-sitter when CHUNK_TREE_SITTER=1.
+   * Falls back to sync regex-based splitting if tree-sitter is unavailable.
+   */
+  async ingestFileAsync(
+    filePath: string,
+    content: string,
+    language?: string,
+    overrideType?: ChunkType
+  ): Promise<IngestResult> {
+    const lang = language ?? detectLanguage(filePath);
+    const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
+    const tokensEstimate = this.tokenEstimator.estimate(content);
+    const split = await maybeSplitAsync(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
       source: 'file',
       type,
       path: filePath,
