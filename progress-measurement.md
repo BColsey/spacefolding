@@ -212,3 +212,13 @@
   focused success gate. The documented acceptance checker command passed with
   exact actual/expected metrics, and no generated benchmark JSON appeared in
   repo status. No spec-compliance defect required code changes.
+- Error Handling: reviewed malformed JSON, missing files, missing strategy
+  summaries, missing E2E summaries, and benchmark process failures against
+  `IMPLEMENTATION.md` section 9. Verified acceptance checker smoke cases for
+  malformed retrieval JSON, incomplete retrieval summaries, incomplete E2E
+  summaries, and missing E2E JSON all exited nonzero with direct
+  actual/expected diagnostics. Verified benchmark CLI failures for unknown
+  retrieval arguments, invalid E2E strategy, missing retrieval dataset, missing
+  E2E dataset, and missing profiler dataset all exited nonzero and named the
+  failing argument or path. Verified `npm run build && npm run lint && npm
+  test` passed. No error-handling defect required code changes.
