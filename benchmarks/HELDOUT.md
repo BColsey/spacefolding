@@ -55,8 +55,8 @@ Notes:
 - Generated task paths are relative to the Spacefolding checkout so they match
   the paths stored by `benchmarks/evaluate.ts`.
 - `benchmarks/generate-heldout.ts` refuses to write generated held-out datasets
-  inside this checkout. Keep task JSON, benchmark JSON, and profiler JSON under
-  `/tmp`.
+  outside `/tmp` or inside this checkout. Keep task JSON, benchmark JSON, and
+  profiler JSON under `/tmp`.
 - Tests, fixtures, dependency directories, build outputs, and virtualenvs are
   skipped by default. Pass `--include-tests` to include test files.
 - The generated dataset is deterministic for a given corpus and `--seed`.

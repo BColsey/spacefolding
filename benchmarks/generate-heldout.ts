@@ -67,6 +67,7 @@ export interface CliOptions {
 
 const benchDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(benchDir, '..');
+const heldoutOutputRoot = '/tmp';
 
 const EXT_TO_LANGUAGE: Record<string, string> = {
   '.ts': 'typescript',
@@ -158,29 +159,47 @@ export function parseArgs(argv: string[]): CliOptions {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--corpus' && argv[i + 1]) options.corpus = argv[++i];
-    else if (arg === '--output' && argv[i + 1]) options.output = argv[++i];
-    else if (arg === '--limit' && argv[i + 1]) options.limit = parsePositiveInt(argv[++i], 'limit');
-    else if (arg === '--max-per-file' && argv[i + 1]) options.maxPerFile = parsePositiveInt(argv[++i], 'max-per-file');
-    else if (arg === '--seed' && argv[i + 1]) options.seed = argv[++i];
+    if (arg === '--corpus') options.corpus = readOptionValue(argv, i++, arg);
+    else if (arg === '--output') options.output = readOptionValue(argv, i++, arg);
+    else if (arg === '--limit') options.limit = parsePositiveInt(readOptionValue(argv, i++, arg), 'limit');
+    else if (arg === '--max-per-file') options.maxPerFile = parsePositiveInt(readOptionValue(argv, i++, arg), 'max-per-file');
+    else if (arg === '--seed') options.seed = readOptionValue(argv, i++, arg);
     else if (arg === '--include-tests') options.includeTests = true;
+    else throw new Error(`Unknown argument: ${arg}`);
   }
 
   return options;
 }
 
+function readOptionValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
 export function validateHeldoutOutputPath(output: string, root: string = projectRoot): void {
   const resolvedOutput = resolve(output);
   const resolvedRoot = resolve(root);
-  const outputRelativeToRoot = relative(resolvedRoot, resolvedOutput);
-  const isInsideRoot = outputRelativeToRoot === ''
-    || (!outputRelativeToRoot.startsWith('..') && !isAbsolute(outputRelativeToRoot));
 
-  if (isInsideRoot) {
+  if (isWithinDirectory(resolvedOutput, resolvedRoot)) {
     throw new Error(
       `Refusing to write generated held-out dataset inside the repository: ${output}. Use an output path under /tmp.`
     );
   }
+
+  if (!isWithinDirectory(resolvedOutput, heldoutOutputRoot)) {
+    throw new Error(
+      `Refusing to write generated held-out dataset outside /tmp: ${output}. Use an output path under /tmp.`
+    );
+  }
+}
+
+function isWithinDirectory(path: string, directory: string): boolean {
+  const relativePath = relative(resolve(directory), resolve(path));
+  return relativePath === ''
+    || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
 }
 
 function parsePositiveInt(value: string, name: string): number {

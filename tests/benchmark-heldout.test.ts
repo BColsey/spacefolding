@@ -32,6 +32,30 @@ describe('held-out benchmark dataset generator', () => {
     );
   });
 
+  it('refuses to write generated datasets outside /tmp', () => {
+    expect(() => validateHeldoutOutputPath('/var/tmp/spacefolding-heldout-dataset.json')).toThrow(
+      /Refusing to write generated held-out dataset outside \/tmp/
+    );
+  });
+
+  it('rejects invalid numeric limits before generating held-out tasks', () => {
+    expect(() => parseArgs(['--limit', '0'])).toThrow(
+      '--limit must be a positive integer'
+    );
+    expect(() => parseArgs(['--max-per-file', '-1'])).toThrow(
+      '--max-per-file must be a positive integer'
+    );
+  });
+
+  it('rejects unknown flags and missing option values', () => {
+    expect(() => parseArgs(['--output', '--include-tests'])).toThrow(
+      '--output requires a value'
+    );
+    expect(() => parseArgs(['--unknown'])).toThrow(
+      'Unknown argument: --unknown'
+    );
+  });
+
   it('writes deterministic held-out task metadata under /tmp without source contents', () => {
     const output = join(tmpdir(), `spacefolding-heldout-test-${process.pid}.json`);
     generatedFiles.push(output);
