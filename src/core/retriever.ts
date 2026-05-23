@@ -308,10 +308,12 @@ export class HybridRetriever {
     const candidates = new Map<string, FusedCandidate>();
 
     for (const result of lexicalResults) {
+      const lexicalScore = scaleDeterministicLexicalScore(result.score);
+      if (lexicalScore <= 0) continue;
       candidates.set(result.chunkId, {
-        fusedScore: result.score,
+        fusedScore: lexicalScore,
         sources: new Set<RetrievalSource>(['fts']),
-        sourceScores: { fts: result.score },
+        sourceScores: { fts: lexicalScore },
         reasons: ['lexical keyword/path match'],
       });
     }
@@ -480,6 +482,11 @@ function normalizeSourceResults(results: SourceResult[]): Array<SourceResult & {
   });
 }
 
+function scaleDeterministicLexicalScore(score: number): number {
+  if (!Number.isFinite(score) || score <= 0) return 0;
+  return Math.min(8, Math.log1p(score) * 1.8);
+}
+
 interface SparseStructuralTerm {
   term: string;
   weight: number;
@@ -628,8 +635,8 @@ const PHRASE_EXPANSIONS: Array<[RegExp, Array<[string, number]>]> = [
   [/\bcross[-\s]?encoder\b/i, [['reranker', 1.4], ['rerankerprovider', 1.6], ['deterministicreranker', 0.9], ['types', 1.0]]],
   [/\benvironment variables?\b/i, [['env', 1.4], ['process', 1.0], ['cli', 1.0], ['dbpath', 0.9], ['modelpath', 0.8]]],
   [/\bmcp tools?\b/i, [['mcp', 1.2], ['server', 1.0], ['calltoolrequestschema', 0.9]]],
-  [/\bbatch\s+delet(?:e|es|ed|ing|ion)\b/i, [['repository', 1.3], ['storage', 1.2], ['deletechunks', 1.1], ['deletechunk', 1.1], ['contextfilter', 1.0]]],
-  [/\b(?:source|path)\s+(?:or|and)\s+(?:source|path)\s+patterns?\b/i, [['contextfilter', 1.3], ['repository', 1.2], ['storage', 1.0], ['querychunks', 0.9]]],
+  [/\bbatch\s+delet(?:e|es|ed|ing|ion)\b/i, [['repository', 1.3], ['storage', 1.2], ['deletechunks', 1.1], ['deletechunk', 1.1], ['contextfilter', 2.0]]],
+  [/\b(?:source|path)\s+(?:or|and)\s+(?:source|path)\s+patterns?\b/i, [['contextfilter', 3.2], ['repository', 1.2], ['storage', 1.0], ['querychunks', 0.9]]],
   [/\b(?:authentication|auth|login)\b.*\b(?:401|unauthorized|errors?|bug)\b|\b(?:401|unauthorized|errors?|bug)\b.*\b(?:authentication|auth|login)\b/i, [['scorer', 1.3], ['router', 1.3], ['routing', 1.0]]],
   [/\blogin\s+flow\b/i, [['router', 1.2], ['scorer', 1.0]]],
   [/\bdependency graph\b/i, [['dependencylink', 1.2], ['repository', 0.9], ['exportdata', 0.7]]],
@@ -737,11 +744,17 @@ function scoreSparseStructuralFields(
       referenceFields,
     });
     if (field.score <= 0) continue;
-    score += Math.min(field.score, 1.6 * term.weight);
+    const capMultiplier = field.reason.startsWith('sparse contract exact')
+      ? 3.2
+      : field.reason.startsWith('sparse symbol exact')
+        ? 2.4
+        : 1.6;
+    score += Math.min(field.score, capMultiplier * term.weight);
     if (reasons.length < 5) reasons.push(field.reason);
   }
 
-  return { score: Math.min(5, score), reasons };
+  const hasExactContract = reasons.some((reason) => reason.startsWith('sparse contract exact'));
+  return { score: Math.min(hasExactContract ? 12 : 7, score), reasons };
 }
 
 function scorePathIntent(
@@ -813,10 +826,10 @@ function scoreSparseTerm(
 
   for (const symbol of fields.symbolFields) {
     const exported = symbol.exported ? 1.1 : 1;
-    const contract = symbol.kind === 'interface' || symbol.kind === 'type' ? 1.45 : 1;
+    const contract = symbol.kind === 'interface' || symbol.kind === 'type' ? 2.1 : 1;
     if (symbol.normalized === value) {
       const reason = contract > 1 ? `sparse contract exact: ${symbol.name}` : `sparse symbol exact: ${symbol.name}`;
-      consider(1.15 * weight * exported * contract, reason);
+      consider((contract > 1 ? 1.5 : 1.2) * weight * exported * contract, reason);
     }
     if (symbol.parts.has(value)) consider(0.62 * weight * exported, `sparse symbol token: ${symbol.name}`);
     if (value.length >= 4 && symbol.normalized.includes(value)) consider(0.38 * weight * exported, `sparse symbol partial: ${symbol.name}`);

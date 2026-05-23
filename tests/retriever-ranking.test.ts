@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HybridRetriever } from '../src/core/retriever.js';
 import {
   budgetForSelectedCandidates,
@@ -7,7 +7,7 @@ import {
 } from '../src/core/retrieval-policy.js';
 import { fillBudget } from '../src/core/budget.js';
 import { DeterministicEmbeddingProvider } from '../src/providers/deterministic-embedding.js';
-import type { CodeReference, CodeSymbol, ContextChunk } from '../src/types/index.js';
+import type { CodeReference, CodeSymbol, ContextChunk, EmbeddingProvider, StructuralSearchResult } from '../src/types/index.js';
 
 function makeChunk(id: string, path: string, tokensEstimate: number): ContextChunk {
   return {
@@ -92,7 +92,138 @@ function makeStorage(
   };
 }
 
+function makeStructuralResult(
+  chunkId: string,
+  structuralScore: number,
+  dependencyBoost: number,
+  reasons: string[]
+): StructuralSearchResult {
+  return {
+    chunkId,
+    score: structuralScore + dependencyBoost,
+    structuralScore,
+    dependencyBoost,
+    reasons,
+  };
+}
+
+class ReliableEmbeddingProvider implements EmbeddingProvider {
+  async embed(): Promise<number[]> {
+    return [1, 0, 0];
+  }
+
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    return texts.map(() => [1, 0, 0]);
+  }
+}
+
 describe('HybridRetriever structural ranking', () => {
+  it('ranks exact path matches first despite broad lexical overlap', async () => {
+    const chunks = [
+      makeChunk('exact', 'src/core/retriever.ts', 900),
+      makeChunk('same-filename', 'src/legacy/retriever.ts', 900),
+      makeChunk('lexical-noise', 'src/core/retrieval-policy.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(
+        chunks,
+        {
+          exact: 2,
+          'same-filename': 6,
+          'lexical-noise': 250,
+        },
+        {}
+      ),
+      searchByStructure: () => [
+        makeStructuralResult('exact', 3.2, 0, ['path exact match: src/core/retriever.ts']),
+        makeStructuralResult('same-filename', 1.8, 0, ['path exact match: retriever.ts']),
+      ],
+    };
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve('src/core/retriever.ts', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    expect(results[0].chunkId).toBe('exact');
+    expect(results[0].reasons).toContain('path exact match: src/core/retriever.ts');
+    expect(results[0].sourceScores?.structural).toBeGreaterThan(results[0].sourceScores?.fts ?? 0);
+  });
+
+  it('keeps exact symbol matches ahead of lexical and deterministic vector noise', async () => {
+    const chunks = [
+      makeChunk('repository', 'src/storage/repository.ts', 1_200),
+      makeChunk('lexical-noise', 'docs/sqlite-notes.md', 1_000),
+      makeChunk('vector-noise', 'src/unrelated/vector.ts', 800),
+    ];
+    const searchByVector = vi.fn(() => [{ chunkId: 'vector-noise', score: 999 }]);
+    const storage = {
+      ...makeStorage(
+        chunks,
+        {
+          repository: 2,
+          'lexical-noise': 300,
+        },
+        {
+          repository: [{ name: 'SQLiteRepository', kind: 'class' }],
+        }
+      ),
+      searchByStructure: () => [
+        makeStructuralResult('repository', 3.4, 0, ['symbol exact match: SQLiteRepository']),
+      ],
+      searchByVector,
+    };
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve('where is SQLiteRepository defined', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    expect(results[0].chunkId).toBe('repository');
+    expect(results[0].reasons).toContain('symbol exact match: SQLiteRepository');
+    expect(searchByVector).not.toHaveBeenCalled();
+  });
+
+  it('reports structural, vector, fts, dependency, graph, and final source scores', async () => {
+    const chunks = [
+      makeChunk('combo', 'src/core/retriever.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      searchByStructure: () => [
+        makeStructuralResult('combo', 3.4, 0.1, [
+          'symbol exact match: HybridRetriever',
+          'direct reference exact match: QueryPlan',
+        ]),
+      ],
+      searchByVector: () => [{ chunkId: 'combo', score: 0.9 }],
+      searchByText: () => [{ chunkId: 'combo', score: 4 }],
+      searchByLexical: () => [{ chunkId: 'combo', score: 3 }],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('HybridRetriever QueryPlan', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    expect(results[0].sourceScores).toEqual({
+      structural: expect.any(Number),
+      vector: expect.any(Number),
+      fts: expect.any(Number),
+      graph: 0,
+      dependency: expect.any(Number),
+      final: expect.any(Number),
+    });
+    expect(results[0].sourceScores?.structural).toBeGreaterThan(0);
+    expect(results[0].sourceScores?.vector).toBeGreaterThan(0);
+    expect(results[0].sourceScores?.fts).toBeGreaterThan(0);
+    expect(results[0].sourceScores?.dependency).toBeGreaterThan(0);
+    expect(results[0].sourceScores?.final).toBe(results[0].score);
+  });
+
   it('keeps repository candidates inside focused budget for batch delete implementation tasks', async () => {
     const chunks = [
       makeChunk('mcp-a', 'src/mcp/server.ts', 2_521),
@@ -120,7 +251,10 @@ describe('HybridRetriever structural ranking', () => {
         'mcp-b': ['server'],
         'mcp-c': ['deleteChunk'],
         orchestrator: ['deleteChunks'],
-        types: ['ContextChunk', 'ContextFilter'],
+        types: [
+          { name: 'ContextChunk', kind: 'interface' },
+          { name: 'ContextFilter', kind: 'interface' },
+        ],
         chunker: ['chunks', 'ChunkingConfig'],
         repository: ['deleteChunk', 'queryChunks', 'storeChunk'],
       }
@@ -156,6 +290,7 @@ describe('HybridRetriever structural ranking', () => {
     expect(effectiveBudget).toBe(13_000);
     expect(filled.totalTokens).toBeLessThanOrEqual(effectiveBudget);
     expect(filled.selected.map((chunk) => chunk.path)).toContain('src/storage/repository.ts');
+    expect(filled.selected.map((chunk) => chunk.path)).toContain('src/types/index.ts');
   });
 
   it('promotes provider contracts and barrel exports for provider implementation tasks', async () => {

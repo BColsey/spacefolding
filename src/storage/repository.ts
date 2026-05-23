@@ -384,17 +384,21 @@ export class SQLiteRepository {
       .all() as Array<{ id: string; path: string; language: string | null }>;
     for (const row of pathRows) {
       const lowerPath = row.path.toLowerCase();
+      const lowerPathStem = lowerPath.replace(/\.[^.]+$/, '');
       const basename = lowerPath.split('/').pop() ?? lowerPath;
+      const basenameStem = basename.replace(/\.[^.]+$/, '');
       const basenameParts = splitSearchIdentifier(basename.replace(/\.[^.]+$/, ''));
 
       for (const fragment of query.pathFragments) {
         const lowerFragment = fragment.toLowerCase();
         if (lowerPath === lowerFragment || lowerPath.endsWith(`/${lowerFragment}`)) {
-          addScore(row.id, 1.4, 0, `path exact match: ${fragment}`);
+          addScore(row.id, 3.2, 0, `path exact match: ${fragment}`);
+        } else if (lowerPathStem === lowerFragment || lowerPathStem.endsWith(`/${lowerFragment}`)) {
+          addScore(row.id, 2.6, 0, `path stem exact match: ${fragment}`);
         } else if (lowerPath.includes(lowerFragment)) {
-          addScore(row.id, 0.9, 0, `path fragment match: ${fragment}`);
-        } else if (basename.includes(lowerFragment)) {
-          addScore(row.id, 0.55, 0, `filename match: ${fragment}`);
+          addScore(row.id, 1.1, 0, `path fragment match: ${fragment}`);
+        } else if (basename.includes(lowerFragment) || basenameStem === lowerFragment) {
+          addScore(row.id, 1.8, 0, `filename match: ${fragment}`);
         }
       }
 
@@ -428,7 +432,8 @@ export class SQLiteRepository {
     for (const row of symbolRows) {
       const normalizedName = row.normalizedName;
       if (normalizedIdentifiers.has(normalizedName) || quotedTerms.has(normalizedName)) {
-        addScore(row.chunkId, row.isExported ? 1.35 : 1.25, 0, `symbol exact match: ${row.name}`);
+        const contractBoost = row.kind === 'interface' || row.kind === 'type' ? 0.4 : 0;
+        addScore(row.chunkId, (row.isExported ? 3.4 : 3.1) + contractBoost, 0, `symbol exact match: ${row.name}`);
         continue;
       }
 
@@ -458,13 +463,16 @@ export class SQLiteRepository {
     for (const row of referenceRows) {
       const target = row.normalizedTarget;
       for (const identifier of normalizedIdentifiers) {
-        if (identifier.length > 2 && (target === identifier || target.includes(identifier))) {
-          addScore(row.chunkId, 0.18, 0.05, `direct reference match: ${row.target}`);
+        if (identifier.length <= 2) continue;
+        if (target === identifier) {
+          addScore(row.chunkId, 0.7, 0.08, `direct reference exact match: ${row.target}`);
+        } else if (target.includes(identifier)) {
+          addScore(row.chunkId, 0.28, 0.04, `direct reference partial match: ${row.target}`);
         }
       }
       for (const part of identifierParts) {
         if (part.length > 2 && target.includes(part)) {
-          addScore(row.chunkId, 0.04, 0.02, `reference token boost: ${row.target}`);
+          addScore(row.chunkId, 0.08, 0.02, `reference token boost: ${row.target}`);
         }
       }
     }

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRepository } from '../src/storage/repository.js';
 import { extractStructureFallback } from '../src/providers/structural-indexer.js';
+import { parseStructuralQuery } from '../src/core/query-planner.js';
 import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
 import { ContextScorer } from '../src/core/scorer.js';
 import { ContextRouter, DEFAULT_ROUTING_CONFIG } from '../src/core/router.js';
@@ -154,6 +155,107 @@ describe('structural index repository', () => {
 
     repo.deleteChunk(chunk.id);
     expect(repo.getCodeSymbols(chunk.id)).toEqual([]);
+    repo.close();
+  });
+
+  it('prioritizes exact path, symbol, and reference matches in structural search', () => {
+    const repo = createRepository(testDbPath());
+    const now = Date.now();
+    for (const chunk of [
+      {
+        id: 'exact-path',
+        source: 'file',
+        type: 'code' as const,
+        text: 'export class HybridRetriever {}',
+        timestamp: now,
+        path: 'src/core/retriever.ts',
+        language: 'typescript',
+        tokensEstimate: 20,
+        childrenIds: [],
+        metadata: {},
+      },
+      {
+        id: 'same-filename',
+        source: 'file',
+        type: 'code' as const,
+        text: 'export class LegacyRetriever {}',
+        timestamp: now,
+        path: 'src/legacy/retriever.ts',
+        language: 'typescript',
+        tokensEstimate: 20,
+        childrenIds: [],
+        metadata: {},
+      },
+      {
+        id: 'repository',
+        source: 'file',
+        type: 'code' as const,
+        text: 'export class SQLiteRepository {}',
+        timestamp: now,
+        path: 'src/storage/repository.ts',
+        language: 'typescript',
+        tokensEstimate: 20,
+        childrenIds: [],
+        metadata: {},
+      },
+      {
+        id: 'consumer',
+        source: 'file',
+        type: 'code' as const,
+        text: 'const repo: RepositoryContract = createRepository();',
+        timestamp: now,
+        path: 'src/core/consumer.ts',
+        language: 'typescript',
+        tokensEstimate: 20,
+        childrenIds: [],
+        metadata: {},
+      },
+    ]) {
+      repo.storeChunk(chunk);
+    }
+    repo.storeCodeStructure('repository', [
+      {
+        id: 'repository:SQLiteRepository',
+        chunkId: 'repository',
+        path: 'src/storage/repository.ts',
+        language: 'typescript',
+        name: 'SQLiteRepository',
+        normalizedName: 'sqliterepository',
+        kind: 'class',
+        signature: 'SQLiteRepository',
+        startLine: 1,
+        endLine: 1,
+        isExported: true,
+        metadata: {},
+      },
+    ], []);
+    repo.storeCodeStructure('consumer', [], [
+      {
+        id: 'consumer:RepositoryContract',
+        chunkId: 'consumer',
+        path: 'src/core/consumer.ts',
+        language: 'typescript',
+        target: 'RepositoryContract',
+        normalizedTarget: 'repositorycontract',
+        kind: 'import',
+        startLine: 1,
+        endLine: 1,
+        metadata: {},
+      },
+    ]);
+
+    const pathResults = repo.searchByStructure(parseStructuralQuery('src/core/retriever.ts'), 5);
+    expect(pathResults[0].chunkId).toBe('exact-path');
+    expect(pathResults[0].reasons).toContain('path exact match: src/core/retriever.ts');
+
+    const symbolResults = repo.searchByStructure(parseStructuralQuery('SQLiteRepository'), 5);
+    expect(symbolResults[0].chunkId).toBe('repository');
+    expect(symbolResults[0].reasons).toContain('symbol exact match: SQLiteRepository');
+
+    const referenceResults = repo.searchByStructure(parseStructuralQuery('RepositoryContract'), 5);
+    expect(referenceResults[0].chunkId).toBe('consumer');
+    expect(referenceResults[0].reasons).toContain('direct reference exact match: RepositoryContract');
+    expect(referenceResults[0].dependencyBoost).toBeGreaterThan(0);
     repo.close();
   });
 });

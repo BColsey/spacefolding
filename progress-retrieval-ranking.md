@@ -16,6 +16,7 @@ Highest severity first. Resolve before starting new work items.
 
 ## Resolved Issues
 
+- 2026-05-23: Completed structural/path ranking work item by strengthening exact path, exact symbol, and direct reference structural scores while damping deterministic lexical scores so broad keyword overlap cannot swamp exact anchors. Added regression coverage for exact path ranking, exact symbol ranking over lexical/vector noise, source-score shape, and batch-delete `ContextFilter` selection.
 - 2026-05-23: Fixed baseline structural debug miss T01 "Fix the authentication bug causing 401 errors in the login flow" by adding a narrow auth/login failure expansion to deterministic structural ranking. `src/core/router.ts` now ranks at 2 and `src/core/scorer.ts` ranks at 3; T01 recall@10 improved from `0.3333` to `0.6667`, precision@10 from `0.1` to `0.2`, and NDCG@10 from `0.1564` to `0.5307`.
 - 2026-05-23: Fixed baseline residual E2E recall miss E06 "Add batch delete MCP tool" by letting phrase-level delete/filter signals contribute storage/repository path intent in deterministic structural retrieval. E06 now finds `src/mcp/server.ts`, `src/storage/repository.ts`, and `src/types/index.ts` with recall `1`, precision `0.375`, and `12490` tokens.
 - 2026-05-23: Fixed the T09 side-effect ranking miss from the baseline list: `src/storage/current-version.ts` now ranks at 5 for "What database schema migrations exist and how are they applied?".
@@ -25,6 +26,7 @@ Highest severity first. Resolve before starting new work items.
 ## Completed Work Items
 
 - 1. Record Retrieval Baseline
+- 2. Improve Structural And Path Ranking
 
 ## Iteration Log
 
@@ -64,6 +66,15 @@ Highest severity first. Resolve before starting new work items.
   - T01 metrics: recall@10 `0.666667`, precision@10 `0.200000`, NDCG@10 `0.530721`; `src/core/router.ts` ranked 2 and `src/core/scorer.ts` ranked 3.
   - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.815952`, MRR `0.833333`, precision@10 `0.205000`, average results `27.50`.
   - Latest E2E focused averages: recall `1.000000`, precision `0.387738`, tokens `12444.3`; all tasks stayed below full codebase tokens `37945`.
+- 2026-05-23: Work item 2 structural/path ranking.
+  - Raised repository structural scores for exact path, extensionless path-stem, exact symbol, and direct reference matches; deterministic structural retrieval now dampens raw lexical scores so high-overlap noise cannot outrank exact structural anchors.
+  - Tuned sparse exact contract scoring for implementation tasks so `ContextFilter`/type contracts survive focused selection when source/path filter language is present.
+  - Added `tests/retriever-ranking.test.ts` coverage for exact path ranking, exact symbol ranking over lexical and deterministic vector noise, complete `sourceScores`, and focused batch-delete type selection; added `tests/structural-indexer.test.ts` coverage for repository exact path/symbol/reference scoring.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 249 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.889618`, MRR `0.933333`, precision@10 `0.205000`, average results `27.50`.
+  - Latest retrieval deltas: structural vs keyword R@10 `+0.187500`, NDCG@10 `+0.319765`, MRR `+0.408333`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.385913`, tokens `12364.9`; all tasks stayed below full codebase tokens `38103`.
 
 ## Review Log
 
