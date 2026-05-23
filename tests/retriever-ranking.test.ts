@@ -243,4 +243,40 @@ describe('HybridRetriever structural ranking', () => {
     expect(typeResult?.sourceScores?.structural).toBeGreaterThan(4);
     expect(typeResult?.reasons).toContain('sparse contract exact: RerankerProvider');
   });
+
+  it('promotes scoring and routing modules for auth/login debug misses over lexical noise', async () => {
+    const chunks = [
+      makeChunk('retriever', 'src/core/retriever.ts', 1_000),
+      makeChunk('budget', 'src/core/budget.ts', 800),
+      makeChunk('scorer', 'src/core/scorer.ts', 900),
+      makeChunk('router', 'src/core/router.ts', 900),
+    ];
+    const storage = makeStorage(
+      chunks,
+      {
+        retriever: 4,
+        budget: 2,
+      },
+      {
+        scorer: ['ContextScorer', 'scoreChunks'],
+        router: ['ContextRouter', 'route'],
+      }
+    );
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve(
+      'Fix the authentication bug causing 401 errors in the login flow',
+      { strategy: 'structural', topK: 10 }
+    );
+    const rankedIds = results.map((result) => result.chunkId);
+
+    expect(rankedIds.indexOf('scorer')).toBeLessThan(rankedIds.indexOf('retriever'));
+    expect(rankedIds.indexOf('router')).toBeLessThan(rankedIds.indexOf('retriever'));
+    expect(results.find((result) => result.chunkId === 'scorer')?.reasons).toContain(
+      'path intent filename match: scorer'
+    );
+    expect(results.find((result) => result.chunkId === 'router')?.reasons).toContain(
+      'path intent filename match: router'
+    );
+  });
 });

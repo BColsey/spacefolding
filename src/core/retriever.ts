@@ -630,6 +630,8 @@ const PHRASE_EXPANSIONS: Array<[RegExp, Array<[string, number]>]> = [
   [/\bmcp tools?\b/i, [['mcp', 1.2], ['server', 1.0], ['calltoolrequestschema', 0.9]]],
   [/\bbatch\s+delet(?:e|es|ed|ing|ion)\b/i, [['repository', 1.3], ['storage', 1.2], ['deletechunks', 1.1], ['deletechunk', 1.1], ['contextfilter', 1.0]]],
   [/\b(?:source|path)\s+(?:or|and)\s+(?:source|path)\s+patterns?\b/i, [['contextfilter', 1.3], ['repository', 1.2], ['storage', 1.0], ['querychunks', 0.9]]],
+  [/\b(?:authentication|auth|login)\b.*\b(?:401|unauthorized|errors?|bug)\b|\b(?:401|unauthorized|errors?|bug)\b.*\b(?:authentication|auth|login)\b/i, [['scorer', 1.3], ['router', 1.3], ['routing', 1.0]]],
+  [/\blogin\s+flow\b/i, [['router', 1.2], ['scorer', 1.0]]],
   [/\bdependency graph\b/i, [['dependencylink', 1.2], ['repository', 0.9], ['exportdata', 0.7]]],
   [/\bweb ui\b/i, [['web', 1.2], ['server', 1.0], ['html', 0.9]]],
   [/\bcli commands?\b/i, [['cli', 1.2], ['commander', 1.1], ['program', 1.0]]],

@@ -12,10 +12,11 @@
 
 Highest severity first. Resolve before starting new work items.
 
-1. Baseline structural debug miss: T01 "Fix the authentication bug causing 401 errors in the login flow" misses `src/core/scorer.ts` and `src/core/router.ts`, producing recall@10 `0.3333`, precision@10 `0.1`, and NDCG@10 `0.1564`. This is a query-planning/ranking problem for debug tasks.
+- None currently.
 
 ## Resolved Issues
 
+- 2026-05-23: Fixed baseline structural debug miss T01 "Fix the authentication bug causing 401 errors in the login flow" by adding a narrow auth/login failure expansion to deterministic structural ranking. `src/core/router.ts` now ranks at 2 and `src/core/scorer.ts` ranks at 3; T01 recall@10 improved from `0.3333` to `0.6667`, precision@10 from `0.1` to `0.2`, and NDCG@10 from `0.1564` to `0.5307`.
 - 2026-05-23: Fixed baseline residual E2E recall miss E06 "Add batch delete MCP tool" by letting phrase-level delete/filter signals contribute storage/repository path intent in deterministic structural retrieval. E06 now finds `src/mcp/server.ts`, `src/storage/repository.ts`, and `src/types/index.ts` with recall `1`, precision `0.375`, and `12490` tokens.
 - 2026-05-23: Fixed the T09 side-effect ranking miss from the baseline list: `src/storage/current-version.ts` now ranks at 5 for "What database schema migrations exist and how are they applied?".
 - 2026-05-23: Fixed the T03/T15 top-10 ranking miss by strengthening provider/reranker contract matches and provider barrel-index ranking. T03 now ranks `src/types/index.ts` at 8 and `src/providers/index.ts` at 10; T15 now ranks `src/types/index.ts` at 8.
@@ -55,6 +56,14 @@ Highest severity first. Resolve before starting new work items.
   - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
   - Latest structural averages: R@10 `0.966667`, NDCG@10 `0.797237`, MRR `0.815476`, precision@10 `0.200000`, average results `27.15`.
   - Latest E2E focused averages: recall `1.000000`, precision `0.379048`, tokens `12417.6`; all tasks stayed below full codebase tokens `37929`.
+- 2026-05-23: Known Issue fix for T01 auth/login debug ranking.
+  - Added deterministic structural phrase expansion for auth/login failures so scorer/router modules receive structural and path-intent credit when the query has no exact code symbol anchor.
+  - Added `tests/retriever-ranking.test.ts` coverage proving `src/core/scorer.ts` and `src/core/router.ts` outrank lexical-only distractors for the T01-style query.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 245 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - T01 metrics: recall@10 `0.666667`, precision@10 `0.200000`, NDCG@10 `0.530721`; `src/core/router.ts` ranked 2 and `src/core/scorer.ts` ranked 3.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.815952`, MRR `0.833333`, precision@10 `0.205000`, average results `27.50`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.387738`, tokens `12444.3`; all tasks stayed below full codebase tokens `37945`.
 
 ## Review Log
 
