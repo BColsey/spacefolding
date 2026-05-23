@@ -199,3 +199,16 @@
   generation to `/tmp/spacefolding-heldout-security-review.json`, verified
   `/var/tmp/spacefolding-heldout-security-review.json` fails with a direct
   message, and confirmed no generated held-out JSON appeared in repo status.
+- Spec Compliance: rechecked `DESIGN.md` success metrics and benchmark design
+  against `IMPLEMENTATION.md` testing/ownership contracts, acceptance and
+  held-out docs, retrieval JSON, E2E JSON, and checker output. Verified
+  `npm run build && npm run lint && npm test` passed, generated retrieval JSON
+  with `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json`, and inspected the required retrieval diagnostic
+  keys. The documented E2E `npx tsx` command hit the sandbox's known
+  `listen EPERM` IPC restriction, so `node --import tsx` generated
+  `/tmp/spacefolding-e2e.json`; the E2E JSON included focused summary metrics,
+  current-vs-structural deltas, full-codebase token diagnostics, and the
+  focused success gate. The documented acceptance checker command passed with
+  exact actual/expected metrics, and no generated benchmark JSON appeared in
+  repo status. No spec-compliance defect required code changes.
