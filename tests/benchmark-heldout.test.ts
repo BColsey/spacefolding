@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -9,11 +9,11 @@ import {
   type HeldoutDataset,
 } from '../benchmarks/generate-heldout.ts';
 
-const generatedFiles: string[] = [];
+const generatedPaths: string[] = [];
 
 afterEach(() => {
-  for (const filePath of generatedFiles.splice(0)) {
-    if (existsSync(filePath)) rmSync(filePath);
+  for (const filePath of generatedPaths.splice(0)) {
+    if (existsSync(filePath)) rmSync(filePath, { recursive: true, force: true });
   }
 });
 
@@ -35,6 +35,17 @@ describe('held-out benchmark dataset generator', () => {
   it('refuses to write generated datasets outside /tmp', () => {
     expect(() => validateHeldoutOutputPath('/var/tmp/spacefolding-heldout-dataset.json')).toThrow(
       /Refusing to write generated held-out dataset outside \/tmp/
+    );
+  });
+
+  it('refuses output paths whose /tmp parent resolves back into the repository', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'spacefolding-heldout-symlink-'));
+    generatedPaths.push(tempDir);
+    const repoLink = join(tempDir, 'repo-link');
+    symlinkSync(process.cwd(), repoLink, 'dir');
+
+    expect(() => validateHeldoutOutputPath(join(repoLink, 'heldout-dataset.json'))).toThrow(
+      /Refusing to write generated held-out dataset inside the repository/
     );
   });
 
@@ -64,7 +75,7 @@ describe('held-out benchmark dataset generator', () => {
 
   it('writes deterministic held-out task metadata under /tmp without source contents', () => {
     const output = join(tmpdir(), `spacefolding-heldout-test-${process.pid}.json`);
-    generatedFiles.push(output);
+    generatedPaths.push(output);
 
     const options = parseArgs([
       '--corpus',

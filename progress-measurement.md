@@ -47,6 +47,9 @@
 - Held-out dataset generation should enforce `/tmp` output paths, not only
   refuse repository output paths, so private generated task JSON cannot be
   written to arbitrary local directories by mistake.
+- Held-out output validation must resolve parent directories and reject output
+  file symlinks, so `/tmp` symlinks cannot write generated task JSON back into
+  the checkout.
 - Acceptance checker tests should cover malformed root shapes, missing top-level
   sections, and full-codebase token violations in addition to happy-path gate
   output, because those branches produce the actionable diagnostics other loops
@@ -272,3 +275,16 @@
   `/tmp/spacefolding-e2e.json`; the documented checker command passed with exact
   actual/expected metrics. No generated benchmark JSON appeared in repo status,
   and no integration-wiring defect required code changes.
+- Security And Data Integrity: reviewed held-out generation, profiler output,
+  ignored artifacts, and tracked benchmark/env/data files against `DESIGN.md`
+  benchmark design and `IMPLEMENTATION.md` sections 10 and 12. Fixed held-out
+  output validation so `/tmp` symlink parents cannot write generated task JSON
+  back into the checkout, and added a regression test for that path. Verified no
+  generated DB files, held-out JSON, private corpus, `data/`, or `.env` files
+  are tracked and that git ignores benchmark DB and held-out JSON artifacts.
+  Verified `npx vitest run tests/benchmark-heldout.test.ts` and
+  `npm run build && npm run lint && npm test` passed. Smoke-tested fixture
+  generation to `/tmp/spacefolding-heldout-security-symlink-review.json`; the
+  equivalent symlink-rejection CLI check passed with `node --import tsx` after
+  the sandbox hit its known `npx tsx` IPC restriction. No generated held-out JSON
+  appeared in repo status.

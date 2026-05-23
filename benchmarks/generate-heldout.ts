@@ -9,8 +9,8 @@
  *   npx tsx benchmarks/generate-heldout.ts --corpus /path/to/repo --output /tmp/repo-dataset.json --limit 60
  */
 
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { lstatSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type Intent = 'code_search' | 'debug' | 'explain' | 'implement';
@@ -181,18 +181,40 @@ function readOptionValue(argv: string[], index: number, flag: string): string {
 
 export function validateHeldoutOutputPath(output: string, root: string = projectRoot): void {
   const resolvedOutput = resolve(output);
-  const resolvedRoot = resolve(root);
+  const resolvedRoot = realpathSync(resolve(root));
+  const resolvedOutputParent = resolve(dirname(resolvedOutput));
+  const realOutputParent = realpathIfExists(resolvedOutputParent);
+  const realOutput = join(realOutputParent, basename(resolvedOutput));
 
-  if (isWithinDirectory(resolvedOutput, resolvedRoot)) {
+  try {
+    if (lstatSync(resolvedOutput).isSymbolicLink()) {
+      throw new Error(
+        `Refusing to write generated held-out dataset through a symlink: ${output}. Use a regular output path under /tmp.`
+      );
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  if (isWithinDirectory(realOutput, resolvedRoot)) {
     throw new Error(
       `Refusing to write generated held-out dataset inside the repository: ${output}. Use an output path under /tmp.`
     );
   }
 
-  if (!isWithinDirectory(resolvedOutput, heldoutOutputRoot)) {
+  if (!isWithinDirectory(realOutput, realpathSync(heldoutOutputRoot))) {
     throw new Error(
       `Refusing to write generated held-out dataset outside /tmp: ${output}. Use an output path under /tmp.`
     );
+  }
+}
+
+function realpathIfExists(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return resolve(path);
+    throw error;
   }
 }
 
