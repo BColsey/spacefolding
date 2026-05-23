@@ -23,7 +23,11 @@ function makeChunk(id: string, path: string, tokensEstimate: number): ContextChu
   };
 }
 
-function makeSymbol(chunk: ContextChunk, name: string): CodeSymbol {
+function makeSymbol(
+  chunk: ContextChunk,
+  name: string,
+  kind: CodeSymbol['kind'] = 'function'
+): CodeSymbol {
   return {
     id: `${chunk.id}:${name}`,
     chunkId: chunk.id,
@@ -31,7 +35,7 @@ function makeSymbol(chunk: ContextChunk, name: string): CodeSymbol {
     language: 'typescript',
     name,
     normalizedName: name.toLowerCase().replace(/[^a-z0-9_$]/g, ''),
-    kind: 'function',
+    kind,
     startLine: 1,
     endLine: 1,
     signature: name,
@@ -40,10 +44,26 @@ function makeSymbol(chunk: ContextChunk, name: string): CodeSymbol {
   };
 }
 
+function makeReference(chunk: ContextChunk, target: string): CodeReference {
+  return {
+    id: `${chunk.id}:${target}`,
+    chunkId: chunk.id,
+    path: chunk.path ?? '',
+    language: 'typescript',
+    target,
+    normalizedTarget: target.toLowerCase().replace(/[^a-z0-9_$./:-]/g, ''),
+    kind: 'export',
+    startLine: 1,
+    endLine: 1,
+    metadata: {},
+  };
+}
+
 function makeStorage(
   chunks: ContextChunk[],
   lexicalScores: Record<string, number>,
-  symbols: Record<string, string[]>
+  symbols: Record<string, Array<string | { name: string; kind?: CodeSymbol['kind'] }>>,
+  references: Record<string, string[]> = {}
 ) {
   const chunkMap = new Map(chunks.map((chunk) => [chunk.id, chunk]));
   return {
@@ -59,9 +79,16 @@ function makeStorage(
     getCodeSymbols: (chunkId: string): CodeSymbol[] => {
       const chunk = chunkMap.get(chunkId);
       if (!chunk) return [];
-      return (symbols[chunkId] ?? []).map((name) => makeSymbol(chunk, name));
+      return (symbols[chunkId] ?? []).map((symbol) => {
+        if (typeof symbol === 'string') return makeSymbol(chunk, symbol);
+        return makeSymbol(chunk, symbol.name, symbol.kind);
+      });
     },
-    getCodeReferences: (): CodeReference[] => [],
+    getCodeReferences: (chunkId: string): CodeReference[] => {
+      const chunk = chunkMap.get(chunkId);
+      if (!chunk) return [];
+      return (references[chunkId] ?? []).map((target) => makeReference(chunk, target));
+    },
   };
 }
 
@@ -129,5 +156,91 @@ describe('HybridRetriever structural ranking', () => {
     expect(effectiveBudget).toBe(13_000);
     expect(filled.totalTokens).toBeLessThanOrEqual(effectiveBudget);
     expect(filled.selected.map((chunk) => chunk.path)).toContain('src/storage/repository.ts');
+  });
+
+  it('promotes provider contracts and barrel exports for provider implementation tasks', async () => {
+    const chunks = [
+      makeChunk('existing-provider', 'src/providers/deterministic-embedding.ts', 1_500),
+      makeChunk('compression-provider', 'src/providers/llm-compression.ts', 1_400),
+      makeChunk('provider-index', 'src/providers/index.ts', 500),
+      makeChunk('types', 'src/types/index.ts', 800),
+    ];
+    const storage = makeStorage(
+      chunks,
+      {
+        'existing-provider': 10,
+        'compression-provider': 5,
+        'provider-index': 5,
+        types: 4,
+      },
+      {
+        'existing-provider': ['DeterministicEmbeddingProvider', 'embed'],
+        'compression-provider': ['LLMCompressionProvider'],
+        types: [{ name: 'EmbeddingProvider', kind: 'interface' }],
+      },
+      {
+        'provider-index': [
+          './deterministic-embedding.js',
+          './local-embedding.js',
+          './gpu-embedding.js',
+        ],
+      }
+    );
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve(
+      'Add a new embedding provider that uses OpenAI embeddings',
+      { strategy: 'structural', topK: 10 }
+    );
+    const rankedIds = results.map((result) => result.chunkId);
+
+    expect(rankedIds.indexOf('types')).toBeLessThan(rankedIds.indexOf('compression-provider'));
+    expect(rankedIds.indexOf('provider-index')).toBeLessThan(rankedIds.indexOf('compression-provider'));
+    expect(results.find((result) => result.chunkId === 'types')?.reasons).toContain(
+      'sparse contract exact: EmbeddingProvider'
+    );
+    expect(results.find((result) => result.chunkId === 'provider-index')?.reasons).toContain(
+      'sparse module index segment: providers'
+    );
+  });
+
+  it('ranks reranker provider contracts above broad lexical retrieval overlap', async () => {
+    const chunks = [
+      makeChunk('vector-index', 'src/storage/vector-index.ts', 1_000),
+      makeChunk('types', 'src/types/index.ts', 800),
+      makeChunk('reranker', 'src/providers/deterministic-reranker.ts', 700),
+    ];
+    const storage = makeStorage(
+      chunks,
+      {
+        'vector-index': 4,
+        types: 0,
+        reranker: 0,
+      },
+      {
+        types: [{ name: 'RerankerProvider', kind: 'interface' }],
+        reranker: ['DeterministicRerankerProvider'],
+      }
+    );
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve(
+      'Add a reranking step after hybrid retrieval using a cross-encoder',
+      { strategy: 'structural', topK: 10 }
+    );
+    const rankedIds = results.map((result) => result.chunkId);
+
+    expect(rankedIds.indexOf('types')).toBeLessThan(rankedIds.indexOf('vector-index'));
+    const typeResult = results.find((result) => result.chunkId === 'types');
+    expect(typeResult?.sourceScores).toEqual({
+      structural: expect.any(Number),
+      vector: 0,
+      fts: 0,
+      graph: 0,
+      dependency: 0,
+      final: expect.any(Number),
+    });
+    expect(typeResult?.sourceScores?.structural).toBeGreaterThan(4);
+    expect(typeResult?.reasons).toContain('sparse contract exact: RerankerProvider');
   });
 });

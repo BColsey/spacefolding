@@ -11,14 +11,14 @@
 
 Highest severity first. Resolve before starting new work items.
 
-1. Baseline structural ranking misses top-10 relevant files even though they are retrieved later: T03 ranks `src/providers/index.ts` at 12 and `src/types/index.ts` at 14; T15 ranks `src/types/index.ts` at 11. These are ranking/fusion problems.
-2. Baseline structural environment lookup miss: T18 "What environment variables control the system behavior?" misses `.env.example` and only ranks `src/cli/index.ts` at 7, producing recall@10 `0.5`, precision@10 `0.1`, and MRR `0.1429`. This is a path/lexical recall and ranking problem for config-file queries.
-3. Baseline structural debug miss: T01 "Fix the authentication bug causing 401 errors in the login flow" misses `src/core/scorer.ts` and `src/core/router.ts`, producing recall@10 `0.3333`, precision@10 `0.1`, and NDCG@10 `0.1815`. This is a query-planning/ranking problem for debug tasks.
+1. Structural environment lookup miss: T18 "What environment variables control the system behavior?" still misses `.env.example` even though `src/cli/index.ts` now ranks at 1, producing recall@10 `0.5`, precision@10 `0.1`, and NDCG@10 `0.6131`. This is a path/lexical recall and ranking problem for config-file queries.
+2. Baseline structural debug miss: T01 "Fix the authentication bug causing 401 errors in the login flow" misses `src/core/scorer.ts` and `src/core/router.ts`, producing recall@10 `0.3333`, precision@10 `0.1`, and NDCG@10 `0.1815`. This is a query-planning/ranking problem for debug tasks.
 
 ## Resolved Issues
 
 - 2026-05-23: Fixed baseline residual E2E recall miss E06 "Add batch delete MCP tool" by letting phrase-level delete/filter signals contribute storage/repository path intent in deterministic structural retrieval. E06 now finds `src/mcp/server.ts`, `src/storage/repository.ts`, and `src/types/index.ts` with recall `1`, precision `0.375`, and `12490` tokens.
 - 2026-05-23: Fixed the T09 side-effect ranking miss from the baseline list: `src/storage/current-version.ts` now ranks at 5 for "What database schema migrations exist and how are they applied?".
+- 2026-05-23: Fixed the T03/T15 top-10 ranking miss by strengthening provider/reranker contract matches and provider barrel-index ranking. T03 now ranks `src/types/index.ts` at 8 and `src/providers/index.ts` at 10; T15 now ranks `src/types/index.ts` at 8.
 
 ## Completed Work Items
 
@@ -40,6 +40,13 @@ Highest severity first. Resolve before starting new work items.
   - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
   - Latest structural averages: R@10 `0.900000`, NDCG@10 `0.766087`, MRR `0.818333`, precision@10 `0.180000`, average results `25.15`.
   - Latest E2E focused averages: recall `1.000000`, precision `0.422976`, tokens `12433.1`; all tasks stayed below full codebase tokens `37756`.
+- 2026-05-23: Known Issue fix for T03/T15 provider contract ranking.
+  - Changed deterministic structural ranking so phrase-level provider/reranker contract terms boost exported interface/type symbols, and `index.ts` barrel files get structural credit when their parent segment matches the query.
+  - Added `tests/retriever-ranking.test.ts` cases for provider contract/barrel ranking and reranker provider contracts outranking broad lexical overlap; source score shape remains asserted.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 242 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.941667`, NDCG@10 `0.785289`, MRR `0.818333`, precision@10 `0.195000`, average results `26.20`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.379048`, tokens `12417.3`; all tasks stayed below full codebase tokens `37929`.
 
 ## Review Log
 

@@ -622,8 +622,10 @@ const TERM_EXPANSIONS: Record<string, Array<[string, number]>> = {
 };
 
 const PHRASE_EXPANSIONS: Array<[RegExp, Array<[string, number]>]> = [
+  [/\bembedding providers?\b/i, [['embeddingprovider', 1.5], ['embedbatch', 1.1], ['types', 0.9]]],
   [/\bfull[-\s]?text\b/i, [['fts', 1.1], ['searchbytext', 0.9], ['searchbylexical', 0.8]]],
-  [/\bcross[-\s]?encoder\b/i, [['reranker', 1.2], ['rerankerprovider', 1.1], ['deterministicreranker', 0.9]]],
+  [/\breranking\s+step\b/i, [['rerankerprovider', 1.6], ['reranker', 1.4], ['types', 1.0]]],
+  [/\bcross[-\s]?encoder\b/i, [['reranker', 1.4], ['rerankerprovider', 1.6], ['deterministicreranker', 0.9], ['types', 1.0]]],
   [/\benvironment variables?\b/i, [['env', 1.4], ['process', 1.0], ['cli', 1.0], ['dbpath', 0.9], ['modelpath', 0.8]]],
   [/\bmcp tools?\b/i, [['mcp', 1.2], ['server', 1.0], ['calltoolrequestschema', 0.9]]],
   [/\bbatch\s+delet(?:e|es|ed|ing|ion)\b/i, [['repository', 1.3], ['storage', 1.2], ['deletechunks', 1.1], ['deletechunk', 1.1], ['contextfilter', 1.0]]],
@@ -710,6 +712,7 @@ function scoreSparseStructuralFields(
   const symbolFields = symbols.map((symbol) => ({
     name: symbol.name,
     normalized: normalizeSymbolName(symbol.name),
+    kind: symbol.kind,
     parts: new Set(splitIdentifier(symbol.name).map(normalizeSymbolName)),
     signature: normalizeSymbolName(symbol.signature ?? ''),
     exported: symbol.isExported,
@@ -781,7 +784,7 @@ function scoreSparseTerm(
     pathParts: Set<string>;
     basenameNormalized: string;
     basenameParts: Set<string>;
-    symbolFields: Array<{ name: string; normalized: string; parts: Set<string>; signature: string; exported: boolean }>;
+    symbolFields: Array<{ name: string; normalized: string; kind: CodeSymbol['kind']; parts: Set<string>; signature: string; exported: boolean }>;
     referenceFields: Array<{ target: string; normalized: string; parts: Set<string> }>;
   }
 ): { score: number; reason: string } {
@@ -800,11 +803,19 @@ function scoreSparseTerm(
   if (fields.basenameNormalized === value) consider(1.05 * weight, `sparse path exact: ${value}`);
   if (fields.basenameParts.has(value)) consider(0.8 * weight, `sparse filename token: ${value}`);
   if (fields.pathParts.has(value)) consider(0.42 * weight, `sparse path token: ${value}`);
+  if (fields.basenameNormalized === 'index') {
+    const matchingSegment = [...fields.pathParts].find((part) => part !== 'index' && isSingularPluralMatch(value, part));
+    if (matchingSegment) consider(1.1 * weight, `sparse module index segment: ${matchingSegment}`);
+  }
   if (value.length >= 4 && fields.normalizedPath.includes(value)) consider(0.18 * weight, `sparse path partial: ${value}`);
 
   for (const symbol of fields.symbolFields) {
     const exported = symbol.exported ? 1.1 : 1;
-    if (symbol.normalized === value) consider(1.15 * weight * exported, `sparse symbol exact: ${symbol.name}`);
+    const contract = symbol.kind === 'interface' || symbol.kind === 'type' ? 1.45 : 1;
+    if (symbol.normalized === value) {
+      const reason = contract > 1 ? `sparse contract exact: ${symbol.name}` : `sparse symbol exact: ${symbol.name}`;
+      consider(1.15 * weight * exported * contract, reason);
+    }
     if (symbol.parts.has(value)) consider(0.62 * weight * exported, `sparse symbol token: ${symbol.name}`);
     if (value.length >= 4 && symbol.normalized.includes(value)) consider(0.38 * weight * exported, `sparse symbol partial: ${symbol.name}`);
     if (value.length >= 4 && symbol.signature.includes(value)) consider(0.22 * weight * exported, `sparse signature token: ${symbol.name}`);
@@ -825,6 +836,15 @@ function tokenizeStructuralField(value: string): string[] {
     .flatMap((part) => splitIdentifier(part))
     .map(normalizeSymbolName)
     .filter((part) => part.length > 1);
+}
+
+function isSingularPluralMatch(term: string, fieldPart: string): boolean {
+  if (term === fieldPart) return true;
+  if (term.length <= 2 || fieldPart.length <= 2) return false;
+  if (`${term}s` === fieldPart || `${fieldPart}s` === term) return true;
+  if (term.endsWith('ies') && `${term.slice(0, -3)}y` === fieldPart) return true;
+  if (fieldPart.endsWith('ies') && `${fieldPart.slice(0, -3)}y` === term) return true;
+  return false;
 }
 
 function mergeRawResults(resultSets: Array<Array<{ chunkId: string; score: number }>>): { chunkId: string; score: number }[] {
