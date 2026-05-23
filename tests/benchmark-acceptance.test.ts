@@ -6,6 +6,7 @@ import {
   buildAcceptanceReport,
   buildAcceptanceReportFromFiles,
   formatTextReport,
+  parseArgs,
 } from '../benchmarks/check-acceptance.ts';
 
 function retrievalReport() {
@@ -147,5 +148,30 @@ describe('acceptance checker report', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('represents missing JSON files as failed checker reports', () => {
+    const missingPath = join(tmpdir(), `spacefolding-missing-${Date.now()}.json`);
+
+    const report = buildAcceptanceReportFromFiles({
+      e2eJson: missingPath,
+      json: true,
+    });
+
+    expect(report).toMatchObject({
+      passed: false,
+      checks: [expect.objectContaining({
+        name: 'e2e.json_readable',
+        passed: false,
+        actual: expect.stringContaining('ENOENT'),
+        expected: `valid JSON file at ${missingPath}`,
+      })],
+    });
+  });
+
+  it('fails CLI argument parsing when no input JSON path is provided', () => {
+    expect(() => parseArgs(['--json'])).toThrow(
+      'Provide --retrieval-json, --e2e-json, or both'
+    );
   });
 });

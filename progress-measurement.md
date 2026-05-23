@@ -24,6 +24,9 @@
 - Acceptance checker reports are built through `buildAcceptanceReport`, keeping
   text output, `--json` output, malformed JSON handling, and missing-section
   diagnostics covered without shelling out in Vitest.
+- Acceptance checker error handling is covered both through report builders and
+  CLI smoke checks for missing input paths, malformed JSON, incomplete summaries,
+  and invalid arguments.
 - Spec compliance review verifies both the documented command surface and the
   generated JSON/checker contracts, because benchmark scripts and docs share the
   acceptance-gate responsibility.
@@ -111,3 +114,11 @@
   restriction, so the equivalent `node --import tsx` command generated the E2E
   JSON for inspection. The checker passed with exact actual/expected metrics,
   and no spec-compliance defect required code changes.
+- Error Handling: reviewed malformed JSON, missing files, missing strategy
+  summaries, missing E2E summaries, and CLI argument failures against
+  `IMPLEMENTATION.md` section 9. Added acceptance-checker tests for missing JSON
+  files and missing CLI input paths. Verified `npm run build && npm run lint &&
+  npm test` passed. Also verified `npx tsx benchmarks/check-acceptance.ts
+  --json`, missing retrieval JSON, malformed retrieval JSON, and incomplete
+  retrieval JSON all exited nonzero with direct actual/expected diagnostics. No
+  generated benchmark JSON appeared in repo status.
