@@ -259,3 +259,16 @@
   `npx tsc -p benchmarks/tsconfig.json --noEmit --noUnusedLocals
   --noUnusedParameters` and `npm run build && npm run lint && npm test` passed.
   No generated benchmark JSON appeared in repo status.
+- Integration Wiring: compared documented benchmark commands in `DESIGN.md`,
+  `IMPLEMENTATION.md`, `benchmarks/ACCEPTANCE.md`, `benchmarks/HELDOUT.md`, and
+  `README.md` against `package.json` scripts and the benchmark CLI parsers.
+  Verified the documented retrieval, E2E, acceptance-checker, held-out, profiler,
+  and ralph pacing commands still use supported flags and concrete `/tmp` output
+  paths. Verified `npm run build && npm run lint && npm test` passed, generated
+  retrieval JSON with `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json`, and confirmed the expected retrieval diagnostic
+  keys. The documented E2E `npx tsx` command hit the sandbox's known
+  `listen EPERM` IPC restriction, so `node --import tsx` generated
+  `/tmp/spacefolding-e2e.json`; the documented checker command passed with exact
+  actual/expected metrics. No generated benchmark JSON appeared in repo status,
+  and no integration-wiring defect required code changes.
