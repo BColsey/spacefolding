@@ -47,6 +47,13 @@
 - Held-out dataset generation should enforce `/tmp` output paths, not only
   refuse repository output paths, so private generated task JSON cannot be
   written to arbitrary local directories by mistake.
+- Acceptance checker tests should cover malformed root shapes, missing top-level
+  sections, and full-codebase token violations in addition to happy-path gate
+  output, because those branches produce the actionable diagnostics other loops
+  rely on.
+- Benchmark CLI numeric options should use digits-only positive safe-integer
+  parsing, because `parseInt` silently accepts malformed values like `1.5` or
+  `5abc`.
 
 ## Known Issues
 
@@ -222,3 +229,21 @@
   E2E dataset, and missing profiler dataset all exited nonzero and named the
   failing argument or path. Verified `npm run build && npm run lint && npm
   test` passed. No error-handling defect required code changes.
+- Test Coverage: reviewed benchmark helper functions and checker branches
+  against `DESIGN.md` benchmark contracts and `IMPLEMENTATION.md` section 10.
+  Added Vitest coverage for non-object retrieval JSON, missing retrieval
+  strategies arrays, missing E2E summaries, checker unknown flags, and E2E tasks
+  returning more tokens than the full codebase. Verified
+  `npx vitest run tests/benchmark-acceptance.test.ts` and
+  `npm run build && npm run lint && npm test` passed. No generated benchmark
+  JSON appeared in repo status.
+- Code Consistency: reviewed CLI parsing and report-shape consistency across
+  benchmark scripts against `DESIGN.md` benchmark design and
+  `IMPLEMENTATION.md` sections 9 and 10. Fixed held-out generation and
+  retrieval profiler numeric parsing so malformed values such as `1.5` and
+  `12000abc` fail before benchmark work runs. Added parser coverage for those
+  branches. Verified `npx vitest run tests/benchmark-profile.test.ts
+  tests/benchmark-heldout.test.ts` and `npm run build && npm run lint && npm
+  test` passed. Smoke-tested fixture held-out generation to
+  `/tmp/spacefolding-heldout-code-consistency.json`, and verified malformed
+  held-out/profiler numeric arguments exited nonzero with direct messages.

@@ -15,7 +15,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { dirname, extname, join, relative } from 'node:path';
+import { dirname, extname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
@@ -30,7 +30,7 @@ interface BenchmarkDataset {
 
 type RetrievalStrategy = 'structural' | 'hybrid' | 'vector' | 'text' | 'graph';
 
-interface CliOptions {
+export interface CliOptions {
   corpus: string;
   dataset: string;
   strategy: RetrievalStrategy;
@@ -74,7 +74,7 @@ const SKIP_DIRS = new Set([
   'venv',
 ]);
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     corpus: join(projectRoot, 'src'),
     dataset: join(benchDir, 'dataset.json'),
@@ -88,17 +88,26 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--corpus' && argv[i + 1]) options.corpus = argv[++i];
-    else if (arg === '--dataset' && argv[i + 1]) options.dataset = argv[++i];
-    else if (arg === '--strategy' && argv[i + 1]) options.strategy = parseStrategy(argv[++i]);
-    else if (arg === '--top-k' && argv[i + 1]) options.topK = parsePositiveInt(argv[++i], 'top-k');
-    else if (arg === '--return-limit' && argv[i + 1]) options.returnLimit = parsePositiveInt(argv[++i], 'return-limit');
-    else if (arg === '--max-tokens' && argv[i + 1]) options.maxTokens = parsePositiveInt(argv[++i], 'max-tokens');
+    if (arg === '--corpus') options.corpus = readOptionValue(argv, i++, arg);
+    else if (arg === '--dataset') options.dataset = readOptionValue(argv, i++, arg);
+    else if (arg === '--strategy') options.strategy = parseStrategy(readOptionValue(argv, i++, arg));
+    else if (arg === '--top-k') options.topK = parsePositiveInt(readOptionValue(argv, i++, arg), 'top-k');
+    else if (arg === '--return-limit') options.returnLimit = parsePositiveInt(readOptionValue(argv, i++, arg), 'return-limit');
+    else if (arg === '--max-tokens') options.maxTokens = parsePositiveInt(readOptionValue(argv, i++, arg), 'max-tokens');
     else if (arg === '--json') options.json = true;
     else if (arg === '--include-tests') options.includeTests = true;
+    else throw new Error(`Unknown argument: ${arg}`);
   }
 
   return options;
+}
+
+function readOptionValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
 }
 
 function parseStrategy(value: string): RetrievalStrategy {
@@ -109,8 +118,8 @@ function parseStrategy(value: string): RetrievalStrategy {
 }
 
 function parsePositiveInt(value: string, name: string): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  const parsed = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(`--${name} must be a positive integer`);
   }
   return parsed;
@@ -163,8 +172,8 @@ function dbBytes(dbPath: string): number {
     .reduce((sum, path) => sum + statSync(path).size, 0);
 }
 
-async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+async function main(argv = process.argv.slice(2)): Promise<void> {
+  const options = parseArgs(argv);
   if (!existsSync(options.corpus)) throw new Error(`Corpus not found: ${options.corpus}`);
   if (!existsSync(options.dataset)) throw new Error(`Dataset not found: ${options.dataset}`);
 
@@ -293,7 +302,14 @@ async function main(): Promise<void> {
   log(`Returned chunks: mean=${chunksReturned.mean.toFixed(1)} p95=${chunksReturned.p95.toFixed(1)} max=${chunksReturned.max.toFixed(0)}`);
 }
 
-main().catch((error) => {
-  console.error('Profile failed:', error);
-  process.exit(1);
-});
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error('Profile failed:', error);
+    process.exit(1);
+  });
+}

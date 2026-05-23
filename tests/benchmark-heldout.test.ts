@@ -45,6 +45,12 @@ describe('held-out benchmark dataset generator', () => {
     expect(() => parseArgs(['--max-per-file', '-1'])).toThrow(
       '--max-per-file must be a positive integer'
     );
+    expect(() => parseArgs(['--limit', '1.5'])).toThrow(
+      '--limit must be a positive integer'
+    );
+    expect(() => parseArgs(['--max-per-file', '3abc'])).toThrow(
+      '--max-per-file must be a positive integer'
+    );
   });
 
   it('rejects unknown flags and missing option values', () => {
