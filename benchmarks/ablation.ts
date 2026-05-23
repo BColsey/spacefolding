@@ -47,6 +47,11 @@ interface Metrics {
   avgResults: number;
 }
 
+interface EmbeddingProviderLike {
+  embed(text: string): Promise<number[]>;
+  embedBatch(texts: string[]): Promise<number[][]>;
+}
+
 // ── Metrics ──
 
 function computeMetrics(retrieved: string[], relevant: Set<string>, totalRelevant: number): Metrics {
@@ -130,8 +135,11 @@ function walkDir(dir: string): string[] {
 
 async function runAblation() {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const datasetFlag = process.argv.find((a, i) => process.argv[i - 1] === '--dataset');
-  const datasetFile = datasetFlag ?? 'dataset.json';
+  const datasetIndex = process.argv.indexOf('--dataset');
+  const datasetFile =
+    datasetIndex >= 0 && process.argv[datasetIndex + 1]
+      ? process.argv[datasetIndex + 1]
+      : 'dataset.json';
   const dataset: { tasks: BenchmarkTask[] } = JSON.parse(readFileSync(join(benchDir, datasetFile), 'utf-8'));
 
   const strategies = [
@@ -161,7 +169,7 @@ async function runAblation() {
 
   const useLocalEmbeddings = process.argv.includes('--local-embeddings');
   const useGpu = process.argv.includes('--gpu');
-  let embeddingProvider;
+  let embeddingProvider: EmbeddingProviderLike;
   if (useGpu) {
     const { GpuEmbeddingProvider } = await import('../dist/providers/gpu-embedding.js');
     const modelId = process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2';

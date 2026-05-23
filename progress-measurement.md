@@ -54,6 +54,9 @@
 - Benchmark CLI numeric options should use digits-only positive safe-integer
   parsing, because `parseInt` silently accepts malformed values like `1.5` or
   `5abc`.
+- Dynamic benchmark providers should be typed against the full provider
+  contract they are passed into; the ablation benchmark needs both `embed` and
+  `embedBatch` so vector-only and full-pipeline paths stay compile-checkable.
 
 ## Known Issues
 
@@ -247,3 +250,12 @@
   test` passed. Smoke-tested fixture held-out generation to
   `/tmp/spacefolding-heldout-code-consistency.json`, and verified malformed
   held-out/profiler numeric arguments exited nonzero with direct messages.
+- Dead Code: reviewed unused benchmark fields, stale docs, and unwired checker
+  branches against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` section
+  10. The targeted benchmark TypeScript unused check found dead/under-typed code
+  in `benchmarks/ablation.ts`; removed the unused dataset-flag callback
+  parameter and typed the dynamic embedding provider contract so vector-only and
+  full-pipeline strategies remain checked. Verified
+  `npx tsc -p benchmarks/tsconfig.json --noEmit --noUnusedLocals
+  --noUnusedParameters` and `npm run build && npm run lint && npm test` passed.
+  No generated benchmark JSON appeared in repo status.
