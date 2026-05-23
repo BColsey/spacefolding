@@ -8,12 +8,15 @@
  * Supports TypeScript, JavaScript, Python, Java, Rust, and Go files.
  *
  * Usage:
- *   npx tsx benchmarks/generate-tasks.ts [--sources src,benchmarks/fixtures] [--count 250] [--output dataset-large.json]
+ *   npx tsx benchmarks/generate-tasks.ts [--sources src,benchmarks/fixtures] [--count 250] [--output /tmp/spacefolding-generated-tasks.json]
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, dirname, extname, relative } from 'node:path';
+import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const benchDir = dirname(fileURLToPath(import.meta.url));
+const projectRoot = join(benchDir, '..');
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -38,7 +41,7 @@ interface ExpertTask {
   irrelevant_files?: string[];
 }
 
-interface GenOptions {
+export interface GenOptions {
   sources: string[];
   count: number;
   output: string;
@@ -298,42 +301,73 @@ function generateTasks(sourceDirs: string[], projectRoot: string): Task[] {
 
 // ── CLI arg parsing ──────────────────────────────────────────────
 
-function parseArgs(argv: string[]): GenOptions {
-  const benchDir = dirname(fileURLToPath(import.meta.url));
-  const projectRoot = join(benchDir, '..');
-
+export function parseArgs(argv: string[]): GenOptions {
   const options: GenOptions = {
     sources: [
       join(projectRoot, 'src'),
       join(projectRoot, 'benchmarks', 'fixtures'),
     ],
     count: 250,
-    output: join(benchDir, 'dataset-large.json'),
+    output: join('/tmp', 'spacefolding-generated-tasks.json'),
   };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--sources' && argv[i + 1]) {
-      options.sources = argv[++i].split(',').map(s => {
-        // Resolve relative to project root if not absolute
-        return s.startsWith('/') ? s : join(projectRoot, s);
-      });
-    } else if (arg === '--count' && argv[i + 1]) {
-      options.count = parseInt(argv[++i], 10);
-    } else if (arg === '--output' && argv[i + 1]) {
-      const outPath = argv[++i];
-      options.output = outPath.startsWith('/') ? outPath : join(projectRoot, outPath);
+    if (arg === '--sources') {
+      options.sources = parseSources(readOptionValue(argv, i++, arg));
+    } else if (arg === '--count') {
+      options.count = parsePositiveInt(readOptionValue(argv, i++, arg), 'count');
+    } else if (arg === '--output') {
+      options.output = resolveOutput(readOptionValue(argv, i++, arg));
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
     }
   }
 
   return options;
 }
 
+function readOptionValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
+function parseSources(value: string): string[] {
+  const sources = value
+    .split(',')
+    .map((source) => source.trim())
+    .filter((source) => source.length > 0)
+    .map((source) => source.startsWith('/') ? source : join(projectRoot, source));
+
+  if (sources.length === 0) {
+    throw new Error('--sources requires at least one path');
+  }
+
+  return sources;
+}
+
+function parsePositiveInt(value: string, name: string): number {
+  const parsed = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`--${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function resolveOutput(output: string): string {
+  return output.startsWith('/') ? output : join(projectRoot, output);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 function main() {
-  const benchDir = dirname(fileURLToPath(import.meta.url));
-  const projectRoot = join(benchDir, '..');
   const options = parseArgs(process.argv.slice(2));
 
   // Load expert tasks from dataset.json
@@ -434,4 +468,16 @@ function main() {
   console.log(JSON.stringify(stats, null, 2));
 }
 
-main();
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`Task generation failed: ${errorMessage(error)}`);
+    process.exit(1);
+  }
+}

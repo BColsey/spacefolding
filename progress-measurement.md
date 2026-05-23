@@ -60,6 +60,15 @@
 - Dynamic benchmark providers should be typed against the full provider
   contract they are passed into; the ablation benchmark needs both `embed` and
   `embedBatch` so vector-only and full-pipeline paths stay compile-checkable.
+- Benchmark scripts should validate dataset root shape and required task fields
+  before dereferencing `tasks`, so malformed held-out JSON fails with a direct
+  message instead of a TypeError stack.
+- Acceptance checker helper tests should cover the `buildAcceptanceReport`
+  no-input fallback even though CLI parsing usually prevents that state, because
+  report builders are reused directly in tests and diagnostics.
+- Legacy benchmark generators should be import-safe and use strict option
+  parsing before writing files, because parser tests cannot cover them if module
+  import triggers generation.
 
 ## Known Issues
 
@@ -302,3 +311,40 @@
   The documented acceptance checker command passed with exact actual/expected
   metrics, and no generated benchmark JSON appeared in repo status. No
   spec-compliance defect required code changes.
+- Error Handling: reviewed malformed JSON, missing files, missing strategy
+  summaries, missing E2E summaries, dataset shape validation, and benchmark
+  process failures against `IMPLEMENTATION.md` section 9. Fixed retrieval
+  evaluation, E2E benchmark, and retrieval profiler dataset loaders so missing
+  `tasks` arrays, empty task lists, and malformed task fields fail before
+  benchmark work runs with direct messages. Added Vitest coverage for those
+  malformed dataset branches. Verified `npx vitest run
+  tests/benchmark-evaluate.test.ts tests/benchmark-e2e.test.ts
+  tests/benchmark-profile.test.ts` and `npm run build && npm run lint && npm
+  test` passed. Smoke-tested malformed dataset CLI failures for retrieval, E2E,
+  and profiler JSON. Generated retrieval JSON with
+  `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json`; the documented E2E `npx tsx` command hit the
+  sandbox's known `listen EPERM` IPC restriction, so `node --import tsx`
+  generated `/tmp/spacefolding-e2e.json`. The documented acceptance checker
+  command passed with exact actual/expected metrics, and no generated benchmark
+  JSON appeared in repo status. Commit was blocked because `.git/index.lock`
+  could not be created on the read-only git metadata filesystem.
+- Test Coverage: reviewed benchmark helper functions and checker branches
+  against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` sections 9 and
+  10. Added Vitest coverage for the acceptance checker report-builder no-input
+  fallback so direct helper calls still produce an actionable `cli.inputs_present`
+  diagnostic. Verified `npx vitest run tests/benchmark-acceptance.test.ts` and
+  `npm run build && npm run lint && npm test` passed. No generated benchmark
+  JSON appeared in repo status.
+- Code Consistency: reviewed CLI parsing and benchmark script import behavior
+  across the measurement-owned benchmark surfaces against `DESIGN.md` benchmark
+  design and `IMPLEMENTATION.md` sections 9 and 10. Fixed
+  `benchmarks/generate-tasks.ts` so it no longer writes output on import,
+  rejects unknown flags, missing option values, and malformed counts before
+  generation, and defaults generated task JSON to `/tmp`. Added parser/import
+  coverage in `tests/benchmark-generate-tasks.test.ts`. Verified
+  `npx vitest run tests/benchmark-generate-tasks.test.ts` and
+  `npm run build && npm run lint && npm test` passed. Smoke-tested fixture task
+  generation to `/tmp/spacefolding-generated-tasks-code-consistency.json` and
+  verified malformed `--count 1.5` fails with a direct message. No generated
+  benchmark JSON appeared in repo status.
