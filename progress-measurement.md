@@ -24,6 +24,9 @@
 - Acceptance checker reports are built through `buildAcceptanceReport`, keeping
   text output, `--json` output, malformed JSON handling, and missing-section
   diagnostics covered without shelling out in Vitest.
+- Spec compliance review verifies both the documented command surface and the
+  generated JSON/checker contracts, because benchmark scripts and docs share the
+  acceptance-gate responsibility.
 
 ## Known Issues
 
@@ -97,3 +100,14 @@
 ## Review Log
 
 (Entries added during review phase: category reviewed, what was checked, what was fixed.)
+
+- Spec Compliance: compared `DESIGN.md` success metrics and benchmark design
+  against `IMPLEMENTATION.md` testing/ownership contracts, acceptance/held-out
+  docs, retrieval JSON, E2E JSON, and checker output. Verified the local quality
+  gate passed; `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json` produced the expected retrieval diagnostics;
+  `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json >
+  /tmp/spacefolding-e2e.json` hit the sandbox's known `listen EPERM` IPC
+  restriction, so the equivalent `node --import tsx` command generated the E2E
+  JSON for inspection. The checker passed with exact actual/expected metrics,
+  and no spec-compliance defect required code changes.
