@@ -7,7 +7,11 @@
  *     --corpus /path/to/repo \
  *     --dataset /tmp/spacefolding-heldout-repo.json \
  *     --strategy structural \
- *     --json
+ *     --json > /tmp/spacefolding-heldout-profile.json
+ *
+ * Compare JSON keys for ingest cost (files, chunks, symbols, references,
+ * totalTokensEstimate, dbBytes, ingestMs), retrieval latency (queryMs),
+ * returned context size (tokensReturned, chunksReturned), and memory.
  */
 
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';

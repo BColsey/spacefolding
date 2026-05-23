@@ -6,3 +6,6 @@ data/
 *.db-shm
 .env
 .claude/
+ralph-*.log
+/benchmarks/heldout*.json
+/benchmarks/*heldout*.json

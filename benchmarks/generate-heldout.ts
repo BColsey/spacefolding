@@ -10,12 +10,12 @@
  */
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, extname, join, relative, sep } from 'node:path';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type Intent = 'code_search' | 'debug' | 'explain' | 'implement';
 
-interface HeldoutTask {
+export interface HeldoutTask {
   id: string;
   task: string;
   intent: Intent;
@@ -38,7 +38,25 @@ interface SymbolCandidate {
   filePath: string;
 }
 
-interface CliOptions {
+export interface HeldoutDataset {
+  codebase: string;
+  description: string;
+  generated_at: string;
+  source_file_count: number;
+  symbol_count: number;
+  tasks: HeldoutTask[];
+}
+
+export interface HeldoutSummary {
+  output: string;
+  corpus: string;
+  sourceFiles: number;
+  symbols: number;
+  tasks: number;
+  byLanguage: Record<string, number>;
+}
+
+export interface CliOptions {
   corpus: string;
   output: string;
   limit: number;
@@ -128,10 +146,10 @@ const GENERIC_SYMBOLS = new Set([
   'value',
 ]);
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     corpus: join(projectRoot, 'src'),
-    output: join(benchDir, 'heldout-dataset.json'),
+    output: join('/tmp', 'spacefolding-heldout-dataset.json'),
     limit: 80,
     maxPerFile: 3,
     seed: 'heldout',
@@ -149,6 +167,20 @@ function parseArgs(argv: string[]): CliOptions {
   }
 
   return options;
+}
+
+export function validateHeldoutOutputPath(output: string, root: string = projectRoot): void {
+  const resolvedOutput = resolve(output);
+  const resolvedRoot = resolve(root);
+  const outputRelativeToRoot = relative(resolvedRoot, resolvedOutput);
+  const isInsideRoot = outputRelativeToRoot === ''
+    || (!outputRelativeToRoot.startsWith('..') && !isAbsolute(outputRelativeToRoot));
+
+  if (isInsideRoot) {
+    throw new Error(
+      `Refusing to write generated held-out dataset inside the repository: ${output}. Use an output path under /tmp.`
+    );
+  }
 }
 
 function parsePositiveInt(value: string, name: string): number {
@@ -363,8 +395,7 @@ function hashString(value: string): number {
   return hash >>> 0;
 }
 
-function main(): void {
-  const options = parseArgs(process.argv.slice(2));
+export function buildHeldoutDataset(options: CliOptions): { dataset: HeldoutDataset; summary: HeldoutSummary } {
   const corpus = options.corpus;
   const files = walkDir(corpus, options.includeTests);
   const symbols = files.flatMap((filePath) => {
@@ -377,23 +408,46 @@ function main(): void {
     return acc;
   }, {});
 
-  writeFileSync(options.output, JSON.stringify({
+  const dataset: HeldoutDataset = {
     codebase: corpus,
     description: 'Held-out generated benchmark dataset. Relevant paths are relative to the Spacefolding project root.',
     generated_at: new Date(0).toISOString(),
     source_file_count: files.length,
     symbol_count: symbols.length,
     tasks,
-  }, null, 2));
+  };
 
-  console.log(JSON.stringify({
-    output: options.output,
-    corpus,
-    sourceFiles: files.length,
-    symbols: symbols.length,
-    tasks: tasks.length,
-    byLanguage,
-  }, null, 2));
+  return {
+    dataset,
+    summary: {
+      output: options.output,
+      corpus,
+      sourceFiles: files.length,
+      symbols: symbols.length,
+      tasks: tasks.length,
+      byLanguage,
+    },
+  };
 }
 
-main();
+export function writeHeldoutDataset(options: CliOptions): HeldoutSummary {
+  validateHeldoutOutputPath(options.output);
+  const { dataset, summary } = buildHeldoutDataset(options);
+  writeFileSync(options.output, JSON.stringify(dataset, null, 2));
+  return summary;
+}
+
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  try {
+    const summary = writeHeldoutDataset(parseArgs(process.argv.slice(2)));
+    console.log(JSON.stringify(summary, null, 2));
+  } catch (error) {
+    console.error('Held-out generation failed:', error);
+    process.exit(1);
+  }
+}
