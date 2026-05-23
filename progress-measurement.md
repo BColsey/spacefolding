@@ -21,6 +21,9 @@
   cannot accidentally become a repo artifact.
 - The checked-in benchmark fixture corpus can smoke-test held-out generation with
   `--include-tests` because fixture directories are skipped by default.
+- Acceptance checker reports are built through `buildAcceptanceReport`, keeping
+  text output, `--json` output, malformed JSON handling, and missing-section
+  diagnostics covered without shelling out in Vitest.
 
 ## Known Issues
 
@@ -36,6 +39,7 @@
 - 2. Retrieval Benchmark Diagnostics
 - 3. E2E Benchmark Diagnostics
 - 4. Held-Out Benchmark Safety
+- 5. Acceptance Checker Clarity
 
 ## Iteration Log
 
@@ -75,6 +79,20 @@
   public fixture dataset with
   `npx tsx benchmarks/generate-heldout.ts --corpus benchmarks/fixtures --output /tmp/spacefolding-heldout-fixtures.json --limit 5 --include-tests`
   and confirmed no generated held-out JSON appeared in repo status.
+- Work item 5: refactored `benchmarks/check-acceptance.ts` into testable report
+  builders, required retrieval and E2E success-gate fields, made malformed JSON
+  and missing JSON sections fail as explicit checks, and documented
+  machine-readable checker output under `/tmp`. Added Vitest coverage for
+  pass/fail text formatting, top-level `passed`/`checks` JSON shape, missing
+  sections, and malformed JSON. Verified
+  `npm run build && npm run lint && npm test` passed. The documented `npx tsx`
+  benchmark commands were blocked in this sandbox by `listen EPERM` on tsx's
+  `/tmp` IPC pipe, so equivalent `node --import tsx` commands generated
+  `/tmp/spacefolding-eval.json`, `/tmp/spacefolding-e2e.json`, and
+  `/tmp/spacefolding-acceptance.json`. The checker passed with retrieval JSON
+  only, E2E JSON only, and both files, and failed with direct actual/expected
+  messages for malformed and incomplete temporary JSON. No generated benchmark
+  JSON appeared in repo status.
 
 ## Review Log
 
