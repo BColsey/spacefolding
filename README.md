@@ -347,13 +347,13 @@ We evaluate two separate questions: raw ranking quality and focused context usef
 
 | Metric | Keyword Grep | Spacefolding Structural | Δ |
 |--------|:-----------:|:------------------:|:-:|
-| Recall@10 | 0.796 | **0.929** | +16.8% |
-| NDCG@10 | 0.590 | **0.747** | +26.7% |
-| MRR | 0.546 | **0.763** | +39.8% |
+| Recall@10 | 0.796 | **0.983** | +23.6% |
+| NDCG@10 | 0.570 | **0.816** | +43.2% |
+| MRR | 0.525 | **0.833** | +58.7% |
 
-For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` returns 24/24 expected implementation files with 15.5k average tokens, 1.00 average recall, and 0.363 average precision.
+For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` reaches 1.000 average file recall with 12.4k average tokens and 0.388 average precision under the current 13k-token acceptance ceiling.
 
-See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full results, [benchmarks/MODEL-COMPARISON.md](benchmarks/MODEL-COMPARISON.md) for model comparisons, and [benchmarks/ABLATION.md](benchmarks/ABLATION.md) for the ablation study.
+See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full ranking results, [benchmarks/E2E-RESULTS.md](benchmarks/E2E-RESULTS.md) for focused retrieval results, [benchmarks/MODEL-COMPARISON.md](benchmarks/MODEL-COMPARISON.md) for model comparisons, and [benchmarks/ABLATION.md](benchmarks/ABLATION.md) for the ablation study.
 
 ---
 
@@ -408,9 +408,9 @@ src/
     └── index.ts
 ```
 
-**195 tests** across 15 test files covering scoring, routing, classification, chunking, RAG retrieval, symbol extraction, vector-index behavior, integration, and usability features.
+**Vitest coverage** spans scoring, routing, classification, chunking, RAG retrieval, symbol extraction, vector-index behavior, benchmark diagnostics, integration, and usability features.
 
-**Benchmarks** in `benchmarks/` — 6 documents covering retrieval evaluation, ablation studies across 6 embedding models, and model comparison.
+**Benchmarks** in `benchmarks/` — documents and scripts covering retrieval evaluation, acceptance gates, held-out datasets, profiling, ablation studies, and model comparison.
 
 ---
 

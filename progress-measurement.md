@@ -63,12 +63,26 @@
 - Benchmark scripts should validate dataset root shape and required task fields
   before dereferencing `tasks`, so malformed held-out JSON fails with a direct
   message instead of a TypeError stack.
+- Profiler dataset loading should wrap file reads and JSON parsing in a helper
+  before validation, so malformed held-out JSON reports the dataset path instead
+  of a raw `SyntaxError` stack.
 - Acceptance checker helper tests should cover the `buildAcceptanceReport`
   no-input fallback even though CLI parsing usually prevents that state, because
   report builders are reused directly in tests and diagnostics.
 - Legacy benchmark generators should be import-safe and use strict option
   parsing before writing files, because parser tests cannot cover them if module
   import triggers generation.
+- Legacy benchmark task generation should enforce `/tmp` output paths and reject
+  symlinked output parents, not only default there, because `--sources` can point
+  at private local corpora.
+- Benchmark dataset loader tests should cover malformed JSON files, not only
+  parsed malformed objects, because loader diagnostics must include the failing
+  dataset path.
+- Benchmark scripts should sort walked source files before ingesting or
+  generating tasks, because raw filesystem iteration order can make fixed
+  dataset/corpus measurements drift.
+- Benchmark CLI parsers should reject undocumented positional arguments; the
+  documented flag surface is the contract other loops can rely on.
 
 ## Known Issues
 
@@ -348,3 +362,115 @@
   generation to `/tmp/spacefolding-generated-tasks-code-consistency.json` and
   verified malformed `--count 1.5` fails with a direct message. No generated
   benchmark JSON appeared in repo status.
+- Dead Code: reviewed unused benchmark fields, stale docs, and unwired checker
+  branches against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` section
+  10. The targeted benchmark TypeScript unused check passed, but the review
+  found stale result docs: `benchmarks/RESULTS.md`, `benchmarks/E2E-RESULTS.md`,
+  and the README benchmark table no longer matched the generated acceptance JSON.
+  Refreshed those docs with current retrieval and E2E summaries generated under
+  `/tmp`. Verified `npx tsc -p benchmarks/tsconfig.json --noEmit
+  --noUnusedLocals --noUnusedParameters`, `npm run build && npm run lint && npm
+  test`, and the documented acceptance checker command passed. The documented
+  E2E `npx tsx` command still hit the sandbox's known `listen EPERM` IPC
+  restriction, so `node --import tsx` generated `/tmp/spacefolding-e2e.json` for
+  inspection. No generated benchmark JSON appeared in repo status. Commit was
+  blocked because `.git/index.lock` could not be created on the read-only git
+  metadata filesystem.
+- Integration Wiring: compared documented benchmark commands in `DESIGN.md`,
+  `IMPLEMENTATION.md`, `benchmarks/ACCEPTANCE.md`, `benchmarks/HELDOUT.md`, and
+  `README.md` against `package.json` scripts and benchmark CLI parsers. Verified
+  the documented retrieval, E2E, acceptance-checker, held-out, profiler, and
+  ralph pacing commands still use supported flags and concrete `/tmp` output
+  paths. Verified `npm run build && npm run lint && npm test` passed, generated
+  retrieval JSON with `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json`, and confirmed the README metrics still match
+  the generated summaries. The documented E2E and profiler `npx tsx` commands
+  hit the sandbox's known `listen EPERM` IPC restriction, so equivalent
+  `node --import tsx` commands generated `/tmp/spacefolding-e2e.json` and
+  `/tmp/spacefolding-heldout-profile-integration-wiring.json` for inspection.
+  The documented acceptance checker command passed with exact actual/expected
+  metrics, fixture held-out generation wrote only to `/tmp`, and no generated
+  benchmark JSON appeared in repo status. No integration-wiring defect required
+  code changes. Commit was blocked because `.git/index.lock` could not be
+  created on the read-only git metadata filesystem.
+- Security And Data Integrity: reviewed held-out generation, legacy task
+  generation, profiler output, ignored artifacts, and tracked benchmark/env/data
+  files against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` sections 10
+  and 12. Fixed `benchmarks/generate-tasks.ts` so generated benchmark task JSON
+  is rejected outside `/tmp`, inside the repository, and through `/tmp` symlink
+  parents before any corpus scan or write. Added regression coverage in
+  `tests/benchmark-generate-tasks.test.ts`. Verified
+  `npx vitest run tests/benchmark-generate-tasks.test.ts
+  tests/benchmark-heldout.test.ts` and `npm run build && npm run lint && npm
+  test` passed. Smoke-tested fixture task generation to
+  `/tmp/spacefolding-generated-tasks-security-review.json`, verified repository
+  and `/var/tmp` output paths fail with direct messages, and confirmed no
+  generated benchmark JSON appeared in repo status. Commit was blocked because
+  `.git/index.lock` could not be created on the read-only git metadata
+  filesystem.
+- Spec Compliance: rechecked `DESIGN.md` success metrics and benchmark design
+  against `IMPLEMENTATION.md` testing/ownership contracts, acceptance and
+  held-out docs, retrieval JSON, E2E JSON, and checker output. Verified
+  `npm run build && npm run lint && npm test` passed, generated retrieval JSON
+  with `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json`, and confirmed per-strategy summaries,
+  hit/miss diagnostics, and `successGate.structuralBeatsKeyword` were present.
+  The documented E2E `npx tsx` command hit the sandbox's known `listen EPERM`
+  IPC restriction, so `node --import tsx` generated
+  `/tmp/spacefolding-e2e.json`; the E2E JSON included focused summary metrics,
+  current-vs-structural deltas, full-codebase token diagnostics, and
+  `successGate.focusedRetrievalPasses`. The documented acceptance checker
+  command passed with exact actual/expected metrics, and no generated benchmark
+  JSON appeared in repo status. No spec-compliance defect required code changes.
+  Commit was blocked because `.git/index.lock` could not be created on the
+  read-only git metadata filesystem.
+- Error Handling: reviewed malformed JSON, missing files, missing strategy
+  summaries, missing E2E summaries, and profiler process failures against
+  `IMPLEMENTATION.md` section 9. Fixed `benchmarks/profile-retrieval.ts` so
+  malformed profiler datasets report `Malformed profiler dataset JSON at
+  <path>` instead of a raw `SyntaxError` stack, and added coverage in
+  `tests/benchmark-profile.test.ts`. Verified `npx vitest run
+  tests/benchmark-profile.test.ts` and `npm run build && npm run lint && npm
+  test` passed. Smoke-tested malformed acceptance JSON, incomplete retrieval
+  summaries, malformed profiler JSON, and missing profiler dataset paths; all
+  exited nonzero with direct diagnostics. No generated benchmark JSON appeared
+  in repo status. Commit was blocked because `.git/index.lock` could not be
+  created on the read-only git metadata filesystem.
+- Test Coverage: reviewed benchmark helper functions and checker branches
+  against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` section 10. Added
+  Vitest coverage for retrieval and E2E dataset loader malformed-JSON paths, so
+  file-level parse failures now match the profiler coverage and include the
+  failing dataset path. Verified `npx vitest run
+  tests/benchmark-evaluate.test.ts tests/benchmark-e2e.test.ts` and
+  `npm run build && npm run lint && npm test` passed. No generated benchmark
+  JSON appeared in repo status. Commit was blocked because `.git/index.lock`
+  could not be created on the read-only git metadata filesystem.
+- Code Consistency: reviewed benchmark CLI parsing, source-file traversal, and
+  deterministic sampling against `DESIGN.md` benchmark design and
+  `IMPLEMENTATION.md` sections 9 and 10. Fixed retrieval evaluation to reject
+  undocumented positional strategy arguments, sorted source walks in retrieval
+  evaluation, E2E, legacy task generation, ablation, and compression comparison,
+  and replaced remaining random bootstrap/sample selection in secondary
+  benchmarks with seeded deterministic selection. Added parser coverage for the
+  retrieval positional-argument rejection. Verified `npx vitest run
+  tests/benchmark-evaluate.test.ts tests/benchmark-generate-tasks.test.ts`,
+  `npx tsc -p benchmarks/tsconfig.json --noEmit`, and `npm run build && npm
+  run lint && npm test` passed. Generated retrieval JSON with
+  `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json`; the documented E2E `npx tsx` command hit the
+  sandbox's known `listen EPERM` IPC restriction, so `node --import tsx`
+  generated `/tmp/spacefolding-e2e.json`. The documented acceptance checker
+  command passed with exact actual/expected metrics, and no generated benchmark
+  JSON appeared in repo status. Commit was blocked because `.git/index.lock`
+  could not be created on the read-only git metadata filesystem.
+- Dead Code: reviewed unused benchmark fields, stale result docs, and unwired
+  checker branches against `DESIGN.md` benchmark design and
+  `IMPLEMENTATION.md` section 10. The targeted benchmark TypeScript unused
+  check passed. Refreshed `benchmarks/RESULTS.md`,
+  `benchmarks/E2E-RESULTS.md`, and the README benchmark summary from current
+  `/tmp` benchmark JSON so documented metrics match the acceptance checker
+  inputs. Verified `npx tsc -p benchmarks/tsconfig.json --noEmit
+  --noUnusedLocals --noUnusedParameters`, `npx tsx
+  benchmarks/check-acceptance.ts --retrieval-json /tmp/spacefolding-eval.json
+  --e2e-json /tmp/spacefolding-e2e.json`, and `npm run build && npm run lint
+  && npm test` passed. No generated benchmark JSON appeared in repo status.
