@@ -10,7 +10,7 @@
  */
 
 import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { join, dirname, extname, relative } from 'node:path';
+import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── Types ────────────────────────────────────────────────────
@@ -29,14 +29,7 @@ interface BenchmarkDataset {
   tasks: BenchmarkTask[];
 }
 
-interface RetrievalResult {
-  chunkId: string;
-  filePath: string | undefined;
-  score: number;
-  rank: number;
-}
-
-interface Metrics {
+export interface Metrics {
   recallAt5: number;
   recallAt10: number;
   recallAt20: number;
@@ -49,7 +42,12 @@ interface Metrics {
   avgResults: number;
 }
 
-interface EvalResult {
+interface HitDetail {
+  path: string;
+  rank: number;
+}
+
+export interface EvalResult {
   taskId: string;
   task: string;
   intent: string;
@@ -59,16 +57,49 @@ interface EvalResult {
     relevantPaths: string[];
     hits: string[];
     misses: string[];
+    hitDetails: HitDetail[];
+    retrievedPathCount: number;
   };
 }
 
-interface CliOptions {
+export interface StrategySummary {
+  strategy: string;
+  averages: Record<string, number>;
+  results: EvalResult[];
+}
+
+export interface EvaluationReport {
+  dataset: string;
+  corpus: string;
+  requestedStrategies: string[];
+  strategies: StrategySummary[];
+  successGate: {
+    requiredStrategySummaries: string[];
+    missingStrategySummaries: string[];
+    structuralBeatsKeyword?: boolean;
+    recallAt10Delta: number | null;
+    ndcgAt10Delta: number | null;
+    mrrDelta: number | null;
+  };
+}
+
+export interface CliOptions {
   dataset: string;
   corpus: string;
   strategy: string;
   json: boolean;
   includeTests: boolean;
 }
+
+const ALL_STRATEGIES = ['keyword', 'path-match', 'fts', 'vector', 'symbol-only', 'structural'];
+const KNOWN_STRATEGIES = new Set([
+  ...ALL_STRATEGIES,
+  'hybrid',
+  'random',
+  'spacefolding',
+  'text',
+]);
+const SUCCESS_GATE_STRATEGIES = ['keyword', 'structural'];
 
 // ── Scoring Functions ────────────────────────────────────────
 
@@ -121,10 +152,110 @@ function computeMetrics(retrieved: string[], relevant: Set<string>, totalRelevan
   };
 }
 
-function parseArgs(argv: string[], benchDir: string): CliOptions {
+function readOptionValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireStringField(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string {
+  const value = task[field];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(
+      `Benchmark dataset task ${index + 1} field ${field} must be a non-empty string: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+function requireStringArrayField(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string[] {
+  const value = task[field];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(
+      `Benchmark dataset task ${index + 1} field ${field} must be an array of strings: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+function optionalStringArrayField(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string[] {
+  if (task[field] === undefined) return [];
+  return requireStringArrayField(task, field, index, datasetPath);
+}
+
+export function parseBenchmarkDataset(data: unknown, datasetPath: string): BenchmarkDataset {
+  if (!isRecord(data) || !Array.isArray(data.tasks)) {
+    throw new Error(`Benchmark dataset must contain a tasks array: ${datasetPath}`);
+  }
+  if (data.tasks.length === 0) {
+    throw new Error(`Benchmark dataset has no tasks: ${datasetPath}`);
+  }
+
+  return {
+    tasks: data.tasks.map((task, index) => {
+      if (!isRecord(task)) {
+        throw new Error(`Benchmark dataset task ${index + 1} must be an object: ${datasetPath}`);
+      }
+      return {
+        id: requireStringField(task, 'id', index, datasetPath),
+        task: requireStringField(task, 'task', index, datasetPath),
+        intent: requireStringField(task, 'intent', index, datasetPath),
+        relevant_files: requireStringArrayField(task, 'relevant_files', index, datasetPath),
+        relevant_types: optionalStringArrayField(task, 'relevant_types', index, datasetPath),
+        relevant_keywords: optionalStringArrayField(task, 'relevant_keywords', index, datasetPath),
+        irrelevant_files: optionalStringArrayField(task, 'irrelevant_files', index, datasetPath),
+      };
+    }),
+  };
+}
+
+export function loadBenchmarkDataset(datasetPath: string): BenchmarkDataset {
+  let raw: string;
+  try {
+    raw = readFileSync(datasetPath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Unable to read benchmark dataset JSON at ${datasetPath}: ${errorMessage(error)}`);
+  }
+
+  try {
+    return parseBenchmarkDataset(JSON.parse(raw) as unknown, datasetPath);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Malformed benchmark dataset JSON at ${datasetPath}: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+export function parseArgs(argv: string[], benchDir: string): CliOptions {
   const options: CliOptions = {
     dataset: join(benchDir, 'dataset.json'),
-    corpus: join(benchDir, '..', 'src'),
+    corpus: join(benchDir, '..'),
     strategy: 'all',
     json: false,
     includeTests: false,
@@ -132,15 +263,23 @@ function parseArgs(argv: string[], benchDir: string): CliOptions {
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--dataset' && argv[i + 1]) options.dataset = argv[++i];
-    else if (arg === '--corpus' && argv[i + 1]) options.corpus = argv[++i];
-    else if (arg === '--strategy' && argv[i + 1]) options.strategy = argv[++i];
+    if (arg === '--dataset') options.dataset = readOptionValue(argv, i++, arg);
+    else if (arg === '--corpus') options.corpus = readOptionValue(argv, i++, arg);
+    else if (arg === '--strategy') options.strategy = readOptionValue(argv, i++, arg);
     else if (arg === '--json') options.json = true;
     else if (arg === '--include-tests') options.includeTests = true;
-    else if (!arg.startsWith('--')) options.strategy = arg;
+    else throw new Error(`Unknown argument: ${arg}`);
   }
 
   return options;
+}
+
+export function resolveStrategies(strategy: string): string[] {
+  if (strategy === 'all') return [...ALL_STRATEGIES];
+  if (!KNOWN_STRATEGIES.has(strategy)) {
+    throw new Error(`Unknown benchmark strategy "${strategy}". Expected one of: all, ${[...KNOWN_STRATEGIES].sort().join(', ')}`);
+  }
+  return [strategy];
 }
 
 function hashString(value: string): number {
@@ -282,13 +421,72 @@ function splitBenchmarkIdentifier(value: string): string[] {
     .filter((part) => part.length > 1);
 }
 
+function computeAverageMetrics(results: EvalResult[]): Record<string, number> {
+  if (results.length === 0) {
+    throw new Error('Cannot compute benchmark averages for an empty result set');
+  }
+
+  const avgMetrics: Record<string, number> = {};
+  const metricKeys = Object.keys(results[0].metrics) as (keyof Metrics)[];
+  for (const key of metricKeys) {
+    const sum = results.reduce((s, r) => s + r.metrics[key], 0);
+    avgMetrics[key] = sum / results.length;
+  }
+  return avgMetrics;
+}
+
+export function buildEvaluationReport(input: {
+  dataset: string;
+  corpus: string;
+  requestedStrategies: string[];
+  strategies: StrategySummary[];
+}): EvaluationReport {
+  const byStrategy = Object.fromEntries(
+    input.strategies.map((summary) => [summary.strategy, summary])
+  ) as Record<string, StrategySummary | undefined>;
+  const keyword = byStrategy.keyword;
+  const structural = byStrategy.structural;
+  const missingStrategySummaries = SUCCESS_GATE_STRATEGIES.filter((strategy) => !byStrategy[strategy]);
+  const recallAt10Delta = structural && keyword
+    ? structural.averages.recallAt10 - keyword.averages.recallAt10
+    : null;
+  const ndcgAt10Delta = structural && keyword
+    ? structural.averages.ndcgAt10 - keyword.averages.ndcgAt10
+    : null;
+  const mrrDelta = structural && keyword
+    ? structural.averages.mrr - keyword.averages.mrr
+    : null;
+
+  const successGate: EvaluationReport['successGate'] = {
+    requiredStrategySummaries: [...SUCCESS_GATE_STRATEGIES],
+    missingStrategySummaries,
+    recallAt10Delta,
+    ndcgAt10Delta,
+    mrrDelta,
+  };
+
+  if (keyword && structural) {
+    successGate.structuralBeatsKeyword = Boolean(
+      recallAt10Delta !== null && recallAt10Delta > 0
+      && ndcgAt10Delta !== null && ndcgAt10Delta > 0
+      && mrrDelta !== null && mrrDelta > 0
+    );
+  }
+
+  return {
+    dataset: input.dataset,
+    corpus: input.corpus,
+    requestedStrategies: input.requestedStrategies,
+    strategies: input.strategies,
+    successGate,
+  };
+}
+
 // ── Main Evaluation Runner ──────────────────────────────────
 
 async function runEvaluation(options: CliOptions) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const dataset: BenchmarkDataset = JSON.parse(
-    readFileSync(options.dataset, 'utf-8')
-  );
+  const dataset = loadBenchmarkDataset(options.dataset);
   const log = (...args: unknown[]) => {
     if (!options.json) console.log(...args);
   };
@@ -299,6 +497,8 @@ async function runEvaluation(options: CliOptions) {
   log(`  Dataset: ${relative(benchDir, options.dataset) || options.dataset}`);
   log(`  Corpus: ${relative(benchDir, options.corpus) || options.corpus}`);
   log(`${'═'.repeat(70)}\n`);
+
+  const strategies = resolveStrategies(options.strategy);
 
   // Load the Spacefolding pipeline with real codebase data
   const { createRepository } = await import('../dist/storage/repository.js');
@@ -343,15 +543,7 @@ async function runEvaluation(options: CliOptions) {
   log(`Ingested ${allChunks.length} chunks\n`);
 
   // Run evaluations for each strategy
-  const strategies = options.strategy === 'all'
-    ? ['keyword', 'path-match', 'fts', 'vector', 'symbol-only', 'structural']
-    : [options.strategy];
-
-  const summaries: Array<{
-    strategy: string;
-    averages: Record<string, number>;
-    results: EvalResult[];
-  }> = [];
+  const summaries: StrategySummary[] = [];
 
   for (const strat of strategies) {
     log(`\n${'─'.repeat(70)}`);
@@ -401,6 +593,10 @@ async function runEvaluation(options: CliOptions) {
       const metrics = computeMetrics(uniquePaths, relevantSet, task.relevant_files.length);
       const hits = uniquePaths.filter((p) => relevantSet.has(p));
       const misses = task.relevant_files.filter((f) => !uniquePaths.includes(f));
+      const hitDetails = hits.map((path) => ({
+        path,
+        rank: uniquePaths.indexOf(path) + 1,
+      }));
 
       results.push({
         taskId: task.id,
@@ -412,6 +608,8 @@ async function runEvaluation(options: CliOptions) {
           relevantPaths: task.relevant_files,
           hits,
           misses,
+          hitDetails,
+          retrievedPathCount: uniquePaths.length,
         },
       });
 
@@ -427,12 +625,7 @@ async function runEvaluation(options: CliOptions) {
     }
 
     // Compute averages
-    const avgMetrics: Record<string, number> = {};
-    const metricKeys = Object.keys(results[0].metrics) as (keyof Metrics)[];
-    for (const key of metricKeys) {
-      const sum = results.reduce((s, r) => s + r.metrics[key], 0);
-      avgMetrics[key] = sum / results.length;
-    }
+    const avgMetrics = computeAverageMetrics(results);
 
     // Print summary
     log(`\n  ${'─'.repeat(50)}`);
@@ -466,37 +659,31 @@ async function runEvaluation(options: CliOptions) {
   pipeline.close();
   try { unlinkSync(dbPath); } catch {}
 
-  const byStrategy = Object.fromEntries(summaries.map((summary) => [summary.strategy, summary]));
-  const keyword = byStrategy.keyword;
-  const structural = byStrategy.structural;
-  const beatsKeyword = Boolean(keyword && structural
-    && structural.averages.recallAt10 > keyword.averages.recallAt10
-    && structural.averages.ndcgAt10 > keyword.averages.ndcgAt10
-    && structural.averages.mrr > keyword.averages.mrr);
+  const report = buildEvaluationReport({
+    dataset: options.dataset,
+    corpus: options.corpus,
+    requestedStrategies: strategies,
+    strategies: summaries,
+  });
 
   if (options.json) {
-    console.log(JSON.stringify({
-      dataset: options.dataset,
-      corpus: options.corpus,
-      strategies: summaries,
-      successGate: {
-        structuralBeatsKeyword: beatsKeyword,
-        recallAt10Delta: structural && keyword ? structural.averages.recallAt10 - keyword.averages.recallAt10 : null,
-        ndcgAt10Delta: structural && keyword ? structural.averages.ndcgAt10 - keyword.averages.ndcgAt10 : null,
-        mrrDelta: structural && keyword ? structural.averages.mrr - keyword.averages.mrr : null,
-      },
-    }, null, 2));
+    console.log(JSON.stringify(report, null, 2));
   } else {
     log(`\n${'═'.repeat(70)}`);
     log(`  BENCHMARK COMPLETE`);
-    if (keyword && structural) {
-      log(`  Structural beats keyword on strict metrics: ${beatsKeyword ? 'yes' : 'no'}`);
+    if (typeof report.successGate.structuralBeatsKeyword === 'boolean') {
+      log(`  Structural beats keyword on strict metrics: ${report.successGate.structuralBeatsKeyword ? 'yes' : 'no'}`);
+    } else {
+      log(`  Structural beats keyword on strict metrics: missing summaries for ${report.successGate.missingStrategySummaries.join(', ')}`);
     }
     log(`${'═'.repeat(70)}\n`);
   }
 }
 
 const SKIP_DIRS = new Set([
+  '.claude',
+  '.codex',
+  '.cursor',
   '.git',
   '.hg',
   '.next',
@@ -504,8 +691,10 @@ const SKIP_DIRS = new Set([
   '.turbo',
   '.venv',
   '__pycache__',
+  'benchmarks',
   'build',
   'coverage',
+  'data',
   'dist',
   'node_modules',
   'out',
@@ -514,7 +703,11 @@ const SKIP_DIRS = new Set([
   'venv',
 ]);
 
-function walkDir(dir: string, includeTests: boolean): string[] {
+const BENCHMARK_CONTEXT_FILES = new Set([
+  '.env.example',
+]);
+
+export function walkDir(dir: string, includeTests: boolean): string[] {
   const results: string[] = [];
   const entries = readdirSync(dir);
   for (const entry of entries) {
@@ -523,15 +716,19 @@ function walkDir(dir: string, includeTests: boolean): string[] {
     if (stat.isDirectory()) {
       if (!SKIP_DIRS.has(entry)) results.push(...walkDir(fullPath, includeTests));
     } else {
+      const ext = extname(entry);
       if (
-        ['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java'].includes(extname(entry))
+        (
+          ['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java'].includes(ext)
+          || BENCHMARK_CONTEXT_FILES.has(entry.toLowerCase())
+        )
         && (includeTests || !isTestPath(fullPath))
       ) {
         results.push(fullPath);
       }
     }
   }
-  return results;
+  return results.sort();
 }
 
 function isTestPath(filePath: string): boolean {
@@ -542,10 +739,16 @@ function isTestPath(filePath: string): boolean {
     || /_test\.go$/i.test(normalized);
 }
 
-// Run
-const benchDir = dirname(fileURLToPath(import.meta.url));
-const options = parseArgs(process.argv.slice(2), benchDir);
-runEvaluation(options).catch((err) => {
-  console.error('Benchmark failed:', err);
-  process.exit(1);
-});
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  const benchDir = dirname(fileURLToPath(import.meta.url));
+  const options = parseArgs(process.argv.slice(2), benchDir);
+  runEvaluation(options).catch((err) => {
+    console.error('Benchmark failed:', err);
+    process.exit(1);
+  });
+}

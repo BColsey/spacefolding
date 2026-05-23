@@ -5,20 +5,21 @@
 ## Codebase Patterns
 
 - Acceptance gate uses `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`; generated JSON stays uncommitted.
+- Retrieval evaluation now indexes the project root with benchmark-context files such as `.env.example`, while skipping local agent/worktree noise; otherwise dataset tasks can name files that were never ingested.
 - Structural retrieval currently beats keyword on the acceptance deltas, but several task-level misses are still ranking/selection problems rather than benchmark-script failures.
 
 ## Known Issues
 
 Highest severity first. Resolve before starting new work items.
 
-1. Structural environment lookup miss: T18 "What environment variables control the system behavior?" still misses `.env.example` even though `src/cli/index.ts` now ranks at 1, producing recall@10 `0.5`, precision@10 `0.1`, and NDCG@10 `0.6131`. This is a path/lexical recall and ranking problem for config-file queries.
-2. Baseline structural debug miss: T01 "Fix the authentication bug causing 401 errors in the login flow" misses `src/core/scorer.ts` and `src/core/router.ts`, producing recall@10 `0.3333`, precision@10 `0.1`, and NDCG@10 `0.1815`. This is a query-planning/ranking problem for debug tasks.
+1. Baseline structural debug miss: T01 "Fix the authentication bug causing 401 errors in the login flow" misses `src/core/scorer.ts` and `src/core/router.ts`, producing recall@10 `0.3333`, precision@10 `0.1`, and NDCG@10 `0.1564`. This is a query-planning/ranking problem for debug tasks.
 
 ## Resolved Issues
 
 - 2026-05-23: Fixed baseline residual E2E recall miss E06 "Add batch delete MCP tool" by letting phrase-level delete/filter signals contribute storage/repository path intent in deterministic structural retrieval. E06 now finds `src/mcp/server.ts`, `src/storage/repository.ts`, and `src/types/index.ts` with recall `1`, precision `0.375`, and `12490` tokens.
 - 2026-05-23: Fixed the T09 side-effect ranking miss from the baseline list: `src/storage/current-version.ts` now ranks at 5 for "What database schema migrations exist and how are they applied?".
 - 2026-05-23: Fixed the T03/T15 top-10 ranking miss by strengthening provider/reranker contract matches and provider barrel-index ranking. T03 now ranks `src/types/index.ts` at 8 and `src/providers/index.ts` at 10; T15 now ranks `src/types/index.ts` at 8.
+- 2026-05-23: Fixed the T18 environment lookup diagnostic gap by making retrieval evaluation ingest `.env.example` from the project root. T18 now finds `src/cli/index.ts` at rank 1 and `.env.example` at rank 4, with recall@10 `1.0`, precision@10 `0.2`, and NDCG@10 `0.8772`.
 
 ## Completed Work Items
 
@@ -47,6 +48,13 @@ Highest severity first. Resolve before starting new work items.
   - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
   - Latest structural averages: R@10 `0.941667`, NDCG@10 `0.785289`, MRR `0.818333`, precision@10 `0.195000`, average results `26.20`.
   - Latest E2E focused averages: recall `1.000000`, precision `0.379048`, tokens `12417.3`; all tasks stayed below full codebase tokens `37929`.
+- 2026-05-23: Known Issue fix for T18 environment lookup measurement.
+  - Changed retrieval evaluation to default to the project root, include benchmark context files such as `.env.example`, and skip local agent/worktree directories plus benchmark/data output directories.
+  - Added `tests/benchmark-evaluate.test.ts` coverage proving `.env.example` is included while `benchmarks/`, `tests/`, and `.claude/worktrees/` noise is excluded.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 244 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.966667`, NDCG@10 `0.797237`, MRR `0.815476`, precision@10 `0.200000`, average results `27.15`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.379048`, tokens `12417.6`; all tasks stayed below full codebase tokens `37929`.
 
 ## Review Log
 
