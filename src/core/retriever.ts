@@ -304,6 +304,7 @@ export class HybridRetriever {
       : this.storage.searchByText(query, Math.max(topK, 50));
     const structuralResults = this.storage.searchByStructure(structuralQuery, Math.max(topK, 50));
     const sparseTerms = buildSparseStructuralTerms(query, structuralQuery);
+    const pathIntentTerms = buildPathIntentTerms(sparseTerms);
     const candidates = new Map<string, FusedCandidate>();
 
     for (const result of lexicalResults) {
@@ -354,7 +355,7 @@ export class HybridRetriever {
           this.storage.getCodeSymbols(chunk.id),
           this.storage.getCodeReferences(chunk.id)
         ) : { score: 0, reasons: [] };
-        const pathIntent = scorePathIntent(chunk, structuralQuery);
+        const pathIntent = scorePathIntent(chunk, structuralQuery, pathIntentTerms);
         const combinedScore = sparseScore.score + pathIntent.score;
         if (combinedScore <= 0) continue;
         const existing = candidates.get(chunk.id) ?? {
@@ -625,6 +626,8 @@ const PHRASE_EXPANSIONS: Array<[RegExp, Array<[string, number]>]> = [
   [/\bcross[-\s]?encoder\b/i, [['reranker', 1.2], ['rerankerprovider', 1.1], ['deterministicreranker', 0.9]]],
   [/\benvironment variables?\b/i, [['env', 1.4], ['process', 1.0], ['cli', 1.0], ['dbpath', 0.9], ['modelpath', 0.8]]],
   [/\bmcp tools?\b/i, [['mcp', 1.2], ['server', 1.0], ['calltoolrequestschema', 0.9]]],
+  [/\bbatch\s+delet(?:e|es|ed|ing|ion)\b/i, [['repository', 1.3], ['storage', 1.2], ['deletechunks', 1.1], ['deletechunk', 1.1], ['contextfilter', 1.0]]],
+  [/\b(?:source|path)\s+(?:or|and)\s+(?:source|path)\s+patterns?\b/i, [['contextfilter', 1.3], ['repository', 1.2], ['storage', 1.0], ['querychunks', 0.9]]],
   [/\bdependency graph\b/i, [['dependencylink', 1.2], ['repository', 0.9], ['exportdata', 0.7]]],
   [/\bweb ui\b/i, [['web', 1.2], ['server', 1.0], ['html', 0.9]]],
   [/\bcli commands?\b/i, [['cli', 1.2], ['commander', 1.1], ['program', 1.0]]],
@@ -672,6 +675,13 @@ function buildSparseStructuralTerms(query: string, structuralQuery: StructuralQu
   return [...terms.values()]
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 32);
+}
+
+function buildPathIntentTerms(sparseTerms: SparseStructuralTerm[]): string[] {
+  return [...new Set(sparseTerms
+    .filter((term) => term.weight >= 0.8 && (term.origin === 'phrase' || term.origin.startsWith('expand:')))
+    .map((term) => term.term)
+    .filter((term) => term.length > 2 && !PATH_INTENT_STOP_WORDS.has(term)))];
 }
 
 function stemSparseTerm(value: string): string {
@@ -731,7 +741,8 @@ function scoreSparseStructuralFields(
 
 function scorePathIntent(
   chunk: ContextChunk,
-  structuralQuery: StructuralQuery
+  structuralQuery: StructuralQuery,
+  expandedTerms: string[] = []
 ): { score: number; reasons: string[] } {
   const path = chunk.path ?? '';
   if (!path) return { score: 0, reasons: [] };
@@ -743,6 +754,7 @@ function scorePathIntent(
     ...structuralQuery.tokens,
     ...structuralQuery.identifierParts,
     ...structuralQuery.identifiers.flatMap(splitIdentifier),
+    ...expandedTerms,
   ]
     .map(normalizeSymbolName)
     .filter((term) => term.length > 2 && !PATH_INTENT_STOP_WORDS.has(term)))];
