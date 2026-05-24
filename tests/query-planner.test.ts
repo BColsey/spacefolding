@@ -57,6 +57,11 @@ describe('detectIntent', () => {
   it('detects code_search with "which file" opening', () => {
     expect(detectIntent('which file contains the main function')).toBe('code_search');
   });
+
+  it('classifies "add support for X" as implement', () => {
+    expect(detectIntent('add support for OpenAI embeddings')).toBe('implement');
+    expect(detectIntent('add support for custom scoring')).toBe('implement');
+  });
 });
 
 describe('expandQuery', () => {
@@ -196,6 +201,31 @@ describe('parseStructuralQuery', () => {
   it('extracts standalone file with extension as path fragment', () => {
     const result = parseStructuralQuery('look at budget.ts');
     expect(result.pathFragments).toContain('budget.ts');
+  });
+
+  it('extracts src/core/retriever.ts as path fragment with tokens', () => {
+    const result = parseStructuralQuery('find the retrieve logic in src/core/retriever.ts');
+    expect(result.pathFragments).toContain('src/core/retriever.ts');
+    expect(result.extensions).toContain('ts');
+    expect(result.pathTokens).toContain('src');
+    expect(result.pathTokens).toContain('core');
+    expect(result.pathTokens).toContain('retriever');
+  });
+
+  it('splits SQLiteRepository into useful parts', () => {
+    const result = parseStructuralQuery('find the SQLiteRepository class');
+    expect(result.identifiers).toContain('SQLiteRepository');
+    expect(result.identifierParts).toContain('sqlite');
+    expect(result.identifierParts).toContain('repository');
+    expect(result.normalizedIdentifiers).toContain('sqliterepository');
+  });
+
+  it('splits retrieve_context snake_case into useful parts', () => {
+    const result = parseStructuralQuery('where is retrieve_context defined');
+    expect(result.identifiers).toContain('retrieve_context');
+    expect(result.identifierParts).toContain('retrieve');
+    expect(result.identifierParts).toContain('context');
+    expect(result.normalizedIdentifiers).toContain('retrieve_context');
   });
 });
 
