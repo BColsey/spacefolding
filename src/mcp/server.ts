@@ -14,6 +14,9 @@ const MAX_TASK_TEXT_LENGTH = 10_000;
 const MAX_TEXT_LENGTH = 100_000;
 const MAX_CHUNK_IDS = 1_000;
 
+const VALID_STRATEGIES: readonly string[] = ['structural', 'hybrid', 'vector', 'text', 'graph'];
+const VALID_MODES: readonly string[] = ['focused', 'broad', 'exhaustive'];
+
 function describeTool(description: string): string {
   return USE_GPU
     ? `${description} GPU acceleration is enabled when the runtime supports it.`
@@ -562,7 +565,7 @@ function errorResponse(message: string) {
   };
 }
 
-function validateArgs(args: Record<string, unknown> | undefined): string | undefined {
+export function validateArgs(args: Record<string, unknown> | undefined): string | undefined {
   if (!args) {
     return 'Missing tool arguments';
   }
@@ -598,6 +601,18 @@ function validateArgs(args: Record<string, unknown> | undefined): string | undef
   if (args.maxTokens !== undefined) {
     if (typeof args.maxTokens !== 'number' || !Number.isFinite(args.maxTokens) || args.maxTokens <= 0) {
       return 'maxTokens must be a positive number';
+    }
+  }
+
+  if (args.strategy !== undefined) {
+    if (!VALID_STRATEGIES.includes(args.strategy as string)) {
+      return `strategy must be one of: ${VALID_STRATEGIES.join(', ')}`;
+    }
+  }
+
+  if (args.mode !== undefined) {
+    if (!VALID_MODES.includes(args.mode as string)) {
+      return `mode must be one of: ${VALID_MODES.join(', ')}`;
     }
   }
 
