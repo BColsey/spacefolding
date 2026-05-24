@@ -83,6 +83,9 @@
   dataset/corpus measurements drift.
 - Benchmark CLI parsers should reject undocumented positional arguments; the
   documented flag surface is the contract other loops can rely on.
+- Security reviews should check tracked files with `git ls-files` and ignore
+  rules with `git check-ignore`, because local ignored benchmark DB artifacts may
+  exist without being part of the commit surface.
 
 ## Known Issues
 
@@ -488,3 +491,17 @@
   held-out generation, held-out evaluation, and profiler JSON under `/tmp`, and
   verified `bash -n ralph.sh` passed. No integration-wiring defect required code
   changes, and no generated benchmark JSON appeared in repo status.
+- Security And Data Integrity: reviewed held-out generation, legacy task
+  generation, profiler output, ignored artifacts, and tracked benchmark/env/data
+  files against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` sections 10
+  and 12. Verified generated held-out and task JSON are still constrained to
+  `/tmp`, `/var/tmp` outputs fail with direct messages, benchmark DB artifacts
+  are ignored, and no private corpus, `data/`, `.env`, generated JSON, or DB
+  files are tracked. Verified `npx vitest run tests/benchmark-heldout.test.ts
+  tests/benchmark-generate-tasks.test.ts tests/benchmark-profile.test.ts` and
+  `npm run build && npm run lint && npm test` passed. Smoke-tested fixture
+  held-out generation to `/tmp/spacefolding-heldout-security-data-review.json`
+  and fixture task generation to
+  `/tmp/spacefolding-generated-tasks-security-data-review.json`; no generated
+  benchmark JSON appeared in repo status. No security/data-integrity defect
+  required code changes.
