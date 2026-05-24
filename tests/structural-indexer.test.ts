@@ -3,7 +3,7 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRepository } from '../src/storage/repository.js';
-import { extractStructureFallback } from '../src/providers/structural-indexer.js';
+import { extractStructureFallback, normalizeIdentifier } from '../src/providers/structural-indexer.js';
 import { parseStructuralQuery } from '../src/core/query-planner.js';
 import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
 import { ContextScorer } from '../src/core/scorer.js';
@@ -72,6 +72,47 @@ describe('structural extraction fallback', () => {
     expect(result.references[0].target).toBe('./router');
   });
 
+  it('extracts exported TypeScript symbols, methods, normalized imports, and calls', () => {
+    const result = extractStructureFallback(
+      [
+        "import { verifyToken } from './AuthTokens';",
+        'export function authenticate(token: Token): Result {',
+        '  return verifyToken(token);',
+        '}',
+        'class LoginService extends BaseService implements AuthService {',
+        '  public login(user: User) {',
+        '    return authenticate(user.token);',
+        '  }',
+        '}',
+        "export { LoginService as Service } from './services';",
+      ].join('\n'),
+      'typescript',
+      'src/auth/login.ts'
+    );
+
+    expect(result.symbols).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'authenticate',
+        kind: 'function',
+        isExported: true,
+        normalizedName: 'authenticate',
+      }),
+      expect.objectContaining({ name: 'login', kind: 'method' }),
+    ]));
+
+    expect(result.references).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'import',
+        target: './AuthTokens',
+        normalizedTarget: normalizeIdentifier('./AuthTokens'),
+      }),
+      expect.objectContaining({ kind: 'export', target: 'authenticate' }),
+      expect.objectContaining({ kind: 'call', target: 'verifyToken' }),
+      expect.objectContaining({ kind: 'inheritance', target: 'BaseService' }),
+      expect.objectContaining({ kind: 'inheritance', target: 'AuthService' }),
+    ]));
+  });
+
   it('extracts JavaScript CommonJS references', () => {
     const result = extractStructureFallback(
       "const api = require('./api');\nmodule.exports = function createServer() {}",
@@ -125,6 +166,13 @@ describe('structural extraction fallback', () => {
       ['method', 'authenticate'],
     ]);
     expect(result.references[0].target).toBe('com.example.Token');
+  });
+
+  it('returns no symbols for empty, malformed, or unsupported source without throwing', () => {
+    expect(extractStructureFallback('', 'typescript').symbols).toEqual([]);
+    expect(() => extractStructureFallback('export function ( {', 'typescript')).not.toThrow();
+    expect(extractStructureFallback('export function ( {', 'typescript').symbols).toEqual([]);
+    expect(extractStructureFallback('export function authenticate() {}', 'markdown').symbols).toEqual([]);
   });
 });
 

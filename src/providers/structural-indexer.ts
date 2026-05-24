@@ -53,7 +53,44 @@ const CONTROL_WORDS = new Set([
   'pub',
   'fn',
   'func',
+  'def',
+  'elif',
+  'except',
+  'finally',
+  'with',
+  'lambda',
+  'await',
+  'yield',
 ]);
+
+const IGNORED_CALL_TARGETS = new Set([
+  ...CONTROL_WORDS,
+  'console',
+  'log',
+  'debug',
+  'info',
+  'warn',
+  'error',
+  'require',
+  'import',
+  'super',
+]);
+
+type AddSymbol = (
+  name: string,
+  kind: CodeSymbolKind,
+  index: number,
+  signature: string,
+  isExported: boolean,
+  metadata?: Record<string, unknown>
+) => void;
+
+type AddReference = (
+  target: string,
+  kind: CodeReferenceKind,
+  index: number,
+  metadata?: Record<string, unknown>
+) => void;
 
 export function isSupportedCodeLanguage(language?: string): boolean {
   return language !== undefined && SUPPORTED_LANGUAGES.has(language.toLowerCase());
@@ -121,9 +158,21 @@ export class StructuralIndexer {
         this.options.timeoutMs ?? 2000
       );
       this.subprocessAvailable = true;
+      const fallback = extractStructureFallback(text, language, filePath);
+      const symbols = mergeSymbols(
+        result.symbols.map((symbol) => normalizeSymbol(symbol, filePath, language)),
+        fallback.symbols
+      );
+      const references = filterLocalCallReferences(
+        mergeReferences(
+          result.references.map((reference) => normalizeReference(reference, filePath, language)),
+          fallback.references
+        ),
+        symbols
+      );
       return {
-        symbols: result.symbols.map((symbol) => normalizeSymbol(symbol, filePath, language)),
-        references: result.references.map((reference) => normalizeReference(reference, filePath, language)),
+        symbols,
+        references,
         backend: 'tree-sitter',
       };
     } catch {
@@ -144,6 +193,7 @@ export function extractStructureFallback(
   const references: CodeReference[] = [];
   const seenSymbols = new Set<string>();
   const seenReferences = new Set<string>();
+  const pythonClassIndents: number[] = [];
 
   const addSymbol = (
     name: string,
@@ -209,7 +259,11 @@ export function extractStructureFallback(
         extractJsLine(trimmed, i, addSymbol, addReference);
         break;
       case 'python':
-        extractPythonLine(trimmed, i, addSymbol, addReference);
+        prunePythonClassStack(pythonClassIndents, line);
+        extractPythonLine(trimmed, line, i, pythonClassIndents.length > 0, addSymbol, addReference);
+        if (/^class\s+[A-Za-z_][\w]*\b/.test(trimmed)) {
+          pythonClassIndents.push(leadingSpaces(line));
+        }
         break;
       case 'rust':
         extractRustLine(trimmed, i, addSymbol, addReference);
@@ -225,16 +279,19 @@ export function extractStructureFallback(
 
   return {
     symbols: symbols.sort((a, b) => a.startLine - b.startLine || a.name.localeCompare(b.name)),
-    references: references.sort((a, b) => a.startLine - b.startLine || a.target.localeCompare(b.target)),
+    references: filterLocalCallReferences(references, symbols)
+      .sort((a, b) => a.startLine - b.startLine || a.target.localeCompare(b.target)),
   };
 }
 
 function extractJsLine(
   line: string,
   index: number,
-  addSymbol: (name: string, kind: CodeSymbolKind, index: number, signature: string, isExported: boolean, metadata?: Record<string, unknown>) => void,
-  addReference: (target: string, kind: CodeReferenceKind, index: number, metadata?: Record<string, unknown>) => void
+  addSymbol: AddSymbol,
+  addReference: AddReference
 ): void {
+  const excludedCalls = new Set<string>();
+
   for (const pattern of [
     /\bfrom\s+['"]([^'"]+)['"]/g,
     /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
@@ -244,50 +301,74 @@ function extractJsLine(
     for (const match of line.matchAll(pattern)) addReference(match[1], 'import', index);
   }
 
+  extractJsExportReferences(line, index, addReference);
+  extractJsInheritanceReferences(line, index, addReference);
+
   const isExported = /\bexport\b/.test(line);
   const functionMatch = line.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/);
   if (functionMatch) {
     addSymbol(functionMatch[1], 'function', index, line, isExported);
-    return;
-  }
-
-  const classMatch = line.match(/^(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)\b/);
-  if (classMatch) {
+    excludedCalls.add(functionMatch[1]);
+    if (isExported) addReference(functionMatch[1], 'export', index);
+  } else if (line.match(/^(?:module\.)?exports(?:\.[A-Za-z_$][\w$]*)?\s*=\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/)) {
+    const moduleFunctionMatch = line.match(/^(?:module\.)?exports(?:\.[A-Za-z_$][\w$]*)?\s*=\s*(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/);
+    if (moduleFunctionMatch) {
+      addSymbol(moduleFunctionMatch[1], 'function', index, line, true);
+      addReference(moduleFunctionMatch[1], 'export', index);
+      excludedCalls.add(moduleFunctionMatch[1]);
+    }
+  } else if (line.match(/^(?:module\.)?exports\.([A-Za-z_$][\w$]*)\s*=/)) {
+    const commonJsExportMatch = line.match(/^(?:module\.)?exports\.([A-Za-z_$][\w$]*)\s*=/);
+    if (commonJsExportMatch) {
+      addReference(commonJsExportMatch[1], 'export', index);
+    }
+  } else if (line.match(/^(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)\b/)) {
+    const classMatch = line.match(/^(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)\b/);
+    if (!classMatch) return;
     addSymbol(classMatch[1], 'class', index, line, isExported);
-    return;
-  }
-
-  const interfaceMatch = line.match(/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\b/);
-  if (interfaceMatch) {
+    excludedCalls.add(classMatch[1]);
+    if (isExported) addReference(classMatch[1], 'export', index);
+  } else if (line.match(/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\b/)) {
+    const interfaceMatch = line.match(/^(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\b/);
+    if (!interfaceMatch) return;
     addSymbol(interfaceMatch[1], 'interface', index, line, isExported);
-    return;
-  }
-
-  const typeMatch = line.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\b/);
-  if (typeMatch) {
+    excludedCalls.add(interfaceMatch[1]);
+    if (isExported) addReference(interfaceMatch[1], 'export', index);
+  } else if (line.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\b/)) {
+    const typeMatch = line.match(/^(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\b/);
+    if (!typeMatch) return;
     addSymbol(typeMatch[1], 'type', index, line, isExported);
-    return;
-  }
-
-  const variableMatch = line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=/);
-  if (variableMatch) {
+    excludedCalls.add(typeMatch[1]);
+    if (isExported) addReference(typeMatch[1], 'export', index);
+  } else if (line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=/)) {
+    const variableMatch = line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=/);
+    if (!variableMatch) return;
     const kind: CodeSymbolKind = /=>|\bfunction\b/.test(line) ? 'function' : 'variable';
     addSymbol(variableMatch[1], kind, index, line, isExported);
-    return;
+    excludedCalls.add(variableMatch[1]);
+    if (isExported) addReference(variableMatch[1], 'export', index);
+  } else {
+    const methodMatch = line.match(/^(?:public\s+|private\s+|protected\s+|static\s+|readonly\s+|async\s+|get\s+|set\s+)*([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::\s*[^={]+)?\s*\{/);
+    if (methodMatch && !CONTROL_WORDS.has(methodMatch[1])) {
+      addSymbol(methodMatch[1], 'method', index, line, false);
+      excludedCalls.add(methodMatch[1]);
+    }
   }
 
-  const methodMatch = line.match(/^(?:public\s+|private\s+|protected\s+|static\s+|readonly\s+|async\s+|get\s+|set\s+)*([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::\s*[^={]+)?\s*\{/);
-  if (methodMatch && !CONTROL_WORDS.has(methodMatch[1])) {
-    addSymbol(methodMatch[1], 'method', index, line, false);
-  }
+  extractJsEmbeddedMethodSymbols(line, index, addSymbol, excludedCalls);
+  extractCallReferences(line, index, 'javascript', addReference, excludedCalls);
 }
 
 function extractPythonLine(
   line: string,
+  rawLine: string,
   index: number,
-  addSymbol: (name: string, kind: CodeSymbolKind, index: number, signature: string, isExported: boolean, metadata?: Record<string, unknown>) => void,
-  addReference: (target: string, kind: CodeReferenceKind, index: number, metadata?: Record<string, unknown>) => void
+  insideClass: boolean,
+  addSymbol: AddSymbol,
+  addReference: AddReference
 ): void {
+  const excludedCalls = new Set<string>();
+
   const fromMatch = line.match(/^from\s+([A-Za-z_][\w.]*|\.+[A-Za-z_][\w.]*)\s+import\s+(.+)/);
   if (fromMatch) addReference(fromMatch[1], 'import', index, { imported: fromMatch[2] });
 
@@ -298,32 +379,47 @@ function extractPythonLine(
     }
   }
 
-  const functionMatch = line.match(/^(?:async\s+)?def\s+([A-Za-z_][\w]*)\s*\(/);
-  if (functionMatch) {
-    addSymbol(functionMatch[1], 'function', index, line, !functionMatch[1].startsWith('_'));
-    return;
+  for (const exportMatch of line.matchAll(/__all__\s*=\s*\[([^\]]*)\]/g)) {
+    for (const nameMatch of exportMatch[1].matchAll(/['"]([A-Za-z_][\w]*)['"]/g)) {
+      addReference(nameMatch[1], 'export', index);
+    }
   }
 
-  const classMatch = line.match(/^class\s+([A-Za-z_][\w]*)\b/);
-  if (classMatch) {
+  const functionMatch = line.match(/^(?:async\s+)?def\s+([A-Za-z_][\w]*)\s*\(/);
+  if (functionMatch) {
+    addSymbol(functionMatch[1], insideClass ? 'method' : 'function', index, line, !functionMatch[1].startsWith('_'));
+    excludedCalls.add(functionMatch[1]);
+  } else if (line.match(/^class\s+([A-Za-z_][\w]*)\b/)) {
+    const classMatch = line.match(/^class\s+([A-Za-z_][\w]*)\b/);
+    if (!classMatch) return;
     addSymbol(classMatch[1], 'class', index, line, !classMatch[1].startsWith('_'));
+    excludedCalls.add(classMatch[1]);
+    const bases = line.match(/^class\s+[A-Za-z_][\w]*\s*\(([^)]*)\)/);
+    if (bases) addReferenceList(bases[1], 'inheritance', index, addReference);
   }
+
+  extractCallReferences(rawLine, index, 'python', addReference, excludedCalls);
 }
 
 function extractRustLine(
   line: string,
   index: number,
-  addSymbol: (name: string, kind: CodeSymbolKind, index: number, signature: string, isExported: boolean, metadata?: Record<string, unknown>) => void,
-  addReference: (target: string, kind: CodeReferenceKind, index: number, metadata?: Record<string, unknown>) => void
+  addSymbol: AddSymbol,
+  addReference: AddReference
 ): void {
+  const excludedCalls = new Set<string>();
   const useMatch = line.match(/^(?:pub\s+)?use\s+(.+?);?$/);
-  if (useMatch) addReference(useMatch[1], 'import', index);
+  if (useMatch) {
+    addReference(useMatch[1], 'import', index);
+    if (line.startsWith('pub ')) addReference(useMatch[1], 'export', index);
+  }
 
   const modMatch = line.match(/^(?:pub\s+)?mod\s+([A-Za-z_][\w]*)\s*;?/);
   if (modMatch) {
     addSymbol(modMatch[1], 'module', index, line, line.startsWith('pub '));
     addReference(modMatch[1], 'module', index);
-    return;
+    if (line.startsWith('pub ')) addReference(modMatch[1], 'export', index);
+    excludedCalls.add(modMatch[1]);
   }
 
   const symbolMatch = line.match(/^(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(fn|struct|enum|trait|const|static)\s+([A-Za-z_][\w]*)\b/);
@@ -337,15 +433,20 @@ function extractRustLine(
       static: 'variable',
     };
     addSymbol(symbolMatch[2], kindMap[symbolMatch[1]], index, line, line.startsWith('pub'));
+    excludedCalls.add(symbolMatch[2]);
+    if (line.startsWith('pub')) addReference(symbolMatch[2], 'export', index);
   }
+
+  extractCallReferences(line, index, 'rust', addReference, excludedCalls);
 }
 
 function extractGoLine(
   line: string,
   index: number,
-  addSymbol: (name: string, kind: CodeSymbolKind, index: number, signature: string, isExported: boolean, metadata?: Record<string, unknown>) => void,
-  addReference: (target: string, kind: CodeReferenceKind, index: number, metadata?: Record<string, unknown>) => void
+  addSymbol: AddSymbol,
+  addReference: AddReference
 ): void {
+  const excludedCalls = new Set<string>();
   const importMatch = line.match(/^import\s+(?:\w+\s+)?["`]([^"`]+)["`]/);
   if (importMatch) addReference(importMatch[1], 'import', index);
   const blockImportMatch = line.match(/^(?:\w+\s+)?["`]([^"`]+)["`]$/);
@@ -354,46 +455,191 @@ function extractGoLine(
   const methodMatch = line.match(/^func\s+\([^)]*\)\s+([A-Za-z_][\w]*)\s*\(/);
   if (methodMatch) {
     addSymbol(methodMatch[1], 'method', index, line, /^[A-Z]/.test(methodMatch[1]));
-    return;
-  }
-
-  const functionMatch = line.match(/^func\s+([A-Za-z_][\w]*)\s*\(/);
-  if (functionMatch) {
+    excludedCalls.add(methodMatch[1]);
+    if (/^[A-Z]/.test(methodMatch[1])) addReference(methodMatch[1], 'export', index);
+  } else if (line.match(/^func\s+([A-Za-z_][\w]*)\s*\(/)) {
+    const functionMatch = line.match(/^func\s+([A-Za-z_][\w]*)\s*\(/);
+    if (!functionMatch) return;
     addSymbol(functionMatch[1], 'function', index, line, /^[A-Z]/.test(functionMatch[1]));
-    return;
-  }
-
-  const typeMatch = line.match(/^type\s+([A-Za-z_][\w]*)\s+(struct|interface)\b/);
-  if (typeMatch) {
+    excludedCalls.add(functionMatch[1]);
+    if (/^[A-Z]/.test(functionMatch[1])) addReference(functionMatch[1], 'export', index);
+  } else if (line.match(/^type\s+([A-Za-z_][\w]*)\s+(struct|interface)\b/)) {
+    const typeMatch = line.match(/^type\s+([A-Za-z_][\w]*)\s+(struct|interface)\b/);
+    if (!typeMatch) return;
     addSymbol(typeMatch[1], typeMatch[2] === 'interface' ? 'interface' : 'struct', index, line, /^[A-Z]/.test(typeMatch[1]));
-    return;
+    excludedCalls.add(typeMatch[1]);
+    if (/^[A-Z]/.test(typeMatch[1])) addReference(typeMatch[1], 'export', index);
+  } else if (line.match(/^(?:var|const)\s+([A-Za-z_][\w]*)\b/)) {
+    const variableMatch = line.match(/^(?:var|const)\s+([A-Za-z_][\w]*)\b/);
+    if (!variableMatch) return;
+    addSymbol(variableMatch[1], line.startsWith('const') ? 'constant' : 'variable', index, line, /^[A-Z]/.test(variableMatch[1]));
+    excludedCalls.add(variableMatch[1]);
+    if (/^[A-Z]/.test(variableMatch[1])) addReference(variableMatch[1], 'export', index);
   }
 
-  const variableMatch = line.match(/^(?:var|const)\s+([A-Za-z_][\w]*)\b/);
-  if (variableMatch) {
-    addSymbol(variableMatch[1], line.startsWith('const') ? 'constant' : 'variable', index, line, /^[A-Z]/.test(variableMatch[1]));
-  }
+  extractCallReferences(line, index, 'go', addReference, excludedCalls);
 }
 
 function extractJavaLine(
   line: string,
   index: number,
-  addSymbol: (name: string, kind: CodeSymbolKind, index: number, signature: string, isExported: boolean, metadata?: Record<string, unknown>) => void,
-  addReference: (target: string, kind: CodeReferenceKind, index: number, metadata?: Record<string, unknown>) => void
+  addSymbol: AddSymbol,
+  addReference: AddReference
 ): void {
+  const excludedCalls = new Set<string>();
   const importMatch = line.match(/^import\s+(?:static\s+)?([A-Za-z_][\w.]*\*?)\s*;/);
   if (importMatch) addReference(importMatch[1], 'import', index);
+
+  extractJavaInheritanceReferences(line, index, addReference);
 
   const classMatch = line.match(/^(?:public\s+|private\s+|protected\s+|abstract\s+|final\s+)*((?:class)|(?:interface)|(?:enum))\s+([A-Za-z_][\w]*)\b/);
   if (classMatch) {
     const kind = classMatch[1] === 'class' ? 'class' : classMatch[1] === 'interface' ? 'interface' : 'enum';
     addSymbol(classMatch[2], kind, index, line, line.startsWith('public '));
-    return;
+    excludedCalls.add(classMatch[2]);
+    if (line.startsWith('public ')) addReference(classMatch[2], 'export', index);
+  } else {
+    const methodMatch = line.match(/^(?:public\s+|private\s+|protected\s+|static\s+|final\s+|abstract\s+|synchronized\s+)*[A-Za-z_<>\[\], ?]+\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:throws\s+[^{]+)?\{/);
+    if (methodMatch && !CONTROL_WORDS.has(methodMatch[1])) {
+      addSymbol(methodMatch[1], 'method', index, line, line.startsWith('public '));
+      excludedCalls.add(methodMatch[1]);
+      if (line.startsWith('public ')) addReference(methodMatch[1], 'export', index);
+    }
   }
 
-  const methodMatch = line.match(/^(?:public\s+|private\s+|protected\s+|static\s+|final\s+|abstract\s+|synchronized\s+)*[A-Za-z_<>\[\], ?]+\s+([A-Za-z_][\w]*)\s*\([^;]*\)\s*(?:throws\s+[^{]+)?\{/);
-  if (methodMatch && !CONTROL_WORDS.has(methodMatch[1])) {
-    addSymbol(methodMatch[1], 'method', index, line, line.startsWith('public '));
+  extractCallReferences(line, index, 'java', addReference, excludedCalls);
+}
+
+function extractJsExportReferences(line: string, index: number, addReference: AddReference): void {
+  const moduleExport = line.match(/^export\s+(?:type\s+)?\{([^}]+)\}(?:\s+from\s+['"]([^'"]+)['"])?/);
+  if (moduleExport) {
+    for (const name of splitExportList(moduleExport[1])) {
+      addReference(name, 'export', index);
+    }
+    if (moduleExport[2]) addReference(moduleExport[2], 'export', index, { exports: splitExportList(moduleExport[1]) });
+  }
+
+  const starExport = line.match(/^export\s+\*\s+from\s+['"]([^'"]+)['"]/);
+  if (starExport) addReference(starExport[1], 'export', index, { all: true });
+
+  const defaultExport = line.match(/^export\s+default\s+([A-Za-z_$][\w$]*)\b/);
+  if (defaultExport && !CONTROL_WORDS.has(defaultExport[1])) {
+    addReference(defaultExport[1], 'export', index, { default: true });
+  }
+}
+
+function extractJsInheritanceReferences(line: string, index: number, addReference: AddReference): void {
+  const extendsMatch = line.match(/\bextends\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)/);
+  if (extendsMatch) addReference(extendsMatch[1], 'inheritance', index);
+
+  const implementsMatch = line.match(/\bimplements\s+([^{]+)/);
+  if (implementsMatch) addReferenceList(implementsMatch[1], 'inheritance', index, addReference);
+}
+
+function extractJsEmbeddedMethodSymbols(
+  line: string,
+  index: number,
+  addSymbol: AddSymbol,
+  excludedCalls: Set<string>
+): void {
+  const methodPattern = /\b([A-Za-z_$][\w$]*)\s*\([^;{}]*\)\s*(?::\s*[^={]+)?\s*\{/g;
+  for (const match of line.matchAll(methodPattern)) {
+    const name = match[1];
+    const prefix = line.slice(Math.max(0, match.index - 24), match.index);
+    if (CONTROL_WORDS.has(name) || /\b(?:function|if|for|while|switch|catch)\s+$/.test(prefix)) continue;
+    addSymbol(name, 'method', index, line, false);
+    excludedCalls.add(name);
+  }
+}
+
+function extractJavaInheritanceReferences(line: string, index: number, addReference: AddReference): void {
+  const extendsMatch = line.match(/\bextends\s+([A-Za-z_][\w.]*)/);
+  if (extendsMatch) addReference(extendsMatch[1], 'inheritance', index);
+
+  const implementsMatch = line.match(/\bimplements\s+([^{]+)/);
+  if (implementsMatch) addReferenceList(implementsMatch[1], 'inheritance', index, addReference);
+}
+
+function extractCallReferences(
+  line: string,
+  index: number,
+  language: string,
+  addReference: AddReference,
+  excludedNames: Set<string> = new Set()
+): void {
+  const code = stripComments(stripStringLiterals(line), language);
+  const callPattern = /\b([A-Za-z_$][\w$]*(?:(?:\.|::)[A-Za-z_$][\w$]*)*)\s*\(/g;
+  for (const match of code.matchAll(callPattern)) {
+    const target = match[1];
+    const root = target.split(/\.|::/)[0];
+    const leaf = target.split(/\.|::/).pop() ?? target;
+    const lowerRoot = root.toLowerCase();
+    const lowerLeaf = leaf.toLowerCase();
+    const prefix = code.slice(Math.max(0, match.index - 18), match.index);
+    if (/\b(?:function|def|fn|func|class|interface|type)\s+$/.test(prefix)) continue;
+    if (excludedNames.has(target) || excludedNames.has(leaf)) continue;
+    if (IGNORED_CALL_TARGETS.has(lowerRoot) || IGNORED_CALL_TARGETS.has(lowerLeaf)) continue;
+    if (target.startsWith('this.') || target.startsWith('self.')) {
+      addReference(leaf, 'call', index, { receiver: target.split(/\.|::/)[0] });
+      continue;
+    }
+    addReference(target, 'call', index);
+  }
+}
+
+function filterLocalCallReferences(references: CodeReference[], symbols: CodeSymbol[]): CodeReference[] {
+  const localSymbolNames = new Set(symbols.map((symbol) => symbol.normalizedName));
+  return references.filter((reference) =>
+    reference.kind !== 'call' || !localSymbolNames.has(normalizeSymbolName(referenceLeafName(reference.target)))
+  );
+}
+
+function referenceLeafName(target: string): string {
+  return target.split(/\.|::/).pop() ?? target;
+}
+
+function addReferenceList(
+  value: string,
+  kind: CodeReferenceKind,
+  index: number,
+  addReference: AddReference
+): void {
+  for (const part of value.split(',')) {
+    const target = part
+      .replace(/\bas\b\s+[A-Za-z_$][\w$]*/g, '')
+      .replace(/\bextends\b|\bimplements\b/g, '')
+      .replace(/[<>{}()[\];]/g, ' ')
+      .trim()
+      .split(/\s+/)[0];
+    if (target) addReference(target, kind, index);
+  }
+}
+
+function splitExportList(value: string): string[] {
+  return value
+    .split(',')
+    .map((part) => part.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0].trim())
+    .filter(Boolean);
+}
+
+function stripStringLiterals(value: string): string {
+  return value
+    .replace(/'(?:\\.|[^'\\])*'/g, "''")
+    .replace(/"(?:\\.|[^"\\])*"/g, '""')
+    .replace(/`(?:\\.|[^`\\])*`/g, '``');
+}
+
+function stripComments(value: string, language: string): string {
+  if (language === 'python') return value.replace(/#.*/, '');
+  return value.replace(/\/\/.*/, '');
+}
+
+function prunePythonClassStack(classIndents: number[], line: string): void {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) return;
+  const indent = leadingSpaces(line);
+  while (classIndents.length > 0 && indent <= classIndents[classIndents.length - 1]) {
+    classIndents.pop();
   }
 }
 
@@ -529,4 +775,41 @@ function normalizeReference(reference: CodeReference, filePath: string | undefin
     endLine: reference.endLine || reference.startLine || 1,
     metadata: reference.metadata ?? {},
   };
+}
+
+function mergeSymbols(primary: CodeSymbol[], fallback: CodeSymbol[]): CodeSymbol[] {
+  const merged: CodeSymbol[] = [];
+  const positions = new Map<string, number>();
+  for (const symbol of [...primary, ...fallback]) {
+    const key = `${symbol.normalizedName || normalizeSymbolName(symbol.name)}:${symbol.startLine}`;
+    const existingIndex = positions.get(key);
+    if (existingIndex !== undefined) {
+      const existing = merged[existingIndex];
+      if (shouldReplaceMergedSymbol(existing, symbol)) {
+        merged[existingIndex] = symbol;
+      }
+      continue;
+    }
+    positions.set(key, merged.length);
+    merged.push(symbol);
+  }
+  return merged.sort((a, b) => a.startLine - b.startLine || a.name.localeCompare(b.name));
+}
+
+function shouldReplaceMergedSymbol(existing: CodeSymbol, candidate: CodeSymbol): boolean {
+  if (existing.kind === 'function' && candidate.kind === 'method') return true;
+  if (!existing.isExported && candidate.isExported) return true;
+  return false;
+}
+
+function mergeReferences(primary: CodeReference[], fallback: CodeReference[]): CodeReference[] {
+  const merged: CodeReference[] = [];
+  const seen = new Set<string>();
+  for (const reference of [...primary, ...fallback]) {
+    const key = `${reference.kind}:${reference.normalizedTarget || normalizeIdentifier(reference.target)}:${reference.startLine}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(reference);
+  }
+  return merged.sort((a, b) => a.startLine - b.startLine || a.target.localeCompare(b.target));
 }

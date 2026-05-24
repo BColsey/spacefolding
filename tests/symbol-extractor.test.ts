@@ -26,6 +26,13 @@ describe('extractSymbols', () => {
     ]);
   });
 
+  it('matches class methods', () => {
+    const symbols = extractSymbols('class MyService {\n  authenticate() { return true; }\n}', 'typescript');
+    expect(symbols).toEqual(expect.arrayContaining([
+      { name: 'authenticate', kind: 'method', line: 2, filePath: undefined },
+    ]));
+  });
+
   it('matches variable declarations', () => {
     const symbols = extractSymbols('const myVar = 5;', 'typescript');
     expect(symbols).toEqual([
