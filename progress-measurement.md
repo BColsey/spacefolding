@@ -534,3 +534,15 @@
   missing retrieval, E2E, and profiler datasets; each failed nonzero and named
   the failing dataset path. No error-handling defect required code changes, and
   no generated benchmark JSON appeared in repo status.
+- Test Coverage: reviewed benchmark helper functions and checker branches
+  against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` sections 9 and
+  10. Confirmed the measurement tests cover acceptance report formatting and
+  missing-section diagnostics, retrieval per-strategy and missing-summary
+  diagnostics, E2E focused-gate and full-codebase token diagnostics, held-out
+  and generated-task `/tmp` output guards, malformed dataset loaders, and
+  profiler CLI parsing. Verified `npx vitest run
+  tests/benchmark-acceptance.test.ts tests/benchmark-evaluate.test.ts
+  tests/benchmark-e2e.test.ts tests/benchmark-heldout.test.ts
+  tests/benchmark-profile.test.ts tests/benchmark-generate-tasks.test.ts` and
+  `npm run build && npm run lint && npm test` passed. No test-coverage defect
+  required code changes.
