@@ -67,11 +67,7 @@ export async function splitCodeWithTreeSitter(
 
     if (pieces.length <= 1) return null;
 
-    // Prepend import block to each piece
-    const prefix = importBlock.trim();
-    const chunked = pieces.map((piece) => {
-      return prefix ? `${prefix}\n\n${piece}` : piece;
-    });
+    const chunked = packPiecesWithPrefix(pieces, importBlock, maxTokens, tokenEstimator);
 
     return applyOverlap(chunked, overlapTokens, tokenEstimator);
   } catch {
@@ -230,6 +226,125 @@ function splitOversizedRange(
   }
 
   return pieces;
+}
+
+function packPiecesWithPrefix(
+  pieces: string[],
+  importBlock: string,
+  maxTokens: number,
+  tokenEstimator: TokenEstimator
+): string[] {
+  const chunks: string[] = [];
+  let current: string[] = [];
+
+  const flushCurrent = () => {
+    if (current.length === 0) return;
+    chunks.push(formatCodeChunk(importBlock, current.join('\n\n')));
+    current = [];
+  };
+
+  for (const piece of pieces) {
+    if (!piece.trim()) continue;
+
+    const candidate = [...current, piece].join('\n\n');
+    if (tokenEstimator.estimate(formatCodeChunk(importBlock, candidate)) <= maxTokens) {
+      current.push(piece);
+      continue;
+    }
+
+    flushCurrent();
+    if (tokenEstimator.estimate(formatCodeChunk(importBlock, piece)) <= maxTokens) {
+      current.push(piece);
+      continue;
+    }
+
+    chunks.push(...splitOversizedPiece(piece, importBlock, maxTokens, tokenEstimator));
+  }
+
+  flushCurrent();
+  return chunks;
+}
+
+function splitOversizedPiece(
+  piece: string,
+  importBlock: string,
+  maxTokens: number,
+  tokenEstimator: TokenEstimator
+): string[] {
+  const prefix = codePrefix(importBlock);
+  if (!prefix || tokenEstimator.estimate(prefix) >= maxTokens) {
+    return splitTextByLines(piece, maxTokens, tokenEstimator);
+  }
+
+  const bodyMaxTokens = Math.max(1, maxTokens - tokenEstimator.estimate(prefix));
+  return splitTextByLines(piece, bodyMaxTokens, tokenEstimator)
+    .map((subPiece) => formatCodeChunk(importBlock, subPiece));
+}
+
+function splitTextByLines(
+  text: string,
+  maxTokens: number,
+  tokenEstimator: TokenEstimator
+): string[] {
+  const chunks: string[] = [];
+  let current: string[] = [];
+
+  const flushCurrent = () => {
+    if (current.length === 0) return;
+    chunks.push(current.join('\n'));
+    current = [];
+  };
+
+  for (const line of text.split('\n')) {
+    const candidate = [...current, line].join('\n');
+    if (tokenEstimator.estimate(candidate) <= maxTokens) {
+      current.push(line);
+      continue;
+    }
+
+    flushCurrent();
+    if (tokenEstimator.estimate(line) <= maxTokens) {
+      current.push(line);
+      continue;
+    }
+
+    chunks.push(...splitLongLine(line, maxTokens, tokenEstimator));
+  }
+
+  flushCurrent();
+  return chunks;
+}
+
+function splitLongLine(
+  line: string,
+  maxTokens: number,
+  tokenEstimator: TokenEstimator
+): string[] {
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < line.length) {
+    let end = Math.min(line.length, start + Math.max(1, maxTokens * 4));
+    while (end > start + 1 && tokenEstimator.estimate(line.slice(start, end)) > maxTokens) {
+      end--;
+    }
+    chunks.push(line.slice(start, end));
+    start = end;
+  }
+
+  return chunks;
+}
+
+function codePrefix(importBlock: string): string {
+  const trimmed = importBlock.trim();
+  return trimmed ? `${trimmed}\n\n` : '';
+}
+
+function formatCodeChunk(importBlock: string, body: string): string {
+  const prefix = codePrefix(importBlock);
+  const trimmedBody = body.trim();
+  if (!prefix) return trimmedBody;
+  return trimmedBody ? `${prefix}${trimmedBody}` : importBlock.trim();
 }
 
 /**

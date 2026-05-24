@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { ChunkType, ContextChunk, TokenEstimator } from '../types/index.js';
 import { classifyChunk } from './classifier.js';
 import { splitCodeWithTreeSitter } from './tree-sitter-chunker.js';
@@ -127,7 +127,7 @@ function buildSplitResult(
     language: overrides.language,
     tokensEstimate: tokenEstimator.estimate(parentText),
     childrenIds: [],
-    metadata: { split: true, childCount: pieces.length, strategy },
+    metadata: { split: true, childCount: pieces.length, strategy, contentHash: hashContent(text) },
   };
 
   const children: ContextChunk[] = pieces.map((piece, index) => ({
@@ -141,7 +141,7 @@ function buildSplitResult(
     tokensEstimate: tokenEstimator.estimate(piece),
     parentId,
     childrenIds: [],
-    metadata: { splitIndex: index, splitTotal: pieces.length },
+    metadata: { splitIndex: index, splitTotal: pieces.length, contentHash: hashContent(piece) },
   }));
 
   parent.childrenIds = children.map((c) => c.id);
@@ -154,7 +154,7 @@ function detectStrategy(path?: string, language?: string, _text?: string): Chunk
   if (language && ['typescript', 'javascript', 'python', 'rust', 'go', 'java'].includes(language)) return 'code';
   if (path) {
     const ext = path.split('.').pop()?.toLowerCase() ?? '';
-    if (['ts', 'tsx', 'js', 'jsx', 'py', 'rs', 'go', 'java'].includes(ext)) return 'code';
+    if (['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rs', 'go', 'java'].includes(ext)) return 'code';
     if (ext === 'md') return 'markdown';
   }
   return 'recursive';
@@ -266,70 +266,185 @@ function splitCode(
   const lines = text.split('\n');
   if (lines.length === 0) return [text];
 
-  // Separate imports from body
-  const imports: string[] = [];
-  const body: string[] = [];
-  let pastImports = false;
+  const importEnd = findImportEnd(lines);
+  const importBlock = lines.slice(0, importEnd).join('\n').trimEnd();
+  const body = lines.slice(importEnd);
+  const bodyText = body.join('\n').trim();
 
-  for (const line of lines) {
-    if (!pastImports && /^\s*(import\s|from\s|require\s*\(|#include\s|use\s)/.test(line)) {
-      imports.push(line);
-    } else {
-      pastImports = true;
-      body.push(line);
-    }
-  }
-
-  const importBlock = imports.join('\n');
-  const bodyText = body.join('\n');
-
-  if (tokenEstimator.estimate(bodyText) <= maxTokens) return [text];
+  if (tokenEstimator.estimate(formatCodeChunk(importBlock, bodyText)) <= maxTokens) return [text];
 
   // Split at function/class boundaries
-  const boundaries = findCodeBoundaries(body);
-  if (boundaries.size === 0) {
+  const segments = findCodeSegments(body);
+  if (!segments.some((segment) => segment.isBoundary)) {
     // No structural boundaries found — fall back to recursive
     return splitRecursive(text, maxTokens, overlapTokens, tokenEstimator);
   }
-  const chunks: string[] = [];
-  let currentLines: string[] = [];
-  let currentTokens = tokenEstimator.estimate(importBlock);
 
-  for (const line of body) {
-    const lineTokens = tokenEstimator.estimate(line);
-    if (boundaries.has(line) && currentTokens + lineTokens > maxTokens && currentLines.length > 0) {
-      // Start a new chunk — prepend imports to each chunk
-      chunks.push(importBlock + '\n\n' + currentLines.join('\n'));
-      currentLines = [line];
-      currentTokens = tokenEstimator.estimate(importBlock) + lineTokens;
-    } else {
-      currentLines.push(line);
-      currentTokens += lineTokens;
-    }
-  }
-
-  if (currentLines.length > 0) {
-    chunks.push(importBlock + '\n\n' + currentLines.join('\n'));
-  }
+  const chunks = packCodeSegments(
+    segments.map((segment) => segment.text),
+    importBlock,
+    maxTokens,
+    tokenEstimator
+  );
 
   return applyOverlap(chunks, overlapTokens, tokenEstimator);
 }
 
-function findCodeBoundaries(lines: string[]): Set<string> {
-  const boundaries = new Set<string>();
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (/^(export\s+)?(async\s+)?function\s+\w+/.test(trimmed)) boundaries.add(line);
-    else if (/^class\s+\w+/.test(trimmed)) boundaries.add(line);
-    else if (/^(export\s+)?interface\s+\w+/.test(trimmed)) boundaries.add(line);
-    else if (/^(export\s+)?type\s+\w+\s*(<|=)/.test(trimmed)) boundaries.add(line);
-    else if (/^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?\(/.test(trimmed)) boundaries.add(line);
-    else if (/^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s+)?function/.test(trimmed)) boundaries.add(line);
-    else if (/^(def|class|async def)\s+\w+/.test(trimmed)) boundaries.add(line);
-    else if (/^(pub\s+)?(fn|struct|impl|trait|enum)\s+\w+/.test(trimmed)) boundaries.add(line);
-    else if (/^(func|type|interface)\s+\w+/.test(trimmed)) boundaries.add(line);
+interface CodeSegment {
+  text: string;
+  isBoundary: boolean;
+}
+
+function findImportEnd(lines: string[]): number {
+  let end = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.length === 0 && end === i) {
+      end = i + 1;
+      continue;
+    }
+    if (/^\s*(import\s|from\s|require\s*\(|#include\s|use\s)/.test(lines[i])) {
+      end = i + 1;
+    } else {
+      break;
+    }
   }
+  return end;
+}
+
+function findCodeSegments(lines: string[]): CodeSegment[] {
+  const boundaries = findCodeBoundaryIndexes(lines);
+  if (boundaries.length === 0) {
+    const text = lines.join('\n').trim();
+    return text ? [{ text, isBoundary: false }] : [];
+  }
+
+  const segments: CodeSegment[] = [];
+  let cursor = 0;
+
+  for (let i = 0; i < boundaries.length; i++) {
+    const start = boundaries[i];
+    if (start > cursor) {
+      const preamble = lines.slice(cursor, start).join('\n').trim();
+      if (preamble) segments.push({ text: preamble, isBoundary: false });
+    }
+
+    const end = boundaries[i + 1] ?? lines.length;
+    const declaration = lines.slice(start, end).join('\n').trim();
+    if (declaration) segments.push({ text: declaration, isBoundary: true });
+    cursor = end;
+  }
+
+  if (cursor < lines.length) {
+    const trailing = lines.slice(cursor).join('\n').trim();
+    if (trailing) segments.push({ text: trailing, isBoundary: false });
+  }
+
+  return segments;
+}
+
+function findCodeBoundaryIndexes(lines: string[]): number[] {
+  const boundaries: number[] = [];
+  const seen = new Set<number>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed || /^\s/.test(line)) continue;
+    if (!isCodeBoundary(trimmed)) continue;
+
+    let start = i;
+    while (start > 0 && lines[start - 1].trim().startsWith('@')) start--;
+    if (!seen.has(start)) {
+      boundaries.push(start);
+      seen.add(start);
+    }
+  }
+
   return boundaries;
+}
+
+function isCodeBoundary(trimmed: string): boolean {
+  return /^(export\s+)?(default\s+)?(async\s+)?function\s+\w+/.test(trimmed)
+    || /^(export\s+)?(default\s+)?(abstract\s+)?class\s+\w+/.test(trimmed)
+    || /^(export\s+)?(default\s+)?interface\s+\w+/.test(trimmed)
+    || /^(export\s+)?type\s+\w+\s*(<|=)/.test(trimmed)
+    || /^(export\s+)?enum\s+\w+/.test(trimmed)
+    || /^(export\s+)?(namespace|module)\s+\w+/.test(trimmed)
+    || /^(export\s+)?(const|let|var)\s+\w+\s*[:=]\s*(async\s*)?(\(|function|\w+\s*=>)/.test(trimmed)
+    || /^(def|class|async def)\s+\w+/.test(trimmed)
+    || /^(pub\s+)?(fn|struct|impl|trait|enum)\s+\w+/.test(trimmed)
+    || /^(func|type|interface)\s+\w+/.test(trimmed)
+    || /^(public\s+)?(abstract\s+|final\s+)?(class|interface|enum)\s+\w+/.test(trimmed);
+}
+
+function packCodeSegments(
+  segments: string[],
+  importBlock: string,
+  maxTokens: number,
+  tokenEstimator: TokenEstimator
+): string[] {
+  const chunks: string[] = [];
+  let current: string[] = [];
+
+  const flushCurrent = () => {
+    if (current.length === 0) return;
+    chunks.push(formatCodeChunk(importBlock, current.join('\n\n')));
+    current = [];
+  };
+
+  for (const segment of segments) {
+    if (!segment.trim()) continue;
+
+    const candidate = [...current, segment].join('\n\n');
+    if (tokenEstimator.estimate(formatCodeChunk(importBlock, candidate)) <= maxTokens) {
+      current.push(segment);
+      continue;
+    }
+
+    flushCurrent();
+    if (tokenEstimator.estimate(formatCodeChunk(importBlock, segment)) <= maxTokens) {
+      current.push(segment);
+      continue;
+    }
+
+    chunks.push(...splitOversizedCodeSegment(segment, importBlock, maxTokens, tokenEstimator));
+  }
+
+  flushCurrent();
+  return chunks.length > 0 ? chunks : [];
+}
+
+function splitOversizedCodeSegment(
+  segment: string,
+  importBlock: string,
+  maxTokens: number,
+  tokenEstimator: TokenEstimator
+): string[] {
+  const prefix = codePrefix(importBlock);
+  if (!prefix || tokenEstimator.estimate(prefix) >= maxTokens) {
+    return splitRecursive(segment, maxTokens, 0, tokenEstimator);
+  }
+
+  const bodyMaxTokens = Math.max(1, maxTokens - tokenEstimator.estimate(prefix));
+  const pieces = splitRecursive(segment, bodyMaxTokens, 0, tokenEstimator);
+  return pieces.map((piece) => formatCodeChunk(importBlock, piece));
+}
+
+function codePrefix(importBlock: string): string {
+  const trimmed = importBlock.trim();
+  return trimmed ? `${trimmed}\n\n` : '';
+}
+
+function formatCodeChunk(importBlock: string, body: string): string {
+  const prefix = codePrefix(importBlock);
+  const trimmedBody = body.trim();
+  if (!prefix) return trimmedBody;
+  return trimmedBody ? `${prefix}${trimmedBody}` : importBlock.trim();
+}
+
+function hashContent(text: string): string {
+  return createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
 // ── Markdown Splitter ──────────────────────────────────────────

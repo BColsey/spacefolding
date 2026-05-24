@@ -52,6 +52,11 @@ function functionBlock(name: string, word: string): string {
   return `export function ${name}() {\n  return [\n${rows.join('\n')}\n  ].join(' ');\n}`;
 }
 
+function compactFunctionBlock(name: string, word: string): string {
+  const rows = Array.from({ length: 8 }, (_, index) => `    '${word}-${index}',`);
+  return `export function ${name}() {\n  return [\n${rows.join('\n')}\n  ].join(' ');\n}`;
+}
+
 function createProjectDir(files: Record<string, string>): string {
   dbCounter += 1;
   const dir = join(tmpdir(), `spacefolding-orchestrator-project-${Date.now()}-${dbCounter}`);
@@ -264,6 +269,42 @@ describe('PipelineOrchestrator', () => {
     expect(storage.searchByText('oldMutable', 20).map((row) => row.chunkId)).not.toContain(staleChild!.id);
     expect(containsIds).toEqual(childIds);
     expect(containsIds).not.toContain(staleChild!.id);
+
+    pipeline.close();
+  });
+
+  it('focused retrieval excludes split metadata parent chunks', async () => {
+    const { pipeline } = createTestPipeline({
+      maxTokens: 80,
+      overlapTokens: 0,
+      strategy: 'code',
+    });
+    const path = 'src/focused-parent.ts';
+
+    await pipeline.ingest(
+      'file',
+      [
+        compactFunctionBlock('findParentNeedle', 'needle'),
+        compactFunctionBlock('otherFeature', 'other'),
+        compactFunctionBlock('thirdFeature', 'third'),
+      ].join('\n\n'),
+      'code',
+      path
+    );
+
+    const parent = pipeline.getAllChunks()
+      .find((chunk) => chunk.path === path && chunk.metadata.split);
+    const result = await pipeline.retrieve('findParentNeedle needle', 1_000, {
+      strategy: 'text',
+      mode: 'focused',
+      topK: 10,
+    });
+    const returnedIds = result.chunks.map((chunk) => chunk.id);
+
+    expect(parent).toBeDefined();
+    expect(result.chunks.length).toBeGreaterThan(0);
+    expect(returnedIds).not.toContain(parent!.id);
+    expect(result.chunks.every((chunk) => !chunk.metadata.split)).toBe(true);
 
     pipeline.close();
   });

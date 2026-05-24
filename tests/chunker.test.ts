@@ -5,6 +5,11 @@ import { DeterministicTokenEstimator } from '../src/providers/token-estimator.js
 const estimator = new DeterministicTokenEstimator();
 const config = { ...DEFAULT_CHUNKING_CONFIG, maxTokens: 100, overlapTokens: 10 };
 
+function tsFunction(name: string, word: string): string {
+  const rows = Array.from({ length: 8 }, (_, index) => `    '${word}-${index}',`);
+  return `export function ${name}() {\n  return [\n${rows.join('\n')}\n  ].join(' ');\n}`;
+}
+
 describe('ContextChunker', () => {
   it('returns null for text that fits within maxTokens', () => {
     const shortText = 'Hello world';
@@ -47,6 +52,38 @@ describe('ContextChunker', () => {
     }
   });
 
+  it('splits large TypeScript files at top-level declaration boundaries when possible', () => {
+    const codeConfig = { ...DEFAULT_CHUNKING_CONFIG, maxTokens: 80, overlapTokens: 0 };
+    const code = [
+      'import { helper } from "./helper";',
+      '',
+      tsFunction('alphaBoundary', 'alpha'),
+      '',
+      tsFunction('betaBoundary', 'beta'),
+      '',
+      tsFunction('gammaBoundary', 'gamma'),
+    ].join('\n');
+
+    const result = maybeSplit(code, estimator.estimate(code), codeConfig, estimator, {
+      source: 'file',
+      path: 'src/boundaries.ts',
+      language: 'typescript',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.parent.metadata.strategy).toBe('code');
+    expect(result!.children).toHaveLength(3);
+    expect(result!.children[0].text).toContain('alphaBoundary');
+    expect(result!.children[0].text).not.toContain('betaBoundary');
+    expect(result!.children[1].text).toContain('betaBoundary');
+    expect(result!.children[1].text).not.toContain('gammaBoundary');
+    expect(result!.children[2].text).toContain('gammaBoundary');
+    for (const child of result!.children) {
+      expect(child.text.startsWith('import { helper }')).toBe(true);
+      expect(child.tokensEstimate).toBeLessThanOrEqual(codeConfig.maxTokens);
+    }
+  });
+
   it('uses markdown strategy for .md files', () => {
     const md = [
       '# Main Title',
@@ -86,5 +123,12 @@ describe('ContextChunker', () => {
     expect(result).not.toBeNull();
     expect(result!.parent.metadata.split).toBe(true);
     expect(result!.parent.metadata.childCount).toBe(result!.children.length);
+    expect(result!.parent.metadata.contentHash).toMatch(/^[a-f0-9]{16}$/);
+    for (const [index, child] of result!.children.entries()) {
+      expect(child.parentId).toBe(result!.parent.id);
+      expect(child.metadata.splitIndex).toBe(index);
+      expect(child.metadata.splitTotal).toBe(result!.children.length);
+      expect(child.metadata.contentHash).toMatch(/^[a-f0-9]{16}$/);
+    }
   });
 });

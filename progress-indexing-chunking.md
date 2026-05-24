@@ -7,6 +7,8 @@
 - Language inference for ingested files lives in `src/core/ingester.ts`; project ingestion should reuse that helper so extension support stays consistent.
 - `PipelineOrchestrator.storeChunkStructure()` is the integration point that keeps code structure aligned with stored chunks. Unsupported files and split metadata parents should clear structural rows.
 - Content-hash dedupe can bypass normal storage paths, so deduped and unchanged re-ingest paths must refresh language metadata and structural rows.
+- Split chunks carry content hashes when created; the orchestrator may overwrite them with the same SHA-256 hash convention before storage.
+- Code chunking should pack top-level declarations into limit-sized children and only split inside a declaration when the declaration itself is oversized.
 - `src/providers/symbol-extractor.ts` now delegates to the structural fallback so CLI symbol output and structural indexing do not drift.
 - Call references are indexed for imported/external-looking calls, while same-file calls to locally defined symbols are filtered to avoid generic reference noise in structural retrieval.
 - `SQLiteRepository.storeChunk()` must preserve dependent rows when updating unchanged text; text changes explicitly clear embeddings and code structure to avoid stale indexes.
@@ -24,6 +26,7 @@
 - [x] 1. Language Inference And Structural Storage
 - [x] 2. Symbol And Reference Coverage
 - [x] 3. Re-Ingestion Consistency
+- [x] 4. Chunk Boundaries For Retrieval
 
 ## Iteration Log
 
@@ -39,6 +42,10 @@
   - Verification: `npm run build && npm run lint && npm test`
   - Benchmarks: `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.983, nDCG@10 0.891, MRR 0.933; structural e2e average recall 0.950 and average precision 0.401.
+- 2026-05-24: Completed work item 4. Reworked code chunking to pack top-level declarations into limit-sized chunks, split oversized declarations only as a fallback, keep import context with each code child, add content hash metadata to split parents and children at creation, and apply the same size-aware packing to tree-sitter chunk pieces. Added coverage for TypeScript boundary-aware splitting, child token limits, split metadata hashes, and focused retrieval excluding split metadata parents.
+  - Verification: `npm run build && npm run lint && npm test`
+  - Benchmarks: `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
+  - Benchmark summary: structural recall@10 0.983, nDCG@10 0.890, MRR 0.933; structural e2e average recall 1.000 and average precision 0.399.
 
 ## Review Log
 
