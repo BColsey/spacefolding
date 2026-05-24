@@ -6,6 +6,7 @@ import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
 import { ContextScorer } from '../src/core/scorer.js';
 import { ContextRouter, DEFAULT_ROUTING_CONFIG } from '../src/core/router.js';
 import { ContextIngester } from '../src/core/ingester.js';
+import type { ChunkingConfig } from '../src/core/chunker.js';
 import { DeterministicTokenEstimator } from '../src/providers/token-estimator.js';
 import { DeterministicEmbeddingProvider } from '../src/providers/deterministic-embedding.js';
 import { DeterministicCompressionProvider } from '../src/providers/deterministic-compression.js';
@@ -18,7 +19,7 @@ const dbPaths: string[] = [];
 const projectDirs: string[] = [];
 const originalDisableAst = process.env.SPACEFOLDING_DISABLE_AST_SUBPROCESS;
 
-function createTestPipeline(): {
+function createTestPipeline(chunkingConfig?: ChunkingConfig): {
   pipeline: PipelineOrchestrator;
   dbPath: string;
   storage: ReturnType<typeof createRepository>;
@@ -40,10 +41,15 @@ function createTestPipeline(): {
       new ContextRouter(DEFAULT_ROUTING_CONFIG),
       new DeterministicCompressionProvider(),
       new SimpleDependencyAnalyzer(),
-      new ContextIngester(tokenEstimator),
+      new ContextIngester(tokenEstimator, chunkingConfig),
       embeddingProvider
     ),
   };
+}
+
+function functionBlock(name: string, word: string): string {
+  const rows = Array.from({ length: 48 }, (_, index) => `    '${word}-${index}',`);
+  return `export function ${name}() {\n  return [\n${rows.join('\n')}\n  ].join(' ');\n}`;
 }
 
 function createProjectDir(files: Record<string, string>): string {
@@ -186,6 +192,78 @@ describe('PipelineOrchestrator', () => {
     expect(result.changed).toBe(true);
     expect(currentSymbols).toEqual(['class:Service', 'interface:ServiceContract']);
     expect(currentSymbols).not.toContain('function:buildService');
+
+    pipeline.close();
+  });
+
+  it('removes stale split children from storage, embeddings, dependencies, FTS, and code structure', async () => {
+    const { pipeline, storage } = createTestPipeline({
+      maxTokens: 80,
+      overlapTokens: 0,
+      strategy: 'code',
+    });
+    const embeddingProvider = new DeterministicEmbeddingProvider();
+    const path = 'src/reingest-target.ts';
+    const stableAlpha = functionBlock('stableAlpha', 'alpha');
+    const oldMutable = functionBlock('oldMutable', 'old');
+    const newMutable = functionBlock('newMutable', 'new');
+    const stableBeta = functionBlock('stableBeta', 'beta');
+
+    await pipeline.ingest(
+      'file',
+      [stableAlpha, oldMutable, stableBeta].join('\n\n'),
+      'code',
+      path
+    );
+    const before = pipeline.getAllChunks().filter((chunk) => chunk.path === path);
+    const reusableChild = before.find((chunk) => !chunk.metadata.split && chunk.text.includes('stableAlpha'));
+    const staleChild = before.find((chunk) => !chunk.metadata.split && chunk.text.includes('oldMutable'));
+
+    expect(reusableChild).toBeDefined();
+    expect(staleChild).toBeDefined();
+    expect(storage.getEmbedding(reusableChild!.id)).not.toBeNull();
+    expect(storage.getEmbedding(staleChild!.id)).not.toBeNull();
+    expect(storage.getCodeSymbols(staleChild!.id).map((symbol) => symbol.name)).toContain('oldMutable');
+    expect(storage.getDependencies(staleChild!.id).some((link) => link.type === 'contains')).toBe(true);
+
+    storage.initVectorIndex(384);
+    const staleQuery = await embeddingProvider.embed(staleChild!.text);
+    expect(storage.searchByVector(staleQuery, 20).map((result) => result.chunkId)).toContain(staleChild!.id);
+
+    const result = await pipeline.reingestFile(
+      path,
+      [stableAlpha, newMutable, stableBeta].join('\n\n'),
+      'code'
+    );
+    const after = pipeline.getAllChunks().filter((chunk) => chunk.path === path);
+    const afterIds = new Set(after.map((chunk) => chunk.id));
+    const parent = after.find((chunk) => chunk.metadata.split);
+    const childIds = after
+      .filter((chunk) => chunk.parentId === parent?.id)
+      .map((chunk) => chunk.id)
+      .sort();
+    const containsIds = parent
+      ? storage.getDependencies(parent.id)
+        .filter((link) => link.type === 'contains' && link.fromId === parent.id)
+        .map((link) => link.toId)
+        .sort()
+      : [];
+
+    expect(result.changed).toBe(true);
+    expect(result.reusedChunks).toBeGreaterThanOrEqual(2);
+    expect(afterIds.has(reusableChild!.id)).toBe(true);
+    expect(storage.getEmbedding(reusableChild!.id)).not.toBeNull();
+    expect(storage.searchByVector(await embeddingProvider.embed(reusableChild!.text), 20).map((row) => row.chunkId))
+      .toContain(reusableChild!.id);
+    expect(storage.getChunk(staleChild!.id)).toBeNull();
+    expect(storage.getEmbedding(staleChild!.id)).toBeNull();
+    expect(storage.getDependencies(staleChild!.id)).toEqual([]);
+    expect(storage.getCodeSymbols(staleChild!.id)).toEqual([]);
+    expect(storage.getCodeReferences(staleChild!.id)).toEqual([]);
+    expect(storage.searchByVector(staleQuery, 50).map((row) => row.chunkId)).not.toContain(staleChild!.id);
+    expect(storage.searchByText('oldMutable', 20).map((row) => row.chunkId)).not.toContain(staleChild!.id);
+    expect(containsIds).toEqual(childIds);
+    expect(containsIds).not.toContain(staleChild!.id);
 
     pipeline.close();
   });

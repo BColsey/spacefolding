@@ -57,10 +57,25 @@ export class SQLiteRepository {
   }
 
   storeChunk(chunk: ContextChunk): void {
+    const existing = this.db
+      .prepare('SELECT text FROM chunks WHERE id = ?')
+      .get(chunk.id) as { text: string } | undefined;
+    const textChanged = existing !== undefined && existing.text !== chunk.text;
+
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO chunks (id, source, type, text, timestamp, path, language, tokensEstimate, parentId, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO chunks (id, source, type, text, timestamp, path, language, tokensEstimate, parentId, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           source = excluded.source,
+           type = excluded.type,
+           text = excluded.text,
+           timestamp = excluded.timestamp,
+           path = excluded.path,
+           language = excluded.language,
+           tokensEstimate = excluded.tokensEstimate,
+           parentId = excluded.parentId,
+           metadata = excluded.metadata`
       )
       .run(
         chunk.id,
@@ -74,6 +89,11 @@ export class SQLiteRepository {
         chunk.parentId ?? null,
         JSON.stringify(chunk.metadata)
       );
+
+    if (textChanged) {
+      this.deleteEmbedding(chunk.id);
+      this.deleteCodeStructure(chunk.id);
+    }
   }
 
   getChunk(id: string): ContextChunk | null {
@@ -138,11 +158,9 @@ export class SQLiteRepository {
 
   deleteChunk(id: string): void {
     this.deleteCodeStructure(id);
+    this.deleteEmbedding(id);
     this.db.prepare('DELETE FROM chunks WHERE id = ?').run(id);
     this.removeAllDependenciesForChunk(id);
-    if (this.vectorIndex) {
-      this.vectorIndex.remove(id);
-    }
   }
 
   storeDependency(link: DependencyLink): void {
@@ -503,6 +521,13 @@ export class SQLiteRepository {
     }
     if (this.vectorIndex) {
       this.vectorIndex.add(chunkId, embedding);
+    }
+  }
+
+  private deleteEmbedding(chunkId: string): void {
+    this.db.prepare('DELETE FROM chunk_embeddings WHERE chunkId = ?').run(chunkId);
+    if (this.vectorIndex) {
+      this.vectorIndex.remove(chunkId);
     }
   }
 

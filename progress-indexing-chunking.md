@@ -9,6 +9,7 @@
 - Content-hash dedupe can bypass normal storage paths, so deduped and unchanged re-ingest paths must refresh language metadata and structural rows.
 - `src/providers/symbol-extractor.ts` now delegates to the structural fallback so CLI symbol output and structural indexing do not drift.
 - Call references are indexed for imported/external-looking calls, while same-file calls to locally defined symbols are filtered to avoid generic reference noise in structural retrieval.
+- `SQLiteRepository.storeChunk()` must preserve dependent rows when updating unchanged text; text changes explicitly clear embeddings and code structure to avoid stale indexes.
 
 ## Known Issues
 
@@ -22,6 +23,7 @@
 
 - [x] 1. Language Inference And Structural Storage
 - [x] 2. Symbol And Reference Coverage
+- [x] 3. Re-Ingestion Consistency
 
 ## Iteration Log
 
@@ -33,6 +35,10 @@
   - Verification: `npm run build && npm run lint && npm test`
   - Benchmarks: `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.983, nDCG@10 0.891, MRR 0.933; structural e2e average recall 0.950, average precision 0.405, and focused retrieval gate passing.
+- 2026-05-24: Completed work item 3. Replaced chunk update `INSERT OR REPLACE` semantics with upsert behavior that preserves embeddings for reused unchanged split chunks, clears embeddings and code structure when chunk text changes, and explicitly deletes embeddings during chunk deletion. Added coverage proving changed split re-ingestion removes stale child chunks from storage, vector search, dependencies, FTS, and code structure while preserving reused child embeddings; added watcher coverage for modification events using `reingestFile()`.
+  - Verification: `npm run build && npm run lint && npm test`
+  - Benchmarks: `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
+  - Benchmark summary: structural recall@10 0.983, nDCG@10 0.891, MRR 0.933; structural e2e average recall 0.950 and average precision 0.401.
 
 ## Review Log
 
