@@ -30,6 +30,7 @@ Highest severity first. Resolve before starting new work items.
 - 3. Improve Focused Candidate Selection
 - 4. Improve Query Planning For Debug And Implement Tasks
 - 5. Reranker And Explanation Wiring
+- 6. Acceptance-Driven Tuning
 
 ## Iteration Log
 
@@ -99,6 +100,12 @@ Highest severity first. Resolve before starting new work items.
   - Verified retrieval explanations include score breakdown reasons with `structural=`, `vector=`, `fts=`, `graph=`, `dependency=`, `final=` format.
   - Added `tests/retriever-ranking.test.ts` coverage for score breakdown in reasons: verifies the `scores` reason string contains all six source score components with 3-decimal precision.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 259 tests.
+- 2026-05-23: Work item 6 acceptance-driven tuning.
+  - Full acceptance gate passed with all 13 checks green.
+  - Final structural averages: R@10 `0.983333`, NDCG@10 `0.889618`, MRR `0.933333`, precision@10 `0.205000`, average results `27.50`.
+  - Final retrieval deltas: structural vs keyword R@10 `+0.187500`, NDCG@10 `+0.319765`, MRR `+0.408333`.
+  - Final E2E focused averages: recall `1.000000`, precision `0.385913`, tokens `12364.9`; all tasks below full codebase tokens `38103`.
+  - No metric failures to fix; acceptance gate passes without changes.
 
 ## Review Log
 
