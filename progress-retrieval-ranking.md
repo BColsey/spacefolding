@@ -28,6 +28,7 @@ Highest severity first. Resolve before starting new work items.
 - 1. Record Retrieval Baseline
 - 2. Improve Structural And Path Ranking
 - 3. Improve Focused Candidate Selection
+- 4. Improve Query Planning For Debug And Implement Tasks
 
 ## Iteration Log
 
@@ -85,6 +86,12 @@ Highest severity first. Resolve before starting new work items.
   - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.889618`, MRR `0.933333`, precision@10 `0.205000`, average results `27.50`.
   - Latest retrieval deltas: structural vs keyword R@10 `+0.187500`, NDCG@10 `+0.319765`, MRR `+0.408333`.
   - Latest E2E focused averages: recall `1.000000`, precision `0.385913`, tokens `12364.9`; all tasks stayed below full codebase tokens `38103`.
+- 2026-05-23: Work item 4 query planning for debug and implement tasks.
+  - Verified mutation queries classify as `implement` unless opened by explicit lookup terms (`where`, `find`, etc.); "add support for X" correctly returns `implement`.
+  - Verified identifier/path extraction: `SQLiteRepository` splits into `['sqlite', 'repository']`, `retrieve_context` splits into `['retrieve', 'context']`, `src/core/retriever.ts` extracts path fragments, tokens, and extension correctly.
+  - Verified `recommendedTopK` tuning by intent and complexity: narrow=5, moderate debug/implement/explain=10, broad=15.
+  - Added `tests/query-planner.test.ts` coverage for "add support for X" intent, `SQLiteRepository` splitting, `retrieve_context` splitting, and `src/core/retriever.ts` path extraction.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 258 tests.
 
 ## Review Log
 
