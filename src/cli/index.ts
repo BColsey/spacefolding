@@ -375,6 +375,18 @@ export function buildCLI(): Command {
     .option('--max-hops <number>', 'Max graph traversal hops', '0')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
+
+      const validModes = ['focused', 'broad', 'exhaustive'];
+      const validStrategies = ['structural', 'hybrid', 'vector', 'text', 'graph'];
+      if (opts.mode && !validModes.includes(opts.mode)) {
+        console.error(chalk.red(`Invalid mode "${opts.mode}". Must be one of: ${validModes.join(', ')}`));
+        process.exit(1);
+      }
+      if (opts.strategy && !validStrategies.includes(opts.strategy)) {
+        console.error(chalk.red(`Invalid strategy "${opts.strategy}". Must be one of: ${validStrategies.join(', ')}`));
+        process.exit(1);
+      }
+
       const pipeline = createPipeline(dbPath);
 
       const result = await pipeline.retrieve(opts.query, parseInt(opts.maxTokens ?? opts.maxTokens, 10), {

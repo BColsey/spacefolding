@@ -16,6 +16,37 @@ describe('CLI interface', () => {
       expect.arrayContaining(['--mode', '--return-limit', '--top-k'])
     );
   });
+
+  it('retrieve command has mode, strategy, max-tokens, and top-k options', () => {
+    const cli = buildCLI();
+    const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
+    const optionLongs = retrieve?.options.map((option) => option.long) ?? [];
+
+    expect(optionLongs).toContain('--mode');
+    expect(optionLongs).toContain('--strategy');
+    expect(optionLongs).toContain('--max-tokens');
+    expect(optionLongs).toContain('--top-k');
+    expect(optionLongs).toContain('--return-limit');
+    expect(optionLongs).toContain('--max-hops');
+  });
+
+  it('retrieve command mode option describes focused, broad, exhaustive', () => {
+    const cli = buildCLI();
+    const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
+    const modeOpt = retrieve?.options.find((option) => option.long === '--mode');
+
+    expect(modeOpt?.description).toContain('focused');
+    expect(modeOpt?.description).toContain('broad');
+    expect(modeOpt?.description).toContain('exhaustive');
+  });
+
+  it('retrieve command defaults to focused mode', () => {
+    const cli = buildCLI();
+    const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
+    const modeOpt = retrieve?.options.find((option) => option.long === '--mode');
+
+    expect(modeOpt?.defaultValue).toBe('focused');
+  });
 });
 
 describe('MCP interface', () => {
