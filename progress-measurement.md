@@ -505,3 +505,16 @@
   `/tmp/spacefolding-generated-tasks-security-data-review.json`; no generated
   benchmark JSON appeared in repo status. No security/data-integrity defect
   required code changes.
+- Spec Compliance: cycled back through the acceptance contract after the latest
+  security/data-integrity review. Re-read `DESIGN.md` success metrics and
+  benchmark design plus `IMPLEMENTATION.md` testing strategy, loop ownership,
+  and v1 constraints. Verified `npm run build && npm run lint && npm test`
+  passed. Ran the documented `npx tsx benchmarks/evaluate.ts --strategy all
+  --json > /tmp/spacefolding-eval.json`,
+  `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json >
+  /tmp/spacefolding-e2e.json`, and checker commands. The checker passed with
+  exact actual/expected metrics, including structural-vs-keyword deltas,
+  focused retrieval thresholds, current-vs-structural improvements, and the
+  no-task-exceeds-codebase-token check. Confirmed generated acceptance JSON
+  stayed under `/tmp` and did not appear in repo status. No spec-compliance
+  defect required code changes.
