@@ -15,7 +15,7 @@ import type {
 import { SQLiteRepository } from '../storage/repository.js';
 import { ContextScorer } from '../core/scorer.js';
 import { ContextRouter } from '../core/router.js';
-import { ContextIngester } from '../core/ingester.js';
+import { ContextIngester, inferLanguageFromPath } from '../core/ingester.js';
 import type { IngestResult } from '../core/ingester.js';
 import type { CompressionProvider } from '../types/index.js';
 import type { DependencyAnalyzer } from '../types/index.js';
@@ -263,12 +263,21 @@ export class PipelineOrchestrator {
     // Deduplication: file content is scoped by path so identical files at
     // different paths remain distinct chunks.
     const contentHash = this.contentHash(text);
+    const resolvedLanguage = path !== undefined
+      ? language ?? inferLanguageFromPath(path)
+      : language;
     const existing = this.storage.findChunkByContentHash(contentHash, path);
-    if (existing) return existing;
+    if (existing) {
+      if (path !== undefined && existing.metadata?.split) {
+        const refreshed = await this.refreshStoredChunksForPath(path, resolvedLanguage);
+        return refreshed.find((chunk) => chunk.id === existing.id) ?? existing;
+      }
+      return this.refreshStoredChunk(existing, resolvedLanguage);
+    }
 
     const result: IngestResult =
       path !== undefined
-        ? await this.ingester.ingestFileAsync(path, text, language, type as ChunkType | undefined)
+        ? await this.ingester.ingestFileAsync(path, text, resolvedLanguage, type as ChunkType | undefined)
         : await this.ingester.ingestTextAsync(source, text, type as ContextChunk['type']);
 
     const chunk = result.primary;
@@ -278,6 +287,7 @@ export class PipelineOrchestrator {
     if (result.split) {
       result.split.parent.metadata.contentHash = contentHash;
       this.storage.storeChunk(result.split.parent); // No embedding for parent
+      await this.storeChunkStructure(result.split.parent);
       for (const child of result.split.children) {
         child.metadata.contentHash = this.contentHash(child.text);
         await this.storeChunkWithEmbedding(child);
@@ -307,20 +317,22 @@ export class PipelineOrchestrator {
     language?: string
   ): Promise<FileReingestResult> {
     const fullContentHash = this.contentHash(text);
+    const resolvedLanguage = language ?? inferLanguageFromPath(path);
     const existingPathChunks = this.storage.queryChunks({ path });
     const alreadyCurrent = existingPathChunks.some((chunk) =>
       this.chunkContentHash(chunk) === fullContentHash && (chunk.metadata?.split || !chunk.parentId)
     );
 
     if (alreadyCurrent) {
+      const refreshedChunks = await this.refreshStoredChunksForPath(path, resolvedLanguage);
       return {
         path,
         changed: false,
-        chunks: existingPathChunks.map((chunk) => chunk.id),
-        reusedChunks: existingPathChunks.length,
+        chunks: refreshedChunks.map((chunk) => chunk.id),
+        reusedChunks: refreshedChunks.length,
         createdChunks: 0,
         deletedChunks: 0,
-        totalChunks: existingPathChunks.length,
+        totalChunks: refreshedChunks.length,
       };
     }
 
@@ -340,7 +352,7 @@ export class PipelineOrchestrator {
       return reusable ?? null;
     };
 
-    const result = await this.ingester.ingestFileAsync(path, text, language, type as ChunkType | undefined);
+    const result = await this.ingester.ingestFileAsync(path, text, resolvedLanguage, type as ChunkType | undefined);
     const keptIds = new Set<string>();
     const storedChunkIds: string[] = [];
     let reusedChunks = 0;
@@ -367,6 +379,7 @@ export class PipelineOrchestrator {
             metadata: { ...reusable.metadata, ...child.metadata, contentHash: childHash },
           };
           this.storage.updateChunk(updated);
+          await this.storeChunkStructure(updated);
           keptIds.add(updated.id);
           storedChunkIds.push(updated.id);
           storedChildren.push(updated);
@@ -384,6 +397,7 @@ export class PipelineOrchestrator {
 
       parent.childrenIds = storedChildren.map((child) => child.id);
       this.storage.storeChunk(parent);
+      await this.storeChunkStructure(parent);
       keptIds.add(parent.id);
       storedChunkIds.unshift(parent.id);
       createdChunks++;
@@ -641,7 +655,7 @@ export class PipelineOrchestrator {
   }
 
   private async storeChunkStructure(chunk: ContextChunk): Promise<void> {
-    if (!chunk.path || !isSupportedCodeLanguage(chunk.language)) {
+    if (!chunk.path || chunk.metadata?.split || !isSupportedCodeLanguage(chunk.language)) {
       this.storage.deleteCodeStructure(chunk.id);
       return;
     }
@@ -676,6 +690,32 @@ export class PipelineOrchestrator {
   private chunkContentHash(chunk: ContextChunk): string | null {
     const hash = chunk.metadata?.contentHash;
     return typeof hash === 'string' ? hash : null;
+  }
+
+  private async refreshStoredChunk(
+    chunk: ContextChunk,
+    language?: string
+  ): Promise<ContextChunk> {
+    if (language !== undefined && chunk.language !== language) {
+      const updated = { ...chunk, language };
+      this.storage.updateChunk(updated);
+      await this.storeChunkStructure(updated);
+      return updated;
+    }
+
+    await this.storeChunkStructure(chunk);
+    return chunk;
+  }
+
+  private async refreshStoredChunksForPath(
+    path: string,
+    language?: string
+  ): Promise<ContextChunk[]> {
+    const refreshedChunks: ContextChunk[] = [];
+    for (const chunk of this.storage.queryChunks({ path })) {
+      refreshedChunks.push(await this.refreshStoredChunk(chunk, language));
+    }
+    return refreshedChunks;
   }
 
   private annotateChunkTree(chunk: ContextChunk, metadata: Record<string, unknown>): void {
@@ -912,7 +952,7 @@ function defaultEmbeddingModelForProvider(provider?: EmbeddingProvider): string 
 }
 
 const BINARY_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.svg', '.webp', '.mp3', '.mp4', '.zip', '.gz', '.tar', '.db']);
-const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java']);
+const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.java']);
 const PROJECT_SKIP_DIRS = new Set([
   '.cache',
   '.git',

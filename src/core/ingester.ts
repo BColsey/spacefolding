@@ -8,8 +8,12 @@ import type { SplitResult } from './chunker.js';
 const EXT_TO_LANG: Record<string, string> = {
   '.ts': 'typescript',
   '.tsx': 'typescript',
+  '.mts': 'typescript',
+  '.cts': 'typescript',
   '.js': 'javascript',
   '.jsx': 'javascript',
+  '.mjs': 'javascript',
+  '.cjs': 'javascript',
   '.py': 'python',
   '.rs': 'rust',
   '.go': 'go',
@@ -24,7 +28,7 @@ const EXT_TO_LANG: Record<string, string> = {
   '.html': 'html',
 };
 
-function detectLanguage(filePath: string): string | undefined {
+export function inferLanguageFromPath(filePath: string): string | undefined {
   return EXT_TO_LANG[extname(filePath).toLowerCase()];
 }
 
@@ -98,7 +102,7 @@ export class ContextIngester {
     language?: string,
     overrideType?: ChunkType
   ): IngestResult {
-    const lang = language ?? detectLanguage(filePath);
+    const lang = language ?? inferLanguageFromPath(filePath);
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
     const split = maybeSplit(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
@@ -135,7 +139,7 @@ export class ContextIngester {
     language?: string,
     overrideType?: ChunkType
   ): Promise<IngestResult> {
-    const lang = language ?? detectLanguage(filePath);
+    const lang = language ?? inferLanguageFromPath(filePath);
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
     const split = await maybeSplitAsync(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
