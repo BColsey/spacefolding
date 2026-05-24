@@ -474,3 +474,17 @@
   benchmarks/check-acceptance.ts --retrieval-json /tmp/spacefolding-eval.json
   --e2e-json /tmp/spacefolding-e2e.json`, and `npm run build && npm run lint
   && npm test` passed. No generated benchmark JSON appeared in repo status.
+- Integration Wiring: compared documented benchmark commands in `DESIGN.md`,
+  `IMPLEMENTATION.md`, `benchmarks/ACCEPTANCE.md`, `benchmarks/HELDOUT.md`, and
+  `README.md` against `package.json` scripts and benchmark CLI parsers. Verified
+  the documented retrieval, E2E, acceptance-checker, held-out, profiler, and
+  ralph pacing commands still use supported flags and concrete `/tmp` output
+  paths. Verified `npm run build && npm run lint && npm test` passed, generated
+  retrieval JSON with `npx tsx benchmarks/evaluate.ts --strategy all --json >
+  /tmp/spacefolding-eval.json`, generated E2E JSON with `npx tsx
+  benchmarks/e2e-benchmark.ts --strategy structural --json >
+  /tmp/spacefolding-e2e.json`, and confirmed the documented acceptance checker
+  command passed with exact actual/expected metrics. Smoke-tested fixture
+  held-out generation, held-out evaluation, and profiler JSON under `/tmp`, and
+  verified `bash -n ralph.sh` passed. No integration-wiring defect required code
+  changes, and no generated benchmark JSON appeared in repo status.
