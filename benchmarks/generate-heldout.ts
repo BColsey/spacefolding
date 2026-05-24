@@ -81,21 +81,42 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
 };
 
 const SKIP_DIRS = new Set([
+  '.cache',
+  '.claude',
+  '.codex',
+  '.cursor',
   '.git',
   '.hg',
+  '.mypy_cache',
   '.svn',
   '.next',
+  '.pytest_cache',
+  '.ruff_cache',
+  '.tox',
   '.turbo',
   '.venv',
   '__pycache__',
+  'benchmarks',
   'build',
   'coverage',
+  'data',
   'dist',
+  'deps',
   'node_modules',
   'out',
   'target',
   'vendor',
   'venv',
+]);
+
+const TEST_DIRS = new Set([
+  '__tests__',
+  'fixtures',
+  'mock',
+  'mocks',
+  'spec',
+  'test',
+  'tests',
 ]);
 
 const QUERY_TEMPLATES: Record<Intent, string[]> = {
@@ -239,7 +260,7 @@ function walkDir(dir: string, includeTests: boolean): string[] {
     const fullPath = join(dir, entry);
     const stat = statSync(fullPath);
     if (stat.isDirectory()) {
-      if (SKIP_DIRS.has(entry)) continue;
+      if (shouldSkipDirectory(entry, includeTests)) continue;
       files.push(...walkDir(fullPath, includeTests));
       continue;
     }
@@ -250,6 +271,11 @@ function walkDir(dir: string, includeTests: boolean): string[] {
     files.push(fullPath);
   }
   return files.sort();
+}
+
+function shouldSkipDirectory(entry: string, includeTests: boolean): boolean {
+  const normalized = entry.toLowerCase();
+  return SKIP_DIRS.has(normalized) || (!includeTests && TEST_DIRS.has(normalized));
 }
 
 function isTestPath(filePath: string): boolean {

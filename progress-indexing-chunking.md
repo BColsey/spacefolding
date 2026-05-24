@@ -1,6 +1,6 @@
 # indexing-chunking - Progress Tracker
 
-## Status: IN PROGRESS
+## Status: REVIEW
 
 ## Codebase Patterns
 
@@ -27,6 +27,7 @@
 - [x] 2. Symbol And Reference Coverage
 - [x] 3. Re-Ingestion Consistency
 - [x] 4. Chunk Boundaries For Retrieval
+- [x] 5. Index Profiling And Held-Out Signals
 
 ## Iteration Log
 
@@ -46,6 +47,10 @@
   - Verification: `npm run build && npm run lint && npm test`
   - Benchmarks: `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.983, nDCG@10 0.890, MRR 0.933; structural e2e average recall 1.000 and average precision 0.399.
+- 2026-05-24: Completed work item 5. Tightened held-out dataset scanning so dependency, build, benchmark, and test/fixture directories are skipped before symbol extraction by default, documented that generated paths follow the evaluator's project-relative path convention, and added coverage proving generated labels are relative and exclude skipped-directory symbols.
+  - Verification: `npx vitest run tests/benchmark-heldout.test.ts`; `npm run build && npm run lint && npm test`
+  - Held-out sanity check: `npx tsx benchmarks/generate-heldout.ts --corpus benchmarks/fixtures --output /tmp/spacefolding-heldout-fixtures.json --limit 5 --seed indexing-chunking-fixture --include-tests`
+  - Held-out summary: 11 source files, 17 symbols, 5 tasks; generated paths were relative and no skipped dependency/build/test paths were present.
 
 ## Review Log
 

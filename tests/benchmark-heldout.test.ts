@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   parseArgs,
@@ -116,5 +116,47 @@ describe('held-out benchmark dataset generator', () => {
         task.relevant_files.every((filePath) => filePath.startsWith('benchmarks/fixtures/'))
       )
     ).toBe(true);
+  });
+
+  it('uses evaluator-relative paths and skips dependency, build, and test directories by default', () => {
+    const corpus = mkdtempSync(join(tmpdir(), 'spacefolding-heldout-corpus-'));
+    const output = join(tmpdir(), `spacefolding-heldout-skip-test-${process.pid}.json`);
+    generatedPaths.push(corpus, output);
+
+    const sourcePath = join(corpus, 'src', 'kept.ts');
+    mkdirSync(join(corpus, 'src'), { recursive: true });
+    mkdirSync(join(corpus, 'node_modules', 'pkg'), { recursive: true });
+    mkdirSync(join(corpus, 'dist'), { recursive: true });
+    mkdirSync(join(corpus, 'build'), { recursive: true });
+    mkdirSync(join(corpus, 'tests'), { recursive: true });
+    writeFileSync(sourcePath, 'export function LoadHeldoutProfiles() { return true; }\n');
+    writeFileSync(join(corpus, 'node_modules', 'pkg', 'private.ts'), 'export function DependencyOnlySymbol() {}\n');
+    writeFileSync(join(corpus, 'dist', 'bundle.ts'), 'export function BuiltOnlySymbol() {}\n');
+    writeFileSync(join(corpus, 'build', 'artifact.ts'), 'export function BuildOnlySymbol() {}\n');
+    writeFileSync(join(corpus, 'tests', 'sample.test.ts'), 'export function TestOnlySymbol() {}\n');
+
+    const options = parseArgs([
+      '--corpus',
+      corpus,
+      '--output',
+      output,
+      '--limit',
+      '10',
+      '--seed',
+      'skip-dirs',
+    ]);
+
+    const summary = writeHeldoutDataset(options);
+    const dataset = JSON.parse(readFileSync(output, 'utf-8')) as HeldoutDataset;
+    const expectedPath = relative(process.cwd(), sourcePath).split(sep).join('/');
+    const relevantPaths = dataset.tasks.flatMap((task) => task.relevant_files);
+
+    expect(summary.tasks).toBe(1);
+    expect(relevantPaths).toEqual([expectedPath]);
+    expect(relevantPaths.every((filePath) => !isAbsolute(filePath))).toBe(true);
+    expect(JSON.stringify(dataset)).not.toContain('DependencyOnlySymbol');
+    expect(JSON.stringify(dataset)).not.toContain('BuiltOnlySymbol');
+    expect(JSON.stringify(dataset)).not.toContain('BuildOnlySymbol');
+    expect(JSON.stringify(dataset)).not.toContain('TestOnlySymbol');
   });
 });

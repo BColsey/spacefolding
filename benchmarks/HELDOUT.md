@@ -52,13 +52,14 @@ Use these JSON fields when comparing runs:
 
 Notes:
 
-- Generated task paths are relative to the Spacefolding checkout so they match
-  the paths stored by `benchmarks/evaluate.ts`.
+- Generated task paths are relative to the Spacefolding checkout, matching the
+  path convention used when `benchmarks/evaluate.ts` ingests the same corpus.
 - `benchmarks/generate-heldout.ts` refuses to write generated held-out datasets
   outside `/tmp` or inside this checkout. Keep task JSON, benchmark JSON, and
   profiler JSON under `/tmp`.
-- Tests, fixtures, dependency directories, build outputs, and virtualenvs are
-  skipped by default. Pass `--include-tests` to include test files.
+- Tests, fixtures, dependency directories, build outputs, benchmark artifacts,
+  and virtualenvs are skipped by default. Pass `--include-tests` to include test
+  and fixture files.
 - The generated dataset is deterministic for a given corpus and `--seed`.
 - These tasks are symbol-definition retrieval checks. They are a first held-out
   signal, not a replacement for expert task sets on unfamiliar repos.
