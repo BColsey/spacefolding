@@ -86,6 +86,12 @@
 - Security reviews should check tracked files with `git ls-files` and ignore
   rules with `git check-ignore`, because local ignored benchmark DB artifacts may
   exist without being part of the commit surface.
+- Spec compliance review should inspect generated JSON key sets as well as the
+  checker result, because a passing gate still needs to preserve the diagnostic
+  fields promised by the benchmark contracts.
+- Error-handling smoke tests should include both checker JSON failures and
+  benchmark process failures, because acceptance diagnostics and script startup
+  diagnostics have different output paths.
 
 ## Known Issues
 
@@ -518,3 +524,13 @@
   no-task-exceeds-codebase-token check. Confirmed generated acceptance JSON
   stayed under `/tmp` and did not appear in repo status. No spec-compliance
   defect required code changes.
+- Error Handling: reviewed malformed JSON, missing files, missing strategy
+  summaries, missing E2E summaries, and benchmark process failures against
+  `IMPLEMENTATION.md` section 9. Verified `npm run build && npm run lint &&
+  npm test` passed. Smoke-tested malformed retrieval JSON, incomplete
+  retrieval/E2E summaries, missing E2E JSON, and missing checker argument
+  values; checker failures exited nonzero with direct actual/expected messages,
+  and `--json` output preserved top-level `passed` plus `checks`. Smoke-tested
+  missing retrieval, E2E, and profiler datasets; each failed nonzero and named
+  the failing dataset path. No error-handling defect required code changes, and
+  no generated benchmark JSON appeared in repo status.
