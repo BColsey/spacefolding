@@ -27,6 +27,7 @@ Highest severity first. Resolve before starting new work items.
 
 - 1. Record Retrieval Baseline
 - 2. Improve Structural And Path Ranking
+- 3. Improve Focused Candidate Selection
 
 ## Iteration Log
 
@@ -71,6 +72,15 @@ Highest severity first. Resolve before starting new work items.
   - Tuned sparse exact contract scoring for implementation tasks so `ContextFilter`/type contracts survive focused selection when source/path filter language is present.
   - Added `tests/retriever-ranking.test.ts` coverage for exact path ranking, exact symbol ranking over lexical and deterministic vector noise, complete `sourceScores`, and focused batch-delete type selection; added `tests/structural-indexer.test.ts` coverage for repository exact path/symbol/reference scoring.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 249 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.889618`, MRR `0.933333`, precision@10 `0.205000`, average results `27.50`.
+  - Latest retrieval deltas: structural vs keyword R@10 `+0.187500`, NDCG@10 `+0.319765`, MRR `+0.408333`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.385913`, tokens `12364.9`; all tasks stayed below full codebase tokens `38103`.
+- 2026-05-23: Work item 3 focused candidate selection.
+  - Verified focused selection behavior against spec: `createRetrievalSelectionPolicy` produces focused moderate target 13000, minKeep protects top candidates from threshold and per-path caps, split parent chunks are excluded, dropped candidates carry concrete reasons, and `fillBudget` never exceeds hard budget.
+  - Added `tests/retrieval-policy.test.ts` coverage for protected candidates bypassing per-path cap, and per-path cap dropping non-protected candidates after protected set uses cap slots.
+  - Added `tests/budget.test.ts` coverage for hard budget enforcement with many candidates, hard budget enforcement with hot chunks, and deterministic focused selection through the full selection → budget pipeline.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 254 tests.
   - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
   - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.889618`, MRR `0.933333`, precision@10 `0.205000`, average results `27.50`.
   - Latest retrieval deltas: structural vs keyword R@10 `+0.187500`, NDCG@10 `+0.319765`, MRR `+0.408333`.

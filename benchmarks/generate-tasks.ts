@@ -11,12 +11,21 @@
  *   npx tsx benchmarks/generate-tasks.ts [--sources src,benchmarks/fixtures] [--count 250] [--output /tmp/spacefolding-generated-tasks.json]
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, dirname, extname, relative, resolve } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const benchDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(benchDir, '..');
+const generatedOutputRoot = '/tmp';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -324,6 +333,7 @@ export function parseArgs(argv: string[]): GenOptions {
     }
   }
 
+  validateGeneratedTasksOutputPath(options.output);
   return options;
 }
 
@@ -359,6 +369,51 @@ function parsePositiveInt(value: string, name: string): number {
 
 function resolveOutput(output: string): string {
   return output.startsWith('/') ? output : join(projectRoot, output);
+}
+
+export function validateGeneratedTasksOutputPath(output: string, root: string = projectRoot): void {
+  const resolvedOutput = resolve(output);
+  const resolvedRoot = realpathSync(resolve(root));
+  const resolvedOutputParent = resolve(dirname(resolvedOutput));
+  const realOutputParent = realpathIfExists(resolvedOutputParent);
+  const realOutput = join(realOutputParent, basename(resolvedOutput));
+
+  try {
+    if (lstatSync(resolvedOutput).isSymbolicLink()) {
+      throw new Error(
+        `Refusing to write generated benchmark tasks through a symlink: ${output}. Use a regular output path under /tmp.`
+      );
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+
+  if (isWithinDirectory(realOutput, resolvedRoot)) {
+    throw new Error(
+      `Refusing to write generated benchmark tasks inside the repository: ${output}. Use an output path under /tmp.`
+    );
+  }
+
+  if (!isWithinDirectory(realOutput, realpathSync(generatedOutputRoot))) {
+    throw new Error(
+      `Refusing to write generated benchmark tasks outside /tmp: ${output}. Use an output path under /tmp.`
+    );
+  }
+}
+
+function realpathIfExists(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return resolve(path);
+    throw error;
+  }
+}
+
+function isWithinDirectory(path: string, directory: string): boolean {
+  const relativePath = relative(resolve(directory), resolve(path));
+  return relativePath === ''
+    || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
 }
 
 function errorMessage(error: unknown): string {

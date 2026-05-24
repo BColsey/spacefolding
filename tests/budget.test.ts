@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fillBudget, compressOmitted } from '../src/core/budget.js';
+import { createRetrievalSelectionPolicy, selectRetrievalCandidates, budgetForSelectedCandidates } from '../src/core/retrieval-policy.js';
 import type { ContextChunk } from '../src/types/index.js';
 import type { RetrievalResult } from '../src/core/retriever.js';
 
@@ -177,6 +178,44 @@ describe('fillBudget', () => {
     expect(result.selected).toHaveLength(0);
     expect(result.totalTokens).toBe(0);
   });
+
+  it('never exceeds hard budget', () => {
+    const chunks: ContextChunk[] = [];
+    const ranked: RetrievalResult[] = [];
+    for (let i = 0; i < 20; i++) {
+      const id = `chunk-${i}`;
+      chunks.push(makeChunk({ id, tokensEstimate: 1000 }));
+      ranked.push(makeResult(id, 1.0 - i * 0.01));
+    }
+    const hardBudget = 5500;
+
+    const result = fillBudget(ranked, buildChunksMap(chunks), hardBudget);
+
+    expect(result.totalTokens).toBeLessThanOrEqual(hardBudget);
+    expect(result.selected.length).toBe(5);
+    expect(result.totalTokens).toBe(5000);
+    expect(result.omitted.length).toBeGreaterThan(0);
+  });
+
+  it('never exceeds hard budget with hot chunks included', () => {
+    const chunks: ContextChunk[] = [];
+    const ranked: RetrievalResult[] = [];
+    for (let i = 0; i < 10; i++) {
+      const id = `chunk-${i}`;
+      chunks.push(makeChunk({ id, tokensEstimate: 2000 }));
+      ranked.push(makeResult(id, 1.0 - i * 0.01));
+    }
+    const hardBudget = 7000;
+
+    const result = fillBudget(ranked, buildChunksMap(chunks), hardBudget, {
+      hotChunkIds: new Set(['chunk-0', 'chunk-1', 'chunk-2']),
+    });
+
+    expect(result.totalTokens).toBeLessThanOrEqual(hardBudget);
+    // 3 hot chunks = 6000, remaining = 1000, no more fit
+    expect(result.selected.length).toBe(3);
+    expect(result.totalTokens).toBe(6000);
+  });
 });
 
 describe('compressOmitted', () => {
@@ -342,5 +381,44 @@ describe('compressOmitted', () => {
 
     // Only 1 of the 3 big chunks should be compressed
     expect(compressed).toHaveLength(1);
+  });
+
+  it('focused selection through budget pipeline is compact and deterministic', () => {
+    // Simulate a focused moderate retrieval pipeline
+    const hardBudget = 50_000;
+    const targetBudget = 13_000;
+
+    const chunks: ContextChunk[] = [];
+    const ranked: RetrievalResult[] = [];
+    for (let i = 0; i < 30; i++) {
+      const id = `chunk-${i}`;
+      chunks.push(makeChunk({ id, tokensEstimate: 500 + i * 50, path: `src/file-${i % 5}.ts` }));
+      ranked.push(makeResult(id, 1.0 - i * 0.02));
+    }
+    const chunksMap = buildChunksMap(chunks);
+
+    // Run selection policy
+    const policy = createRetrievalSelectionPolicy({
+      complexity: 'moderate',
+      hardBudget,
+      requestedTopK: 10,
+    });
+    const selection = selectRetrievalCandidates(ranked, chunksMap, policy);
+    const budget = budgetForSelectedCandidates(selection.ranked, chunksMap, policy);
+
+    // Fill budget with selected candidates
+    const result = fillBudget(selection.ranked, chunksMap, budget);
+
+    // Verify compactness: should be well under hard budget
+    expect(result.totalTokens).toBeLessThanOrEqual(budget);
+    expect(result.totalTokens).toBeLessThanOrEqual(targetBudget);
+    expect(result.totalTokens).toBeLessThan(hardBudget);
+
+    // Verify determinism: run again, same result
+    const selection2 = selectRetrievalCandidates(ranked, chunksMap, policy);
+    const budget2 = budgetForSelectedCandidates(selection2.ranked, chunksMap, policy);
+    const result2 = fillBudget(selection2.ranked, chunksMap, budget2);
+    expect(result2.selected.map((c) => c.id)).toEqual(result.selected.map((c) => c.id));
+    expect(result2.totalTokens).toBe(result.totalTokens);
   });
 });

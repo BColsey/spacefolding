@@ -36,7 +36,7 @@ describe('createRetrievalSelectionPolicy', () => {
     expect(policy.scoreThresholdRatio).toBe(0.35);
     expect(policy.minKeep).toBe(3);
     expect(policy.maxChunksPerPath).toBe(2);
-    expect(policy.targetBudget).toBe(17_000); // FOCUSED_TARGETS.moderate
+    expect(policy.targetBudget).toBe(13_000); // FOCUSED_TARGETS.moderate
   });
 
   it('returns focused policy with narrow complexity target', () => {
@@ -47,7 +47,7 @@ describe('createRetrievalSelectionPolicy', () => {
     });
 
     expect(policy.mode).toBe('focused');
-    expect(policy.targetBudget).toBe(8_000);
+    expect(policy.targetBudget).toBe(6_000);
   });
 
   it('returns focused policy with broad complexity target', () => {
@@ -58,7 +58,7 @@ describe('createRetrievalSelectionPolicy', () => {
     });
 
     expect(policy.mode).toBe('focused');
-    expect(policy.targetBudget).toBe(24_000);
+    expect(policy.targetBudget).toBe(18_000);
   });
 
   it('returns broad policy with correct thresholds', () => {
@@ -121,7 +121,7 @@ describe('createRetrievalSelectionPolicy', () => {
       requestedTopK: 10,
     });
 
-    // FOCUSED_TARGETS.broad = 24_000, but hard budget is 5_000
+    // FOCUSED_TARGETS.broad = 18_000, but hard budget is 5_000
     expect(policy.targetBudget).toBe(5_000);
   });
 
@@ -152,7 +152,7 @@ describe('selectRetrievalCandidates', () => {
     return {
       mode: 'focused' as const,
       hardBudget: 50_000,
-      targetBudget: 17_000,
+      targetBudget: 13_000,
       candidateLimit: 10,
       minKeep: 3,
       scoreThresholdRatio: 0.35,
@@ -354,6 +354,59 @@ describe('selectRetrievalCandidates', () => {
     // Both share source 'conv-1', so second should be capped
     expect(result.ranked).toHaveLength(1);
   });
+
+  it('protected candidates bypass per-path cap', () => {
+    const chunks = new Map<string, ContextChunk>([
+      ['a', makeChunk({ id: 'a', path: 'src/core.ts' })],
+      ['b', makeChunk({ id: 'b', path: 'src/core.ts' })],
+      ['c', makeChunk({ id: 'c', path: 'src/core.ts' })],
+      ['other', makeChunk({ id: 'other', path: 'src/util.ts' })],
+    ]);
+
+    const retrieval: RetrievalResult[] = [
+      makeResult('a', 1.0),
+      makeResult('b', 0.9),
+      makeResult('c', 0.8),
+      makeResult('other', 0.7),
+    ];
+
+    // minKeep=3 protects a, b, c from same path; maxChunksPerPath=2 would normally cap at 2
+    const policy = makePolicy({ minKeep: 3, maxChunksPerPath: 2, scoreThresholdRatio: 0 });
+    const result = selectRetrievalCandidates(retrieval, chunks, policy);
+
+    // All 3 protected candidates from src/core.ts are included despite per-path cap
+    expect(result.ranked.map((r) => r.chunkId)).toContain('a');
+    expect(result.ranked.map((r) => r.chunkId)).toContain('b');
+    expect(result.ranked.map((r) => r.chunkId)).toContain('c');
+    expect(result.ranked.map((r) => r.chunkId)).toContain('other');
+  });
+
+  it('per-path cap drops non-protected candidates after protected set uses cap slots', () => {
+    const chunks = new Map<string, ContextChunk>([
+      ['a', makeChunk({ id: 'a', path: 'src/core.ts' })],
+      ['b', makeChunk({ id: 'b', path: 'src/core.ts' })],
+      ['c', makeChunk({ id: 'c', path: 'src/core.ts' })],
+      ['d', makeChunk({ id: 'd', path: 'src/core.ts' })],
+    ]);
+
+    const retrieval: RetrievalResult[] = [
+      makeResult('a', 1.0),
+      makeResult('b', 0.9),
+      makeResult('c', 0.8),
+      makeResult('d', 0.7),
+    ];
+
+    // minKeep=2 protects a and b; maxChunksPerPath=2 means slots are full after protected set
+    const policy = makePolicy({ minKeep: 2, maxChunksPerPath: 2, scoreThresholdRatio: 0 });
+    const result = selectRetrievalCandidates(retrieval, chunks, policy);
+
+    expect(result.ranked.map((r) => r.chunkId)).toContain('a');
+    expect(result.ranked.map((r) => r.chunkId)).toContain('b');
+    // c and d are beyond protected set and path already has 2 entries
+    expect(result.dropped.some((d) => d.chunkId === 'c')).toBe(true);
+    expect(result.dropped.some((d) => d.chunkId === 'd')).toBe(true);
+    expect(result.dropped.find((d) => d.chunkId === 'c')?.reason).toContain('per-path');
+  });
 });
 
 describe('budgetForSelectedCandidates', () => {
@@ -392,8 +445,8 @@ describe('budgetForSelectedCandidates', () => {
 
     const budget = budgetForSelectedCandidates(selected, chunks, policy);
     // Protected tokens = sum of first minKeep=3 chunks = 5_000 + 3_000 + 2_000 = 10_000
-    // targetBudget = FOCUSED_TARGETS.narrow = 8_000
-    // Result = min(hardBudget, max(targetBudget, protectedTokens)) = min(200_000, max(8_000, 10_000)) = 10_000
+    // targetBudget = FOCUSED_TARGETS.narrow = 6_000
+    // Result = min(hardBudget, max(targetBudget, protectedTokens)) = min(200_000, max(6_000, 10_000)) = 10_000
     expect(budget).toBe(10_000);
   });
 
@@ -413,9 +466,9 @@ describe('budgetForSelectedCandidates', () => {
 
     const budget = budgetForSelectedCandidates(selected, chunks, policy);
     // Protected tokens for first minKeep=3: only 1 result, so 100
-    // targetBudget = 17_000
-    // Result = min(200_000, max(17_000, 100)) = 17_000
-    expect(budget).toBe(17_000);
+    // targetBudget = 13_000
+    // Result = min(200_000, max(13_000, 100)) = 13_000
+    expect(budget).toBe(13_000);
   });
 
   it('caps at hard budget', () => {
@@ -456,7 +509,7 @@ describe('budgetForSelectedCandidates', () => {
     const selected = [makeResult('missing', 0.9)];
 
     const budget = budgetForSelectedCandidates(selected, chunks, policy);
-    // Protected tokens = 0 (missing chunk), so result = targetBudget = 17_000
-    expect(budget).toBe(17_000);
+    // Protected tokens = 0 (missing chunk), so result = targetBudget = 13_000
+    expect(budget).toBe(13_000);
   });
 });
