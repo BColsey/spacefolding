@@ -109,4 +109,11 @@ Highest severity first. Resolve before starting new work items.
 
 ## Review Log
 
-(Entries added during review phase: category reviewed, what was checked, what was fixed.)
+- 2026-05-23: Review phase.
+  - **Integration Wiring**: Fixed `hotChunkIds` not being passed to `fillBudget()` in `PipelineOrchestrator.retrieve()`. The hot-priority budget mechanism existed but was bypassed; dependency-heavy chunks now get Phase 1 budget priority.
+  - **Dead Code**: Removed `querieds` typo entry from `TERM_EXPANSIONS` in `src/core/retriever.ts`.
+  - **Code Consistency**: Removed duplicate `'exact'` from `NARROWING_TERMS` in `src/core/query-planner.ts`.
+  - **Code Consistency**: Fixed score reason format in `retrieveDeterministicStructural` to use `sourceScores.vector.toFixed(3)` and `sourceScores.graph.toFixed(3)` instead of hardcoded `0.000`, matching the format in `retrieve()`.
+  - **Security**: No SQL injection risks found. All user input flows through parameterized queries or is sanitized before FTS5 query assembly.
+  - **Test Coverage**: Strong for pure-logic modules (query-planner 50 tests, retrieval-policy 27 tests, budget 18 tests). Retriever covered through mock-based tests (8 in retriever-ranking, 33 in rag). Gap noted: no repository-level integration tests for search methods, and no graph traversal tests. These are outside the current work item scope.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 259 tests.

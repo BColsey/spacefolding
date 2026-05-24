@@ -39,7 +39,7 @@ const BROADENING_TERMS = new Set([
 // Narrowing signals: queries with specific file paths, function names, or "exact" language
 const NARROWING_TERMS = new Set([
   'exact', 'specific', 'only', 'just', 'single', 'one', 'this',
-  'exact', 'precise', 'particular',
+  'precise', 'particular',
 ]);
 
 /** Detect the primary intent of a query */

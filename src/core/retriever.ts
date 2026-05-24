@@ -395,7 +395,7 @@ export class HybridRetriever {
           sourceScores,
           reasons: [
             ...data.reasons,
-            `scores structural=${sourceScores.structural.toFixed(3)} vector=0.000 fts=${sourceScores.fts.toFixed(3)} dependency=${sourceScores.dependency.toFixed(3)} graph=0.000 final=${sourceScores.final.toFixed(3)}`,
+            `scores structural=${sourceScores.structural.toFixed(3)} vector=${sourceScores.vector.toFixed(3)} fts=${sourceScores.fts.toFixed(3)} dependency=${sourceScores.dependency.toFixed(3)} graph=${sourceScores.graph.toFixed(3)} final=${sourceScores.final.toFixed(3)}`,
           ],
         };
       });
@@ -570,7 +570,6 @@ const TERM_EXPANSIONS: Record<string, Array<[string, number]>> = {
   stored: [['store', 1.1], ['storage', 1.0], ['repository', 0.9]],
   store: [['stored', 0.8], ['storage', 0.8], ['repository', 0.7]],
   queried: [['query', 1.0], ['get', 0.9], ['search', 0.7], ['repository', 0.7]],
-  querieds: [['query', 1.0]],
 
   dependency: [['dependencies', 0.9], ['dependencylink', 1.1], ['repository', 0.8], ['graph', 0.7]],
   dependencies: [['dependency', 1.0], ['dependencylink', 1.1], ['repository', 0.8], ['graph', 0.7]],

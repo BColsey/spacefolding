@@ -761,6 +761,7 @@ export class PipelineOrchestrator {
 
     const budgetResult = fillBudget(rankedForBudget, chunkMap, effectiveBudget, {
       collapseSiblings: true,
+      hotChunkIds: hotIds,
     });
 
     for (const chunk of budgetResult.selected) {
