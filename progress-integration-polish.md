@@ -11,6 +11,9 @@
   chunks, compressed summaries, plan, and selection policy.
 - The web inspector renders repository-derived paths, text, and stats through
   HTML escaping before inserting with `innerHTML`.
+- README benchmark docs should describe gate commands and thresholds instead of
+  embedding exact pass results unless the acceptance gate was run in the same
+  iteration.
 
 ## Known Issues
 
@@ -41,12 +44,27 @@
 - Added 3 web interface tests covering per-file stats, retrieval diagnostics,
   invalid mode handling, and empty-state HTML.
 
+### 4. Documentation Alignment
+- README retrieval sample now matches the CLI hard-budget default, and README
+  benchmark docs show `/tmp` acceptance JSON commands, checker thresholds,
+  paced Ralph loop usage, and held-out dataset/evaluation commands.
+- Configuration docs now list focused, broad, and exhaustive mode behavior with
+  current target budgets and CLI/MCP hard-budget defaults.
+- Integration guide retrieval response sample now includes path, token estimate,
+  score/reason diagnostics, compressed summary metadata, and the current focused
+  target budget example.
+
 ## Iteration Log
 
 - **68438f9** — Work Item 1: MCP input validation for mode and strategy, plus interface schema and validation tests.
 - **5f7a3f8** — Work Item 2: CLI mode/strategy validation and retrieval option tests.
-- Work Item 3: Web stats and retrieval inspection API/UI plus direct handler
+- **096a2b4** — Work Item 3: Web stats and retrieval inspection API/UI plus direct handler
   tests. Verified `npx vitest run tests/interface.test.ts` and
+  `npm run build && npm run lint && npm test` passed with 283 tests.
+- Work Item 4: Documentation alignment for current retrieval defaults, mode
+  behavior, acceptance commands, held-out commands, and one-hour Ralph pacing.
+  Manually verified documented CLI flags and benchmark scripts against
+  `src/cli/index.ts` and `benchmarks/*.ts`. Verified
   `npm run build && npm run lint && npm test` passed with 283 tests.
 
 ## Review Log

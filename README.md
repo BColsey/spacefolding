@@ -185,7 +185,7 @@ node dist/main.js score --task "How does routing work?"
 
 # Focused RAG retrieval
 node dist/main.js retrieve --query "how does authentication work" --mode focused
-# → Intent: explain | Strategy: structural | Mode: focused | Tokens: 600/8000 target (60000 hard cap)
+# → Intent: explain | Strategy: structural | Mode: focused | Tokens: <returned>/<target> target (100000 hard cap)
 # → [WARM] abc12345 src/auth.ts ~300 tokens (structural+fts)
 
 node dist/main.js symbols src/core/scorer.ts
@@ -343,17 +343,42 @@ When code symbols are indexed, retrieval defaults to `structural`. Otherwise, st
 
 ### Benchmarks
 
-We evaluate two separate questions: raw ranking quality and focused context usefulness. For ranking, `benchmarks/evaluate.ts` uses exhaustive selection so top-k metrics are not confounded by budget pruning. With the deterministic structural stack, structural ranking beats keyword on the local benchmark:
+We evaluate two separate questions: raw ranking quality and focused context usefulness. For ranking, `benchmarks/evaluate.ts` uses exhaustive selection so top-k metrics are not confounded by budget pruning. For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` measures file recall, precision, returned tokens, and whether any task returns more tokens than the indexed codebase.
 
-| Metric | Keyword Grep | Spacefolding Structural | Δ |
-|--------|:-----------:|:------------------:|:-:|
-| Recall@10 | 0.796 | **0.983** | +23.6% |
-| NDCG@10 | 0.570 | **0.816** | +43.2% |
-| MRR | 0.525 | **0.833** | +58.7% |
+Run the local acceptance gate with generated JSON in `/tmp`:
 
-For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` reaches 1.000 average file recall with 12.4k average tokens and 0.388 average precision under the current 13k-token acceptance ceiling.
+```bash
+npm run build
+npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json
+npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json
+npx tsx benchmarks/check-acceptance.ts \
+  --retrieval-json /tmp/spacefolding-eval.json \
+  --e2e-json /tmp/spacefolding-e2e.json
+```
 
-See [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for full ranking results, [benchmarks/E2E-RESULTS.md](benchmarks/E2E-RESULTS.md) for focused retrieval results, [benchmarks/MODEL-COMPARISON.md](benchmarks/MODEL-COMPARISON.md) for model comparisons, and [benchmarks/ABLATION.md](benchmarks/ABLATION.md) for the ablation study.
+The checker requires structural ranking to beat keyword on `R@10`, `NDCG@10`, and `MRR`, and focused E2E retrieval to reach at least `0.95` average recall, at least `0.35` average precision, and at most `13k` average tokens.
+
+Run paced autonomous benchmark or integration loops with:
+
+```bash
+RALPH_SLEEP_SECONDS=3600 ./ralph.sh measurement codex
+```
+
+For held-out checks against another local repository, keep generated datasets and benchmark JSON under `/tmp`:
+
+```bash
+npx tsx benchmarks/generate-heldout.ts \
+  --corpus /path/to/other/repo \
+  --output /tmp/spacefolding-heldout-repo.json \
+  --limit 60
+npx tsx benchmarks/evaluate.ts \
+  --dataset /tmp/spacefolding-heldout-repo.json \
+  --corpus /path/to/other/repo \
+  --strategy all \
+  --json > /tmp/spacefolding-heldout-eval.json
+```
+
+See [benchmarks/ACCEPTANCE.md](benchmarks/ACCEPTANCE.md) for the full gate, [benchmarks/HELDOUT.md](benchmarks/HELDOUT.md) for held-out/profiler usage, [benchmarks/RESULTS.md](benchmarks/RESULTS.md) for ranking results, [benchmarks/E2E-RESULTS.md](benchmarks/E2E-RESULTS.md) for focused retrieval results, [benchmarks/MODEL-COMPARISON.md](benchmarks/MODEL-COMPARISON.md) for model comparisons, and [benchmarks/ABLATION.md](benchmarks/ABLATION.md) for the ablation study.
 
 ---
 

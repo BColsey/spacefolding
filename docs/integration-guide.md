@@ -201,13 +201,24 @@ Use `focused` for normal coding-agent prompts. Use `broad` when the task is ambi
 **Returns:**
 ```json
 {
-  "chunks": [{ "id": "...", "text": "...", "tier": "warm", "retrievalSources": ["structural", "fts"] }],
+  "chunks": [{
+    "id": "...",
+    "text": "...",
+    "path": "src/auth/login.ts",
+    "tokensEstimate": 900,
+    "tier": "warm",
+    "retrievalSources": ["structural", "fts"],
+    "retrievalScores": { "structural": 12.5, "fts": 0.4, "final": 12.9 },
+    "retrievalReasons": ["symbol exact match: authenticate"]
+  }],
   "totalTokens": 14800,
   "budget": 50000,
   "hardBudget": 50000,
-  "targetBudget": 17000,
+  "targetBudget": 13000,
   "utilization": 0.296,
   "omittedCount": 3,
+  "compressedCount": 0,
+  "compressedSummaries": [],
   "selectionPolicy": { "mode": "focused", "selectedCandidates": 9 },
   "plan": { "intent": "explain", "strategy": "structural" }
 }
