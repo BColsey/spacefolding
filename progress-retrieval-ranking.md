@@ -29,6 +29,7 @@ Highest severity first. Resolve before starting new work items.
 - 2. Improve Structural And Path Ranking
 - 3. Improve Focused Candidate Selection
 - 4. Improve Query Planning For Debug And Implement Tasks
+- 5. Reranker And Explanation Wiring
 
 ## Iteration Log
 
@@ -92,6 +93,12 @@ Highest severity first. Resolve before starting new work items.
   - Verified `recommendedTopK` tuning by intent and complexity: narrow=5, moderate debug/implement/explain=10, broad=15.
   - Added `tests/query-planner.test.ts` coverage for "add support for X" intent, `SQLiteRepository` splitting, `retrieve_context` splitting, and `src/core/retriever.ts` path extraction.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 258 tests.
+- 2026-05-23: Work item 5 reranker and explanation wiring.
+  - Verified reranker is wired into `HybridRetriever.retrieve()`: top 20 candidates are reranked when a reranker provider is available, with structural exact-match boosts preserved; reranker failure falls back to fused ordering silently.
+  - Verified `PipelineOrchestrator` constructor creates `DeterministicRerankerProvider` for the retriever.
+  - Verified retrieval explanations include score breakdown reasons with `structural=`, `vector=`, `fts=`, `graph=`, `dependency=`, `final=` format.
+  - Added `tests/retriever-ranking.test.ts` coverage for score breakdown in reasons: verifies the `scores` reason string contains all six source score components with 3-decimal precision.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 22 files, 259 tests.
 
 ## Review Log
 

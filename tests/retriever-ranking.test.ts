@@ -224,6 +224,37 @@ describe('HybridRetriever structural ranking', () => {
     expect(results[0].sourceScores?.final).toBe(results[0].score);
   });
 
+  it('includes score breakdown in reasons', async () => {
+    const chunks = [
+      makeChunk('combo', 'src/core/retriever.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      searchByStructure: () => [
+        makeStructuralResult('combo', 3.4, 0, ['symbol exact match: HybridRetriever']),
+      ],
+      searchByVector: () => [{ chunkId: 'combo', score: 0.9 }],
+      searchByText: () => [{ chunkId: 'combo', score: 4 }],
+      searchByLexical: () => [{ chunkId: 'combo', score: 3 }],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('HybridRetriever', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    const reasonStrings = results[0].reasons;
+    const scoreBreakdown = reasonStrings.find((r) => r.startsWith('scores '));
+    expect(scoreBreakdown).toBeDefined();
+    expect(scoreBreakdown!).toMatch(/structural=\d+\.\d{3}/);
+    expect(scoreBreakdown!).toMatch(/vector=\d+\.\d{3}/);
+    expect(scoreBreakdown!).toMatch(/fts=\d+\.\d{3}/);
+    expect(scoreBreakdown!).toMatch(/graph=\d+\.\d{3}/);
+    expect(scoreBreakdown!).toMatch(/dependency=\d+\.\d{3}/);
+    expect(scoreBreakdown!).toMatch(/final=\d+\.\d{3}/);
+  });
+
   it('keeps repository candidates inside focused budget for batch delete implementation tasks', async () => {
     const chunks = [
       makeChunk('mcp-a', 'src/mcp/server.ts', 2_521),
