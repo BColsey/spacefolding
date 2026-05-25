@@ -336,7 +336,7 @@ export const TOOL_DEFINITIONS = [
 
 const TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((tool) => tool.name));
 
-function createServer(pipeline: PipelineOrchestrator): Server {
+export function createMCPServer(pipeline: PipelineOrchestrator): Server {
   const server = new Server(
     { name: 'spacefolding', version: '0.1.0' },
     { capabilities: { tools: {} } }
@@ -753,7 +753,7 @@ export async function startMCPServer(
           const url = new URL(req.url ?? '/', 'http://127.0.0.1');
 
           if (req.method === 'GET' && url.pathname === '/sse') {
-            const server = createServer(pipeline);
+            const server = createMCPServer(pipeline);
             const transport = new SSEServerTransport('/messages', res);
             transports.set(transport.sessionId, { transport, server });
             transport.onclose = () => {
@@ -787,13 +787,13 @@ export async function startMCPServer(
       });
 
       console.error(`Spacefolding SSE server listening on port ${port}`);
-      return createServer(pipeline);
+      return createMCPServer(pipeline);
     } catch (error) {
       console.error('SSE transport unavailable, falling back to stdio:', error);
     }
   }
 
-  const server = createServer(pipeline);
+  const server = createMCPServer(pipeline);
   await server.connect(new StdioServerTransport());
   return server;
 }

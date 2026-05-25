@@ -254,3 +254,12 @@
   payload validation. Verified `npx vitest run tests/interface.test.ts` passed
   with 29 tests and `npm run build && npm run lint && npm test` passed with
   349 tests.
+- Test Coverage: performed a fresh sweep of MCP, CLI, web, and benchmark
+  coverage against `DESIGN.md` user surfaces and `IMPLEMENTATION.md` section
+  10. Fixed the remaining MCP execution coverage gap by exporting the MCP
+  server factory for in-memory SDK tests and exercising the real
+  `retrieve_context` tool call for selected chunk diagnostics, plan and budget
+  metadata, focused/broad/exhaustive mode policy changes, and invalid
+  mode/strategy errors. Verified `npx vitest run tests/interface.test.ts`
+  passed with 32 tests and `npm run build && npm run lint && npm test` passed
+  with 352 tests.

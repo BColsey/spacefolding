@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildCLI, parseRetrieveCommandOptions } from '../src/cli/index.js';
-import { TOOL_DEFINITIONS, validateArgs } from '../src/mcp/server.js';
+import { createMCPServer, TOOL_DEFINITIONS, validateArgs } from '../src/mcp/server.js';
 import { createWebRequestHandler } from '../src/web/server.js';
 import { createRepository } from '../src/storage/repository.js';
 import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
@@ -67,6 +69,28 @@ async function requestWeb(pipeline: PipelineOrchestrator, url: string, method = 
     body,
     json: <T>() => JSON.parse(body) as T,
   };
+}
+
+async function callMcpTool<T>(
+  pipeline: PipelineOrchestrator,
+  name: string,
+  args: Record<string, unknown>
+): Promise<T> {
+  const server = createMCPServer(pipeline);
+  const client = new Client({ name: 'spacefolding-interface-test', version: '0.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    const response = await client.callTool({ name, arguments: args });
+    const text = response.content.find((item) => item.type === 'text');
+    expect(text).toBeDefined();
+    return JSON.parse(text!.text) as T;
+  } finally {
+    await client.close();
+    await server.close();
+  }
 }
 
 afterEach(() => {
@@ -276,6 +300,135 @@ describe('MCP interface', () => {
     const strategy = iterative?.inputSchema.properties.strategy as { description?: string };
 
     expect(strategy?.description).toContain('structural when code symbols are indexed');
+  });
+});
+
+describe('MCP retrieve_context tool calls', () => {
+  it('returns selected chunks with plan, budget, policy, and reason diagnostics', async () => {
+    const { pipeline } = createWebFixture();
+
+    await pipeline.ingest(
+      'file',
+      'export function mcpRetrieveDiagnostics() { return "budget reasons"; }',
+      'code',
+      'src/mcp/diagnostics.ts',
+      'typescript'
+    );
+
+    const result = await callMcpTool<{
+      chunks: Array<{
+        path?: string;
+        tier: string;
+        tokensEstimate: number;
+        retrievalSources: string[];
+        retrievalScores?: { final: number };
+        retrievalReasons: string[];
+      }>;
+      totalTokens: number;
+      budget: number;
+      hardBudget: number;
+      targetBudget: number;
+      utilization: number;
+      omittedCount: number;
+      omitted: Array<{ chunkId: string; reason: string }>;
+      compressedCount: number;
+      compressedSummaries: Array<{ originalChunkId: string; tokensEstimate: number }>;
+      plan: { intent: string; strategy: string };
+      selectionPolicy: { mode: string; effectiveBudget: number; selectedCandidates: number; droppedCandidates: number };
+    }>(pipeline, 'retrieve_context', {
+      query: 'where is mcpRetrieveDiagnostics budget reasons',
+      strategy: 'text',
+      mode: 'focused',
+      maxTokens: 8_000,
+      topK: 10,
+    });
+    const selected = result.chunks.find((chunk) => chunk.path === 'src/mcp/diagnostics.ts');
+
+    expect(result.plan.intent).toBeTruthy();
+    expect(result.plan.strategy).toBe('text');
+    expect(result.budget).toBe(8_000);
+    expect(result.hardBudget).toBe(8_000);
+    expect(result.targetBudget).toBeGreaterThan(0);
+    expect(result.selectionPolicy.mode).toBe('focused');
+    expect(result.selectionPolicy.effectiveBudget).toBe(result.targetBudget);
+    expect(result.selectionPolicy.selectedCandidates).toBeGreaterThan(0);
+    expect(result.selectionPolicy.droppedCandidates).toBeGreaterThanOrEqual(0);
+    expect(result.totalTokens).toBeGreaterThan(0);
+    expect(result.utilization).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(result.omitted)).toBe(true);
+    expect(result.omittedCount).toBe(result.omitted.length);
+    expect(Array.isArray(result.compressedSummaries)).toBe(true);
+    expect(result.compressedCount).toBe(result.compressedSummaries.length);
+    expect(selected?.tier).toBeTruthy();
+    expect(selected?.tokensEstimate).toBeGreaterThan(0);
+    expect(selected?.retrievalSources).toContain('fts');
+    expect(selected?.retrievalScores?.final).toBeGreaterThan(0);
+    expect(selected?.retrievalReasons.length).toBeGreaterThan(0);
+  });
+
+  it('applies focused, broad, and exhaustive mode selection policies', async () => {
+    const { pipeline } = createWebFixture();
+
+    await pipeline.ingest(
+      'file',
+      'export function mcpModePolicyNeedle() { return "mode policy"; }',
+      'code',
+      'src/mcp/mode-policy.ts',
+      'typescript'
+    );
+
+    const focused = await callMcpTool<{
+      targetBudget: number;
+      selectionPolicy: { mode: string; targetBudget: number };
+    }>(pipeline, 'retrieve_context', {
+      query: 'find exact mcpModePolicyNeedle mode policy',
+      strategy: 'text',
+      mode: 'focused',
+      maxTokens: 50_000,
+    });
+    const broad = await callMcpTool<{
+      targetBudget: number;
+      selectionPolicy: { mode: string; targetBudget: number };
+    }>(pipeline, 'retrieve_context', {
+      query: 'find exact mcpModePolicyNeedle mode policy',
+      strategy: 'text',
+      mode: 'broad',
+      maxTokens: 50_000,
+    });
+    const exhaustive = await callMcpTool<{
+      targetBudget: number;
+      selectionPolicy: { mode: string; targetBudget: number };
+    }>(pipeline, 'retrieve_context', {
+      query: 'find exact mcpModePolicyNeedle mode policy',
+      strategy: 'text',
+      mode: 'exhaustive',
+      maxTokens: 50_000,
+    });
+
+    expect(focused.selectionPolicy.mode).toBe('focused');
+    expect(broad.selectionPolicy.mode).toBe('broad');
+    expect(exhaustive.selectionPolicy.mode).toBe('exhaustive');
+    expect(broad.selectionPolicy.targetBudget).toBeGreaterThan(focused.selectionPolicy.targetBudget);
+    expect(exhaustive.selectionPolicy.targetBudget).toBe(50_000);
+    expect(exhaustive.targetBudget).toBe(50_000);
+  });
+
+  it('returns useful MCP errors for invalid mode and strategy calls', async () => {
+    const { pipeline } = createWebFixture();
+
+    const invalidMode = await callMcpTool<{ error: string }>(pipeline, 'retrieve_context', {
+      query: 'find auth',
+      mode: 'everything',
+    });
+    const invalidStrategy = await callMcpTool<{ error: string }>(pipeline, 'retrieve_context', {
+      query: 'find auth',
+      strategy: 'keyword',
+    });
+
+    expect(invalidMode.error).toContain('mode must be one of');
+    expect(invalidMode.error).toContain('focused');
+    expect(invalidStrategy.error).toContain('strategy must be one of');
+    expect(invalidStrategy.error).toContain('structural');
   });
 });
 
