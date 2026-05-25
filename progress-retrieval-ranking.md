@@ -109,6 +109,13 @@ Highest severity first. Resolve before starting new work items.
 
 ## Review Log
 
+- 2026-05-24: Review phase.
+  - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 retrieval behavior and the design selection/budgeting invariants. Fixed focused candidate selection so split parent metadata chunks and missing retrieval chunks are reported in `dropped` with concrete reasons instead of being silently filtered.
+  - Added `tests/retrieval-policy.test.ts` assertions for split parent and missing chunk drop reasons.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 295 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural deltas: R@10 `+0.187500`, NDCG@10 `+0.300656`, MRR `+0.358333`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.404365`, tokens `10911.1`; all tasks stayed below full codebase tokens `41136`.
 - 2026-05-23: Review phase.
   - **Integration Wiring**: Fixed `hotChunkIds` not being passed to `fillBudget()` in `PipelineOrchestrator.retrieve()`. The hot-priority budget mechanism existed but was bypassed; dependency-heavy chunks now get Phase 1 budget priority.
   - **Dead Code**: Removed `querieds` typo entry from `TERM_EXPANSIONS` in `src/core/retriever.ts`.

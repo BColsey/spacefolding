@@ -84,10 +84,21 @@ export function selectRetrievalCandidates(
   const selected: RetrievalResult[] = [];
   const dropped: RetrievalSelectionResult['dropped'] = [];
   const pathCounts = new Map<string, number>();
-  const candidates = retrieval.filter((result) => {
+  const candidates: RetrievalResult[] = [];
+
+  for (const result of retrieval) {
     const chunk = chunks.get(result.chunkId);
-    return chunk && !chunk.metadata?.split;
-  });
+    if (!chunk) {
+      dropped.push({ chunkId: result.chunkId, reason: 'chunk not found' });
+      continue;
+    }
+    if (chunk.metadata?.split) {
+      dropped.push({ chunkId: result.chunkId, reason: 'split parent metadata chunk' });
+      continue;
+    }
+    candidates.push(result);
+  }
+
   const topScore = candidates[0]?.score ?? 0;
   const threshold = topScore * policy.scoreThresholdRatio;
 

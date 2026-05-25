@@ -318,6 +318,10 @@ describe('selectRetrievalCandidates', () => {
 
     expect(result.ranked).toHaveLength(1);
     expect(result.ranked[0].chunkId).toBe('good');
+    expect(result.dropped).toContainEqual({
+      chunkId: 'split',
+      reason: 'split parent metadata chunk',
+    });
   });
 
   it('skips results with chunkId not in chunks map', () => {
@@ -335,6 +339,10 @@ describe('selectRetrievalCandidates', () => {
 
     expect(result.ranked).toHaveLength(1);
     expect(result.ranked[0].chunkId).toBe('a');
+    expect(result.dropped).toContainEqual({
+      chunkId: 'missing',
+      reason: 'chunk not found',
+    });
   });
 
   it('uses source as fallback for path when path is undefined', () => {
