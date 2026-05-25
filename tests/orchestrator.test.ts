@@ -214,6 +214,51 @@ describe('PipelineOrchestrator', () => {
     }
   });
 
+  it('counts unreadable nested directories as skipped during directory ingest', async () => {
+    const dir = createProjectDir({
+      'src/readable.ts': 'export function readable() { return true; }',
+    });
+    const unreadableDir = join(dir, 'blocked');
+    mkdirSync(unreadableDir, { recursive: true });
+    writeFileSync(join(unreadableDir, 'hidden.ts'), 'export function hidden() { return true; }');
+    const { pipeline } = createTestPipeline();
+
+    chmodSync(unreadableDir, 0o000);
+    try {
+      const result = await pipeline.ingestDirectory(dir);
+
+      expect(result.files).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.chunks).toHaveLength(1);
+    } finally {
+      chmodSync(unreadableDir, 0o700);
+      pipeline.close();
+    }
+  });
+
+  it('counts unreadable nested directories as skipped during project ingest', async () => {
+    const dir = createProjectDir({
+      'src/readable.ts': 'export function readableProject() { return true; }',
+    });
+    const unreadableDir = join(dir, 'blocked');
+    mkdirSync(unreadableDir, { recursive: true });
+    writeFileSync(join(unreadableDir, 'hidden.ts'), 'export function hiddenProject() { return true; }');
+    const { pipeline } = createTestPipeline();
+
+    chmodSync(unreadableDir, 0o000);
+    try {
+      const result = await pipeline.ingestProject(dir, { includeDocs: false });
+
+      expect(result.files).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.chunks).toHaveLength(1);
+      expect(result.codeFiles).toBe(1);
+    } finally {
+      chmodSync(unreadableDir, 0o700);
+      pipeline.close();
+    }
+  });
+
   it('does not treat storage failures during project ingest as skipped files', async () => {
     const dir = createProjectDir({
       'src/app.ts': 'export function runApp() { return true; }',

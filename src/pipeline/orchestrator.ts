@@ -55,6 +55,11 @@ export interface FileReingestResult {
   totalChunks: number;
 }
 
+interface WalkResult {
+  files: string[];
+  skipped: number;
+}
+
 export class PipelineOrchestrator {
   private retriever: HybridRetriever;
   private embeddingModel: string;
@@ -447,9 +452,10 @@ export class PipelineOrchestrator {
     dirPath: string,
     type?: string
   ): Promise<{ files: number; chunks: string[]; skipped: number }> {
-    const files = walkDir(dirPath);
+    const walk = walkDir(dirPath);
+    const files = walk.files;
     const chunks: string[] = [];
-    let skipped = 0;
+    let skipped = walk.skipped;
 
     for (const filePath of files) {
       const content = readTextFileForIngest(filePath);
@@ -476,9 +482,10 @@ export class PipelineOrchestrator {
       includeTests: options.includeTests ?? false,
       includeBenchmarks: options.includeBenchmarks ?? false,
     };
-    const files = walkProjectFiles(dirPath, resolvedOptions);
+    const walk = walkProjectFiles(dirPath, resolvedOptions);
+    const files = walk.files;
     const chunks: string[] = [];
-    let skipped = 0;
+    let skipped = walk.skipped;
     let codeFiles = 0;
     let projectContextFiles = 0;
 
@@ -982,16 +989,32 @@ const PROJECT_SKIP_DIRS = new Set([
   'venv',
 ]);
 
-function walkDir(dir: string): string[] {
+function walkDir(dir: string, isRoot = true): WalkResult {
   const results: string[] = [];
-  const entries = readdirSync(dir);
+  let skipped = 0;
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch (error) {
+    if (isRoot) throw error;
+    return { files: [], skipped: 1 };
+  }
+
   for (const entry of entries) {
     const fullPath = join(dir, entry);
-    const stat = lstatSync(fullPath);
+    let stat: ReturnType<typeof lstatSync>;
+    try {
+      stat = lstatSync(fullPath);
+    } catch {
+      skipped++;
+      continue;
+    }
     if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       if (entry !== 'node_modules' && entry !== '.git' && entry !== 'dist' && entry !== '.next' && entry !== '.cache') {
-        results.push(...walkDir(fullPath));
+        const childWalk = walkDir(fullPath, false);
+        results.push(...childWalk.files);
+        skipped += childWalk.skipped;
       }
     } else {
       const ext = extname(entry);
@@ -1000,7 +1023,7 @@ function walkDir(dir: string): string[] {
       }
     }
   }
-  return results;
+  return { files: results, skipped };
 }
 
 function readTextFileForIngest(filePath: string): string | null {
@@ -1014,19 +1037,37 @@ function readTextFileForIngest(filePath: string): string | null {
 function walkProjectFiles(
   dir: string,
   options: Required<ProjectIngestOptions>,
-  rootDir: string = dir
-): string[] {
+  rootDir: string = dir,
+  isRoot = true
+): WalkResult {
   const results: string[] = [];
-  for (const entry of readdirSync(dir)) {
+  let skipped = 0;
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch (error) {
+    if (isRoot) throw error;
+    return { files: [], skipped: 1 };
+  }
+
+  for (const entry of entries) {
     const fullPath = join(dir, entry);
-    const stat = lstatSync(fullPath);
+    let stat: ReturnType<typeof lstatSync>;
+    try {
+      stat = lstatSync(fullPath);
+    } catch {
+      skipped++;
+      continue;
+    }
     if (stat.isSymbolicLink()) continue;
 
     if (stat.isDirectory()) {
       if (PROJECT_SKIP_DIRS.has(entry)) continue;
       if (!options.includeBenchmarks && entry === 'benchmarks') continue;
       if (!options.includeTests && isTestPath(entry)) continue;
-      results.push(...walkProjectFiles(fullPath, options, rootDir));
+      const childWalk = walkProjectFiles(fullPath, options, rootDir, false);
+      results.push(...childWalk.files);
+      skipped += childWalk.skipped;
       continue;
     }
 
@@ -1041,7 +1082,7 @@ function walkProjectFiles(
       results.push(fullPath);
     }
   }
-  return results;
+  return { files: results, skipped };
 }
 
 function isCodePath(filePath: string): boolean {
