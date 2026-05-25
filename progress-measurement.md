@@ -628,3 +628,14 @@
   generation writes under `/tmp`, and no generated benchmark JSON appeared in
   repo status. Verified `npm run build && npm run lint && npm test` passed. No
   spec-compliance defect required code changes.
+- Error Handling: reviewed malformed JSON, missing files, missing strategy
+  summaries, missing E2E summaries, empty datasets, missing option values, and
+  benchmark process failures against `IMPLEMENTATION.md` section 9. Verified
+  checker failures for malformed retrieval JSON, incomplete retrieval/E2E
+  summaries, missing E2E JSON, and missing `--retrieval-json` values exited
+  nonzero with direct actual/expected diagnostics and preserved top-level
+  `passed` plus `checks` for `--json` output. Smoke-tested retrieval, E2E, and
+  profiler CLI failures for missing, malformed, and empty datasets; each exited
+  nonzero and named the failing path or dataset condition. No error-handling
+  defect required code changes, and no generated benchmark JSON appeared in
+  repo status.
