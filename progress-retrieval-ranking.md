@@ -110,6 +110,14 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Code Consistency**: Re-swept retrieval score reasons, source score names, and retrieval option handling. Fixed reranker final-score consistency so reranked candidates now return `score` and `sourceScores.final` matching the rerank-adjusted order, include explicit reranker reasons, and share one source-score breakdown formatter between retriever output and CLI display.
+  - Added `tests/retriever-ranking.test.ts` coverage proving reranked ordering, returned `score`, `sourceScores.final`, and the `scores ... final=` reason agree.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 303 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.890205`, MRR `0.933333`, precision@10 `0.205000`, average results `22.70`.
+  - Latest structural deltas: R@10 `+0.187500`, NDCG@10 `+0.300656`, MRR `+0.358333`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.419683`, tokens `10972.9`; all tasks stayed below full codebase tokens `41581`.
+- 2026-05-25: Review phase.
   - **Test Coverage**: Re-swept query planner, retriever, focused selection policy, and budget tests against the retrieval behavior and selection/budget invariants in `IMPLEMENTATION.md` section 7 and `DESIGN.md`.
   - Fixed a retriever coverage gap for graph traversal behavior: hybrid retrieval now has tests proving dependency graph traversal stays disabled by default and only contributes graph-sourced results when `maxHops` is explicitly requested.
   - Added `tests/retriever-ranking.test.ts` coverage for default-off graph traversal and explicit hybrid graph expansion with a positive graph source score.

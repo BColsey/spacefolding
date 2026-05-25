@@ -7,7 +7,14 @@ import {
 } from '../src/core/retrieval-policy.js';
 import { fillBudget } from '../src/core/budget.js';
 import { DeterministicEmbeddingProvider } from '../src/providers/deterministic-embedding.js';
-import type { CodeReference, CodeSymbol, ContextChunk, EmbeddingProvider, StructuralSearchResult } from '../src/types/index.js';
+import type {
+  CodeReference,
+  CodeSymbol,
+  ContextChunk,
+  EmbeddingProvider,
+  RerankerProvider,
+  StructuralSearchResult,
+} from '../src/types/index.js';
 
 function makeChunk(id: string, path: string, tokensEstimate: number): ContextChunk {
   return {
@@ -253,6 +260,49 @@ describe('HybridRetriever structural ranking', () => {
     expect(scoreBreakdown!).toMatch(/graph=\d+\.\d{3}/);
     expect(scoreBreakdown!).toMatch(/dependency=\d+\.\d{3}/);
     expect(scoreBreakdown!).toMatch(/final=\d+\.\d{3}/);
+  });
+
+  it('reports reranked final scores consistently with result ordering', async () => {
+    const chunks = [
+      makeChunk('a', 'src/auth/session.ts', 900),
+      makeChunk('b', 'src/auth/middleware.ts', 900),
+      makeChunk('c', 'src/auth/types.ts', 900),
+    ];
+    const chunkMap = new Map(chunks.map((chunk) => [chunk.id, chunk]));
+    const storage = {
+      getChunk: (id: string) => chunkMap.get(id) ?? null,
+      getAllChunks: () => chunks,
+      getDependencies: () => [],
+      searchByStructure: () => [],
+      searchByText: () => [],
+      searchByVector: () => [
+        { chunkId: 'a', score: 1 },
+        { chunkId: 'b', score: 0.9 },
+        { chunkId: 'c', score: 0 },
+      ],
+    };
+    const reranker: RerankerProvider = {
+      async rerank() {
+        return [
+          { index: 0, score: 0, reason: 'no keyword overlap' },
+          { index: 1, score: 1, reason: 'direct keyword match' },
+        ];
+      },
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider(), reranker);
+
+    const results = await retriever.retrieve('authentication middleware', {
+      strategy: 'hybrid',
+      topK: 10,
+    });
+
+    expect(results.slice(0, 2).map((result) => result.chunkId)).toEqual(['b', 'a']);
+    expect(results[0].score).toBeGreaterThan(results[1].score);
+    expect(results[0].sourceScores?.final).toBe(results[0].score);
+    expect(results[0].reasons).toContain('reranker direct keyword match: 1.000');
+    expect(results[0].reasons.find((reason) => reason.startsWith('scores '))).toContain(
+      `final=${results[0].score.toFixed(3)}`
+    );
   });
 
   it('keeps graph traversal disabled for hybrid retrieval by default', async () => {

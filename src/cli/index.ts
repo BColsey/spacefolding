@@ -23,6 +23,7 @@ import { exportState, importState } from './commands/export-import.js';
 import type { RetrievalStrategy } from '../core/query-planner.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
+import { formatSourceScoreBreakdown } from '../core/retriever.js';
 import type { RetrievalMode } from '../core/retriever.js';
 import type { EmbeddingProvider } from '../types/index.js';
 
@@ -495,9 +496,7 @@ export function buildCLI(): Command {
           retrieval ? `(${retrieval.sources.join('+')})` : ''
         );
         if (retrieval?.sourceScores) {
-          console.log(chalk.gray(
-            `  scores structural=${retrieval.sourceScores.structural.toFixed(3)} vector=${retrieval.sourceScores.vector.toFixed(3)} fts=${retrieval.sourceScores.fts.toFixed(3)} dependency=${retrieval.sourceScores.dependency.toFixed(3)} graph=${retrieval.sourceScores.graph.toFixed(3)} final=${retrieval.sourceScores.final.toFixed(3)}`
-          ));
+          console.log(chalk.gray(`  ${formatSourceScoreBreakdown(retrieval.sourceScores)}`));
         }
         const preview = chunk.text.slice(0, 120).replace(/\n/g, ' ');
         console.log(chalk.gray(`  ${preview}${chunk.text.length > 120 ? '…' : ''}`));

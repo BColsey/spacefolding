@@ -28,6 +28,7 @@ export interface RetrievalResult {
 }
 
 export type RetrievalSource = 'structural' | 'vector' | 'fts' | 'graph' | 'dependency';
+export type RetrievalSourceScores = NonNullable<RetrievalResult['sourceScores']>;
 
 export interface RetrievalOptions {
   topK?: number;
@@ -40,6 +41,21 @@ export interface RetrievalOptions {
 export type RetrievalMode = 'focused' | 'broad' | 'exhaustive';
 
 const RRF_K = 60; // Reciprocal Rank Fusion constant
+
+const SOURCE_SCORE_FIELDS: Array<keyof RetrievalSourceScores> = [
+  'structural',
+  'vector',
+  'fts',
+  'graph',
+  'dependency',
+  'final',
+];
+
+export function formatSourceScoreBreakdown(sourceScores: RetrievalSourceScores): string {
+  return `scores ${SOURCE_SCORE_FIELDS
+    .map((field) => `${field}=${sourceScores[field].toFixed(3)}`)
+    .join(' ')}`;
+}
 
 /** Merge multiple ranked lists using Reciprocal Rank Fusion */
 export function reciprocalRankFusion(
@@ -226,23 +242,40 @@ export class HybridRetriever {
         const rerankResults = await this.reranker.rerank(query, documents);
 
         // Build a reranker score lookup and re-sort candidates
-        const rerankScoreMap = new Map<number, number>();
+        const rerankScoreMap = new Map<number, { score: number; reason: string }>();
         for (const r of rerankResults) {
-          rerankScoreMap.set(r.index, r.score);
+          if (Number.isFinite(r.index) && Number.isFinite(r.score)) {
+            rerankScoreMap.set(r.index, { score: r.score, reason: r.reason });
+          }
         }
 
         // Re-sort candidates by combined score (fused + small reranker boost)
         const rerankedCandidates = candidates.map(([chunkId, data], idx) => {
-          const rerankerScore = rerankScoreMap.get(idx) ?? 0;
+          const rerank = rerankScoreMap.get(idx);
+          const rerankerScore = rerank?.score ?? 0;
           const exactStructuralBoost = data.reasons.some((reason) =>
             reason.startsWith('symbol exact match') || reason.startsWith('path exact match')
           ) ? 1.0 : 0;
-          return { chunkId, data, combinedScore: data.fusedScore + exactStructuralBoost + rerankerScore * 0.4 };
+          const rerankReasons = [];
+          if (rerank) rerankReasons.push(`reranker ${rerank.reason}: ${rerankerScore.toFixed(3)}`);
+          if (exactStructuralBoost > 0) {
+            rerankReasons.push(`rerank exact structural boost: ${exactStructuralBoost.toFixed(3)}`);
+          }
+          return {
+            chunkId,
+            data,
+            combinedScore: data.fusedScore + exactStructuralBoost + rerankerScore * 0.4,
+            rerankReasons,
+          };
         });
         rerankedCandidates.sort((a, b) => b.combinedScore - a.combinedScore);
 
         reranked = [
-          ...rerankedCandidates.map(({ chunkId, data }) => [chunkId, data] as [string, typeof data]),
+          ...rerankedCandidates.map(({ chunkId, data, combinedScore, rerankReasons }) => {
+            data.finalScore = combinedScore;
+            data.rerankReasons = rerankReasons;
+            return [chunkId, data] as [string, typeof data];
+          }),
           ...sorted.slice(candidates.length),
         ];
       } catch {
@@ -256,24 +289,16 @@ export class HybridRetriever {
       const sources = [...data.sources] as RetrievalSource[];
 
       reasons.push(...data.reasons);
+      reasons.push(...(data.rerankReasons ?? []));
       reasons.push(...retrievalWarnings);
       if (data.sources.has('dependency') && !data.reasons.some((reason) => reason.includes('reference'))) {
         reasons.push('direct dependency/reference boost');
       }
 
-      const sourceScores = {
-        structural: data.sourceScores.structural ?? 0,
-        vector: data.sourceScores.vector ?? 0,
-        fts: data.sourceScores.fts ?? 0,
-        graph: data.sourceScores.graph ?? 0,
-        dependency: data.sourceScores.dependency ?? 0,
-        final: data.fusedScore,
-      };
-      reasons.push(
-        `scores structural=${sourceScores.structural.toFixed(3)} vector=${sourceScores.vector.toFixed(3)} fts=${sourceScores.fts.toFixed(3)} dependency=${sourceScores.dependency.toFixed(3)} graph=${sourceScores.graph.toFixed(3)} final=${sourceScores.final.toFixed(3)}`
-      );
+      const sourceScores = buildSourceScores(data);
+      reasons.push(formatSourceScoreBreakdown(sourceScores));
 
-      return { chunkId, score: data.fusedScore, sources, sourceScores, reasons };
+      return { chunkId, score: sourceScores.final, sources, sourceScores, reasons };
     });
   }
 
@@ -423,27 +448,31 @@ export class HybridRetriever {
       .sort((a, b) => b[1].fusedScore - a[1].fusedScore)
       .slice(0, topK)
       .map(([chunkId, data]) => {
-        const sourceScores = {
-          structural: data.sourceScores.structural ?? 0,
-          vector: 0,
-          fts: data.sourceScores.fts ?? 0,
-          graph: 0,
-          dependency: data.sourceScores.dependency ?? 0,
-          final: data.fusedScore,
-        };
+        const sourceScores = buildSourceScores(data);
         return {
           chunkId,
-          score: data.fusedScore,
+          score: sourceScores.final,
           sources: [...data.sources],
           sourceScores,
           reasons: [
             ...data.reasons,
             ...retrievalWarnings,
-            `scores structural=${sourceScores.structural.toFixed(3)} vector=${sourceScores.vector.toFixed(3)} fts=${sourceScores.fts.toFixed(3)} dependency=${sourceScores.dependency.toFixed(3)} graph=${sourceScores.graph.toFixed(3)} final=${sourceScores.final.toFixed(3)}`,
+            formatSourceScoreBreakdown(sourceScores),
           ],
         };
       });
   }
+}
+
+function buildSourceScores(data: FusedCandidate): RetrievalSourceScores {
+  return {
+    structural: data.sourceScores.structural ?? 0,
+    vector: data.sourceScores.vector ?? 0,
+    fts: data.sourceScores.fts ?? 0,
+    graph: data.sourceScores.graph ?? 0,
+    dependency: data.sourceScores.dependency ?? 0,
+    final: data.finalScore ?? data.fusedScore,
+  };
 }
 
 function errorMessage(err: unknown): string {
@@ -488,9 +517,11 @@ interface SourceResult {
 
 interface FusedCandidate {
   fusedScore: number;
+  finalScore?: number;
   sources: Set<RetrievalSource>;
   sourceScores: Partial<Record<RetrievalSource, number>>;
   reasons: string[];
+  rerankReasons?: string[];
 }
 
 function getFusionWeights(strategy: RetrievalStrategy, vectorReliable: boolean): Record<RetrievalSource, number> {
