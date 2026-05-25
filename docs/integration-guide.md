@@ -194,7 +194,7 @@ Focused RAG retrieval with token budget control. When code symbols are indexed, 
 - `mode` — `focused` (default), `broad`, or `exhaustive`
 - `topK` — Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)
 - `returnLimit` — Max scored candidates to consider before budget filling
-- `maxHops` — Max dependency graph hops (default: `0`; graph traversal is disabled unless requested)
+- `maxHops` — Max dependency graph hops (default: `1` for `strategy: "graph"`, `0` otherwise; graph traversal is disabled unless requested)
 
 Use `focused` for normal coding-agent prompts. Use `broad` when the task is ambiguous and you want more coverage. Use `exhaustive` for manual inspection or ranking benchmarks where you want the raw breadth up to `maxTokens`.
 
@@ -219,7 +219,13 @@ Use `focused` for normal coding-agent prompts. Use `broad` when the task is ambi
   "omittedCount": 3,
   "compressedCount": 0,
   "compressedSummaries": [],
-  "selectionPolicy": { "mode": "focused", "selectedCandidates": 9 },
+  "selectionPolicy": {
+    "mode": "focused",
+    "targetBudget": 13000,
+    "effectiveBudget": 13000,
+    "selectedCandidates": 9,
+    "droppedCandidates": 3
+  },
   "plan": { "intent": "explain", "strategy": "structural" }
 }
 ```

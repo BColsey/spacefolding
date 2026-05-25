@@ -29,13 +29,15 @@ Most academic CodeRAG systems assume cloud API access and unlimited context. Spa
 
 ## 2. Hybrid Retrieval for Code Search
 
-### RRF (Reciprocal Rank Fusion)
+### Source Fusion
 
-Spacefolding uses RRF with k=60 to merge vector, FTS5, and graph results. RRF was introduced by:
+Current Spacefolding retrieval uses score-weighted source fusion with explicit structural, vector, FTS, dependency, graph, and final score reporting. Earlier ablation documents compare RRF-style fusion because that was the experimental baseline before the current retriever was tuned.
+
+RRF was introduced by:
 
 - **Cormack, Clarke & Büttcher (2009)** — "Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods" (SIGIR '09)
 - RRF is **well-established** but mostly for web/document search, not specifically code.
-- **Our ablation found RRF fusion with FTS5 + graph actually HURTS performance** when using strong embedding models (GTE-ModernBERT). Vector-only retrieval beats hybrid by 7-22% on NDCG/MRR.
+- **Our ablation found RRF-style fusion with FTS5 + graph hurt performance** when using strong embedding models (GTE-ModernBERT). Vector-only retrieval beat that hybrid by 7-22% on NDCG/MRR in the April 2026 snapshot.
 
 ### Code-Specific Retrieval
 

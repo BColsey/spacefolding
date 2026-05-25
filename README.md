@@ -109,7 +109,7 @@ It runs as a **Docker container**, a **CLI tool**, an **MCP server** (for Claude
          │          R E T R I E V A L            │
          │                                       │
          │   vector search + FTS5 + graph walk   │
-         │   → Reciprocal Rank Fusion            │
+         │   → score-weighted source fusion      │
          │   → budget fill (token limit)         │
          └─────────────────┬─────────────────────┘
                            │
@@ -341,6 +341,8 @@ When code symbols are indexed, retrieval defaults to `structural`. Otherwise, st
 - **`local`** (BGE-small) → `hybrid` (vector + FTS5, weaker embeddings benefit from keyword search)
 - **`deterministic`** (hash-based) → `text` (near-random vectors, FTS5/BM25 is more reliable)
 
+Dependency graph traversal stays off by default for adaptive, structural, hybrid, vector, and text retrieval. Explicit `strategy: "graph"` starts with one graph hop unless `maxHops` is provided.
+
 ### Benchmarks
 
 We evaluate two separate questions: raw ranking quality and focused context usefulness. For ranking, `benchmarks/evaluate.ts` uses exhaustive selection so top-k metrics are not confounded by budget pruning. For focused coding-agent retrieval, `benchmarks/e2e-benchmark.ts --strategy structural` measures file recall, precision, returned tokens, and whether any task returns more tokens than the indexed codebase.
@@ -412,7 +414,7 @@ src/
 │   └── token-estimator.ts     Token count estimation
 │
 ├── storage/               # Persistence + search
-│   ├── schema.ts              SQLite DDL + migrations (v1-v4)
+│   ├── schema.ts              SQLite DDL + migrations (v1-v5)
 │   ├── repository.ts          CRUD + vector store + FTS5 + structural search
 │   └── vector-index.ts        sqlite-vec ANN cache with brute-force fallback
 │

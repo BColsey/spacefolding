@@ -1,5 +1,7 @@
 # Spacefolding Design
 
+Current status: the local quality gate and acceptance gate passed on 2026-05-25 using generated benchmark JSON under `/tmp`. This design remains the product contract; rerun the commands below after changes because benchmark metrics are codebase-state dependent.
+
 ## Purpose
 
 Spacefolding is a local-first context management service for coding agents. It ingests project files and working context, indexes them, retrieves the most relevant pieces for a task, and fits the result into a token budget.
@@ -159,4 +161,3 @@ This loop does not require:
 - Human participant studies.
 - Replacing SQLite with another database.
 - Rewriting the product around a new framework.
-
