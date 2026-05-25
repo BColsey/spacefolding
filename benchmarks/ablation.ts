@@ -16,9 +16,10 @@
  *   npx tsx benchmarks/ablation.ts [--local-embeddings]
  */
 
-import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 // ── Types ──
 
@@ -245,8 +246,8 @@ async function runAblation(options: AblationCliOptions) {
     embeddingProvider = new DeterministicEmbeddingProvider();
   }
 
-  const dbPath = join(benchDir, 'ablation-eval.db');
-  try { unlinkSync(dbPath); } catch {}
+  const dbPath = benchmarkSqlitePath('ablation-eval');
+  removeSqliteArtifacts(dbPath);
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -542,7 +543,7 @@ async function runAblation(options: AblationCliOptions) {
   if ('close' in embeddingProvider && typeof (embeddingProvider as any).close === 'function') {
     (embeddingProvider as any).close();
   }
-  try { unlinkSync(dbPath); } catch {}
+  removeSqliteArtifacts(dbPath);
 
   console.log(`\n${'═'.repeat(70)}`);
   console.log(`  ABLATION COMPLETE`);

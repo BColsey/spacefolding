@@ -14,10 +14,11 @@
  * returned context size (tokensReturned, chunksReturned), and memory.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
+import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 interface BenchmarkTask {
   id: string;
@@ -195,10 +196,8 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   const { ContextIngester } = await import('../dist/core/ingester.js');
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
 
-  const dbPath = join('/tmp', `spacefolding-profile-${process.pid}.db`);
-  for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-    try { unlinkSync(path); } catch {}
-  }
+  const dbPath = benchmarkSqlitePath('profile');
+  removeSqliteArtifacts(dbPath);
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -285,9 +284,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   };
 
   pipeline.close();
-  for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-    try { unlinkSync(path); } catch {}
-  }
+  removeSqliteArtifacts(dbPath);
 
   if (options.json) {
     console.log(JSON.stringify(output, null, 2));

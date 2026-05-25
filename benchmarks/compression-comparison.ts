@@ -9,9 +9,10 @@
  *   npx tsx benchmarks/compression-comparison.ts --with-llmlingua
  */
 
-import { readFileSync, unlinkSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 interface BenchmarkTask {
   id: string;
@@ -90,8 +91,8 @@ async function main(options: CompressionCliOptions) {
   const { ContextIngester } = await import('../dist/core/ingester.js');
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
 
-  const dbPath = join(benchDir, 'compression-eval.db');
-  try { unlinkSync(dbPath); } catch {}
+  const dbPath = benchmarkSqlitePath('compression-eval');
+  removeSqliteArtifacts(dbPath);
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -268,7 +269,7 @@ async function main(options: CompressionCliOptions) {
   // Cleanup
   pipeline.close();
   if (llmLingua?.close) llmLingua.close();
-  try { unlinkSync(dbPath); } catch {}
+  removeSqliteArtifacts(dbPath);
 }
 
 function isMainModule(): boolean {

@@ -15,9 +15,10 @@
  *   EMBEDDING_PROVIDER=deterministic npx tsx benchmarks/e2e-benchmark.ts
  */
 
-import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, extname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -325,10 +326,8 @@ async function runE2EBenchmark(options: CliOptions) {
 
   // Support EMBEDDING_PROVIDER=local for real ONNX embeddings
   const embeddingProviderEnv = process.env.EMBEDDING_PROVIDER ?? 'deterministic';
-  const dbPath = process.env.DB_PATH ?? join(benchDir, 'e2e-benchmark.db');
-  try {
-    unlinkSync(dbPath);
-  } catch {}
+  const dbPath = process.env.DB_PATH ?? benchmarkSqlitePath('e2e-benchmark');
+  removeSqliteArtifacts(dbPath);
 
   let embeddingProvider;
   if (embeddingProviderEnv === 'local') {
@@ -775,9 +774,7 @@ async function runE2EBenchmark(options: CliOptions) {
   pipeline.close();
   // Only auto-delete the default db path; custom paths are the caller's responsibility
   if (!process.env.DB_PATH) {
-    try {
-      unlinkSync(dbPath);
-    } catch {}
+    removeSqliteArtifacts(dbPath);
   }
 
   const avgTokensVsCurrent = comparisons.reduce((sum, c) => sum + c.spacefold.tokensVsCurrent, 0) / comparisons.length;

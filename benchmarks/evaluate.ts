@@ -9,9 +9,10 @@
  *   npx tsx benchmarks/evaluate.ts --strategy vector
  */
 
-import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -513,8 +514,8 @@ async function runEvaluation(options: CliOptions) {
   const { parseStructuralQuery } = await import('../dist/core/query-planner.js');
 
   // Create a test pipeline with the Spacefolding codebase ingested
-  const dbPath = join(benchDir, 'benchmark-eval.db');
-  try { unlinkSync(dbPath); } catch {}
+  const dbPath = benchmarkSqlitePath('benchmark-eval');
+  removeSqliteArtifacts(dbPath);
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -657,7 +658,7 @@ async function runEvaluation(options: CliOptions) {
 
   // Cleanup
   pipeline.close();
-  try { unlinkSync(dbPath); } catch {}
+  removeSqliteArtifacts(dbPath);
 
   const report = buildEvaluationReport({
     dataset: options.dataset,

@@ -98,6 +98,12 @@
 - Dead-code reviews should compare result snapshot docs against freshly
   generated `/tmp` benchmark JSON, because stale metric tables are dead
   diagnostic surface even when checker code is fully wired.
+- Benchmark scratch SQLite databases should use a shared `/tmp` temp-artifact
+  helper and remove `-wal`/`-shm` sidecars, because ignored repo-local DB files
+  still pollute the worktree and can hide artifact-location drift.
+- Git ignore rules should include all loop housekeeping artifacts, including
+  `coverage/`, so local quality-gate output cannot accidentally become commit
+  surface.
 
 ## Known Issues
 
@@ -574,4 +580,19 @@
   `npm run build && npm run lint && npm test`, `npx tsc -p
   benchmarks/tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters`, and
   the documented acceptance checker command passed. No generated benchmark JSON
+  appeared in repo status.
+- Integration Wiring: compared documented benchmark artifact expectations in
+  `DESIGN.md`, `IMPLEMENTATION.md`, `benchmarks/ACCEPTANCE.md`,
+  `benchmarks/HELDOUT.md`, and `README.md` against the real benchmark scripts
+  and ignore rules. Fixed retrieval evaluation, E2E, profiler, ablation, and
+  compression benchmark scratch SQLite paths so generated DBs use `/tmp` and
+  remove `-wal`/`-shm` sidecars; added `coverage/` to `.gitignore` to match loop
+  housekeeping. Added temp-artifact helper coverage in
+  `tests/benchmark-secondary-cli.test.ts`. Verified `npx vitest run
+  tests/benchmark-secondary-cli.test.ts tests/benchmark-evaluate.test.ts
+  tests/benchmark-e2e.test.ts tests/benchmark-profile.test.ts`,
+  `npx tsc -p benchmarks/tsconfig.json --noEmit`, and
+  `npm run build && npm run lint && npm test` passed. Ran the documented
+  retrieval, E2E, and acceptance-checker commands with JSON under `/tmp`, and
+  smoke-tested fixture profiler JSON under `/tmp`; no generated benchmark JSON
   appeared in repo status.

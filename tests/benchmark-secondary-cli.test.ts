@@ -1,7 +1,10 @@
+import { existsSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs as parseAblationArgs } from '../benchmarks/ablation.ts';
 import { parseArgs as parseCompressionArgs } from '../benchmarks/compression-comparison.ts';
+import { benchmarkSqlitePath, removeSqliteArtifacts } from '../benchmarks/temp-artifacts.ts';
 
 describe('secondary benchmark CLI parsing', () => {
   it('parses ablation benchmark options without executing on import', () => {
@@ -56,5 +59,24 @@ describe('secondary benchmark CLI parsing', () => {
     expect(() => parseCompressionArgs(['tasks.json'])).toThrow(
       'Unknown argument: tasks.json'
     );
+  });
+
+  it('keeps benchmark SQLite scratch files under /tmp and removes sidecars', () => {
+    const dbPath = benchmarkSqlitePath('secondary-cli-test');
+    expect(dbPath.startsWith(tmpdir())).toBe(true);
+
+    try {
+      writeFileSync(dbPath, '');
+      writeFileSync(`${dbPath}-wal`, '');
+      writeFileSync(`${dbPath}-shm`, '');
+
+      removeSqliteArtifacts(dbPath);
+
+      expect(existsSync(dbPath)).toBe(false);
+      expect(existsSync(`${dbPath}-wal`)).toBe(false);
+      expect(existsSync(`${dbPath}-shm`)).toBe(false);
+    } finally {
+      removeSqliteArtifacts(dbPath);
+    }
   });
 });
