@@ -513,6 +513,72 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
+  it('removes stale split tree indexes when changed content no longer splits', async () => {
+    const { pipeline, storage } = createTestPipeline({
+      maxTokens: 80,
+      overlapTokens: 0,
+      strategy: 'code',
+    });
+    const embeddingProvider = new DeterministicEmbeddingProvider();
+    const path = 'src/shrinking-reingest.ts';
+
+    await pipeline.ingest(
+      'file',
+      [
+        functionBlock('oldLargeAlpha', 'alpha'),
+        functionBlock('oldLargeBeta', 'beta'),
+      ].join('\n\n'),
+      'code',
+      path
+    );
+    const before = pipeline.getAllChunks().filter((chunk) => chunk.path === path);
+    const staleParent = before.find((chunk) => chunk.metadata.split);
+    const staleChild = before.find((chunk) => !chunk.metadata.split && chunk.text.includes('oldLargeAlpha'));
+
+    expect(staleParent).toBeDefined();
+    expect(staleChild).toBeDefined();
+    expect(storage.getEmbedding(staleChild!.id)).not.toBeNull();
+    expect(storage.getDependencies(staleParent!.id).map((link) => link.toId)).toContain(staleChild!.id);
+    expect(storage.getCodeSymbols(staleChild!.id).map((symbol) => symbol.name)).toContain('oldLargeAlpha');
+
+    storage.initVectorIndex(384);
+    const staleQuery = await embeddingProvider.embed(staleChild!.text);
+    expect(storage.searchByVector(staleQuery, 20).map((result) => result.chunkId)).toContain(staleChild!.id);
+
+    const result = await pipeline.reingestFile(
+      path,
+      'export function smallReplacement() { return true; }',
+      'code'
+    );
+    const after = pipeline.getAllChunks().filter((chunk) => chunk.path === path);
+
+    expect(result).toMatchObject({
+      path,
+      changed: true,
+      reusedChunks: 0,
+      createdChunks: 1,
+      deletedChunks: before.length,
+      totalChunks: 1,
+    });
+    expect(after).toHaveLength(1);
+    expect(after[0].metadata.split).toBeUndefined();
+    expect(after[0].parentId).toBeUndefined();
+    expect(storage.getCodeSymbols(after[0].id).map((symbol) => symbol.name)).toEqual(['smallReplacement']);
+    expect(storage.getEmbedding(after[0].id)).not.toBeNull();
+
+    for (const stale of before) {
+      expect(storage.getChunk(stale.id)).toBeNull();
+      expect(storage.getEmbedding(stale.id)).toBeNull();
+      expect(storage.getDependencies(stale.id)).toEqual([]);
+      expect(storage.getCodeSymbols(stale.id)).toEqual([]);
+      expect(storage.getCodeReferences(stale.id)).toEqual([]);
+    }
+    expect(storage.searchByVector(staleQuery, 50).map((row) => row.chunkId)).not.toContain(staleChild!.id);
+    expect(storage.searchByText('oldLargeAlpha', 20).map((row) => row.chunkId)).not.toContain(staleChild!.id);
+
+    pipeline.close();
+  });
+
   it('focused retrieval excludes split metadata parent chunks', async () => {
     const { pipeline } = createTestPipeline({
       maxTokens: 80,
