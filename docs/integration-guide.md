@@ -192,7 +192,7 @@ Focused RAG retrieval with token budget control. When code symbols are indexed, 
 - `maxTokens` — Max token budget (default: auto based on query intent)
 - `strategy` — `structural`, `hybrid`, `vector`, `text`, or `graph`
 - `mode` — `focused` (default), `broad`, or `exhaustive`
-- `topK` — Max retrieval results before selection (default: adaptive by query)
+- `topK` — Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)
 - `returnLimit` — Max scored candidates to consider before budget filling
 - `maxHops` — Max dependency graph hops (default: `0`; graph traversal is disabled unless requested)
 

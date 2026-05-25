@@ -214,7 +214,7 @@ export const TOOL_DEFINITIONS = [
         },
         topK: {
           type: 'number',
-          description: 'Max results to retrieve before budget filtering (default: adaptive by query intent)',
+          description: 'Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)',
         },
         returnLimit: {
           type: 'number',

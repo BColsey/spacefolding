@@ -121,6 +121,7 @@ describe('CLI interface', () => {
     const cli = buildCLI();
     const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
     const optionLongs = retrieve?.options.map((option) => option.long) ?? [];
+    const topKOpt = retrieve?.options.find((option) => option.long === '--top-k');
 
     expect(optionLongs).toContain('--mode');
     expect(optionLongs).toContain('--strategy');
@@ -128,6 +129,8 @@ describe('CLI interface', () => {
     expect(optionLongs).toContain('--top-k');
     expect(optionLongs).toContain('--return-limit');
     expect(optionLongs).toContain('--max-hops');
+    expect(topKOpt?.description).toContain('retrieval candidates');
+    expect(topKOpt?.description).toContain('selection and token budgeting');
   });
 
   it('retrieve command mode option describes focused, broad, exhaustive', () => {
@@ -288,7 +291,8 @@ describe('MCP interface', () => {
     expect(props.mode?.description).toBeTruthy();
     expect(props.strategy?.description).toBeTruthy();
     expect(props.maxTokens?.description).toBeTruthy();
-    expect(props.topK?.description).toBeTruthy();
+    expect(props.topK?.description).toContain('retrieval candidates');
+    expect(props.topK?.description).toContain('selection and token budgeting');
     expect(props.returnLimit?.description).toBeTruthy();
     expect(props.maxHops?.description).toContain('default: 1 for graph strategy');
     expect(props.maxHops?.description).toContain('0 otherwise');

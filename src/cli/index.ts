@@ -446,7 +446,7 @@ export function buildCLI(): Command {
     .option('--max-tokens <number>', 'Max token budget (default: adaptive by query intent)')
     .option('--strategy <type>', 'Search strategy: structural, hybrid, vector, text, graph')
     .option('--mode <type>', 'Selection mode: focused, broad, exhaustive', 'focused')
-    .option('--top-k <number>', 'Max results to return (default: adaptive)')
+    .option('--top-k <number>', 'Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)')
     .option('--return-limit <number>', 'Max scored candidates to consider before token budgeting')
     .option('--max-hops <number>', 'Max graph traversal hops (default: 1 for graph strategy, 0 otherwise)')
     .action(async (opts, cmd) => {

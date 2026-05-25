@@ -61,6 +61,9 @@
   `compress_context` chunk IDs and validates `update_context_graph` chunk ID,
   operation, dependency array, dependency endpoint IDs, dependency type, and
   finite dependency weight before execution.
+- Code Consistency review: aligned `topK` terminology across CLI help, MCP
+  schema text, integration docs, and interface assertions so it is described as
+  pre-selection retrieval candidates rather than returned chunks.
 
 ## Completed Work Items
 
@@ -263,3 +266,11 @@
   mode/strategy errors. Verified `npx vitest run tests/interface.test.ts`
   passed with 32 tests and `npm run build && npm run lint && npm test` passed
   with 352 tests.
+- Code Consistency: performed a fresh sweep of retrieval naming for mode,
+  strategy, budget, reasons, `topK`, and `returnLimit` across MCP, CLI, web,
+  pipeline return objects, policy helpers, docs, and benchmark consumers.
+  Fixed stale CLI `--top-k` wording that described returned results even
+  though `topK` controls retrieval candidates before selection and token
+  budgeting; aligned the MCP schema description, integration guide, and
+  interface coverage with that terminology. Verified
+  `npm run build && npm run lint && npm test` passed with 352 tests.
