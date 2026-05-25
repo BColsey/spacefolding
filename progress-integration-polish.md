@@ -57,6 +57,10 @@
   default so `PipelineOrchestrator.retrieve()` applies its query-adaptive hard
   budget; README/configuration docs and interface coverage now reflect the
   adaptive default.
+- Error Handling review: MCP validation now enforces required
+  `compress_context` chunk IDs and validates `update_context_graph` chunk ID,
+  operation, dependency array, dependency endpoint IDs, dependency type, and
+  finite dependency weight before execution.
 
 ## Completed Work Items
 
@@ -241,3 +245,12 @@
   interface coverage for the adaptive default. Verified
   `npx vitest run tests/interface.test.ts` passed with 28 tests and
   `npm run build && npm run lint && npm test` passed with 348 tests.
+- Error Handling: performed a fresh sweep of MCP and CLI invalid-input paths,
+  web empty/error states, and benchmark JSON failure behavior against
+  `IMPLEMENTATION.md` section 9. Fixed MCP validation drift for
+  `compress_context` and `update_context_graph`, which previously allowed
+  schema-required inputs to be omitted or malformed before dispatch. Added
+  interface coverage for missing compression chunk IDs and graph update
+  payload validation. Verified `npx vitest run tests/interface.test.ts` passed
+  with 29 tests and `npm run build && npm run lint && npm test` passed with
+  349 tests.

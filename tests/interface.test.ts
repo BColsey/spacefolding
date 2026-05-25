@@ -325,11 +325,47 @@ describe('MCP input validation', () => {
   it('validates MCP required arguments by tool without rejecting no-arg tools', () => {
     expect(validateArgs(undefined, 'list_context')).toBeUndefined();
     expect(validateArgs({}, 'ingest_project')).toContain('path must be a non-empty string');
+    expect(validateArgs({}, 'compress_context')).toContain('task must be an object with text string');
+    expect(validateArgs({ task: { text: 'summarize' } }, 'compress_context')).toContain(
+      'chunkIds must be a non-empty array'
+    );
     expect(validateArgs({}, 'delete_context')).toContain('chunkIds must be a non-empty array');
     expect(validateArgs({ chunkIds: ['valid', ''] }, 'delete_context')).toContain(
       'chunkIds must contain non-empty strings'
     );
     expect(validateArgs({}, 'score_context')).toContain('task must be an object with text string');
+  });
+
+  it('validates MCP graph updates before executing them', () => {
+    expect(validateArgs({}, 'update_context_graph')).toContain('chunkId must be a non-empty string');
+    expect(validateArgs({ chunkId: 'chunk-1', operation: 'replace', dependencies: [] }, 'update_context_graph')).toContain(
+      'operation must be one of'
+    );
+    expect(validateArgs({ chunkId: 'chunk-1', operation: 'add', dependencies: [] }, 'update_context_graph')).toContain(
+      'dependencies must be a non-empty array'
+    );
+    expect(
+      validateArgs(
+        { chunkId: 'chunk-1', operation: 'add', dependencies: [{ fromId: 'chunk-1', toId: '', type: 'references' }] },
+        'update_context_graph'
+      )
+    ).toContain('dependencies[0].toId must be a non-empty string');
+    expect(
+      validateArgs(
+        { chunkId: 'chunk-1', operation: 'add', dependencies: [{ fromId: 'chunk-1', toId: 'chunk-2', type: 'imports' }] },
+        'update_context_graph'
+      )
+    ).toContain('dependencies[0].type must be one of');
+    expect(
+      validateArgs(
+        {
+          chunkId: 'chunk-1',
+          operation: 'add',
+          dependencies: [{ fromId: 'chunk-1', toId: 'chunk-2', type: 'references', weight: 0.8 }],
+        },
+        'update_context_graph'
+      )
+    ).toBeUndefined();
   });
 });
 

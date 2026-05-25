@@ -15,6 +15,8 @@ const MAX_CHUNK_IDS = 1_000;
 
 const VALID_STRATEGIES: readonly string[] = RETRIEVAL_STRATEGIES;
 const VALID_MODES: readonly string[] = RETRIEVAL_MODES;
+const VALID_GRAPH_OPERATIONS = ['add', 'remove'] as const;
+const VALID_DEPENDENCY_TYPES = ['references', 'defines', 'summarizes', 'overrides', 'contains'] as const;
 
 function describeTool(description: string): string {
   return USE_GPU
@@ -613,9 +615,39 @@ export function validateArgs(args: Record<string, unknown> | undefined, toolName
     }
   }
 
-  if (toolName === 'delete_context') {
+  if (toolName === 'compress_context' || toolName === 'delete_context') {
     if (!Array.isArray(args.chunkIds) || args.chunkIds.length === 0) {
       return 'chunkIds must be a non-empty array';
+    }
+  }
+
+  if (toolName === 'update_context_graph') {
+    if (typeof args.chunkId !== 'string' || args.chunkId.trim().length === 0) {
+      return 'chunkId must be a non-empty string';
+    }
+    if (!VALID_GRAPH_OPERATIONS.includes(args.operation as typeof VALID_GRAPH_OPERATIONS[number])) {
+      return `operation must be one of: ${VALID_GRAPH_OPERATIONS.join(', ')}`;
+    }
+    if (!Array.isArray(args.dependencies) || args.dependencies.length === 0) {
+      return 'dependencies must be a non-empty array';
+    }
+    for (const [index, dependency] of args.dependencies.entries()) {
+      if (!dependency || typeof dependency !== 'object' || Array.isArray(dependency)) {
+        return `dependencies[${index}] must be an object`;
+      }
+      const link = dependency as Record<string, unknown>;
+      if (typeof link.fromId !== 'string' || link.fromId.trim().length === 0) {
+        return `dependencies[${index}].fromId must be a non-empty string`;
+      }
+      if (typeof link.toId !== 'string' || link.toId.trim().length === 0) {
+        return `dependencies[${index}].toId must be a non-empty string`;
+      }
+      if (!VALID_DEPENDENCY_TYPES.includes(link.type as typeof VALID_DEPENDENCY_TYPES[number])) {
+        return `dependencies[${index}].type must be one of: ${VALID_DEPENDENCY_TYPES.join(', ')}`;
+      }
+      if (link.weight !== undefined && (typeof link.weight !== 'number' || !Number.isFinite(link.weight))) {
+        return `dependencies[${index}].weight must be a finite number`;
+      }
     }
   }
 
