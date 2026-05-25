@@ -87,3 +87,14 @@
 ## Review Log
 
 (Entries added during review phase: category reviewed, what was checked, what was fixed.)
+
+- Spec Compliance: compared `DESIGN.md` user surfaces and success metrics plus
+  `IMPLEMENTATION.md` retrieval/config/testing contracts against MCP
+  `retrieve_context`, CLI `retrieve`, web `/api/retrieve`, README,
+  configuration docs, integration guide, and benchmark docs. Verified focused,
+  broad, and exhaustive modes are exposed or documented where required; selected
+  chunks include plan, budget, tier, source, score, and reason diagnostics on
+  MCP/web surfaces; CLI output includes intent, strategy, mode, token budget,
+  selected paths, and score breakdown; benchmark docs use `/tmp` artifacts and
+  current acceptance commands. No spec-compliance defect required code changes.
+  Verified `npm run build && npm run lint && npm test` passed with 283 tests.
