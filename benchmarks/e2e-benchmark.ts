@@ -1023,9 +1023,14 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  const e2eOptions = parseArgs(process.argv.slice(2));
-  runE2EBenchmark(e2eOptions).catch((err) => {
-    console.error('E2E benchmark failed:', err);
+  try {
+    const e2eOptions = parseArgs(process.argv.slice(2));
+    runE2EBenchmark(e2eOptions).catch((err) => {
+      console.error(`E2E benchmark failed: ${errorMessage(err)}`);
+      process.exit(1);
+    });
+  } catch (err) {
+    console.error(`E2E benchmark failed: ${errorMessage(err)}`);
     process.exit(1);
-  });
+  }
 }

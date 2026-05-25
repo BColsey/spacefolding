@@ -116,6 +116,11 @@
 - Standalone benchmark doc flows that run scripts importing `dist` should
   include `npm run build` before those scripts, even when a nearby acceptance
   flow already includes the build step.
+- Secondary benchmark scripts should load datasets through path-aware validators
+  before expensive benchmark work, so malformed JSON and missing files fail with
+  direct dataset-path diagnostics.
+- Benchmark CLI top-level catches should print `errorMessage(error)`, not Error
+  objects, so expected bad-input failures do not include stack traces.
 
 ## Known Issues
 
@@ -730,4 +735,23 @@
   diagnostics, and `successGate.focusedRetrievalPasses`. Verified
   `npm run build && npm run lint && npm test` passed. No spec-compliance defect
   required code changes, and no generated benchmark JSON appeared in repo
+  status.
+- Error Handling: reviewed malformed JSON, missing files, missing strategy
+  summaries, missing E2E summaries, empty datasets, bad arguments, and
+  benchmark process failures against `IMPLEMENTATION.md` section 9. Fixed the
+  secondary ablation and compression benchmarks to use path-aware dataset
+  loaders instead of raw `JSON.parse(readFileSync(...))`, and fixed retrieval
+  evaluation and E2E top-level CLI catches so expected bad inputs print direct
+  one-line messages instead of Error-object stack traces. Added coverage for
+  malformed ablation/compression dataset roots, empty task arrays, malformed
+  task fields, unreadable files, and malformed JSON files. Verified
+  `npx vitest run tests/benchmark-secondary-cli.test.ts
+  tests/benchmark-evaluate.test.ts tests/benchmark-e2e.test.ts`,
+  `npx tsc -p benchmarks/tsconfig.json --noEmit`, and
+  `npm run build && npm run lint && npm test` passed. Smoke-tested malformed
+  checker JSON, malformed retrieval/profile/ablation datasets, empty E2E
+  datasets, unknown retrieval arguments, and invalid E2E strategy arguments;
+  all exited nonzero with direct diagnostics and no stack traces. Generated
+  retrieval and E2E JSON under `/tmp`, ran the documented acceptance checker
+  successfully, and confirmed no generated benchmark JSON appeared in repo
   status.

@@ -696,9 +696,14 @@ function isMainModule(): boolean {
 
 if (isMainModule()) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const options = parseArgs(process.argv.slice(2), benchDir);
-  runEvaluation(options).catch((err) => {
-    console.error('Benchmark failed:', err);
+  try {
+    const options = parseArgs(process.argv.slice(2), benchDir);
+    runEvaluation(options).catch((err) => {
+      console.error(`Benchmark failed: ${errorMessage(err)}`);
+      process.exit(1);
+    });
+  } catch (err) {
+    console.error(`Benchmark failed: ${errorMessage(err)}`);
     process.exit(1);
-  });
+  }
 }

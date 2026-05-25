@@ -29,11 +29,15 @@ interface BenchmarkTask {
   task: string;
   intent: string;
   relevant_files: string[];
-  relevant_types: string[];
-  relevant_keywords: string[];
-  irrelevant_files: string[];
-  difficulty?: 'easy' | 'medium' | 'hard';
-  source?: 'expert' | 'generated';
+  relevant_types?: string[];
+  relevant_keywords?: string[];
+  irrelevant_files?: string[];
+  difficulty?: string;
+  source?: string;
+}
+
+export interface AblationDataset {
+  tasks: BenchmarkTask[];
 }
 
 interface Metrics {
@@ -96,6 +100,119 @@ function readOptionValue(argv: string[], index: number, flag: string): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireTaskString(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string {
+  const value = task[field];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(
+      `Ablation dataset task ${index + 1} field ${field} must be a non-empty string: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+function requireTaskStringArray(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string[] {
+  const value = task[field];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(
+      `Ablation dataset task ${index + 1} field ${field} must be an array of strings: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+function optionalTaskStringArray(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string[] | undefined {
+  const value = task[field];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(
+      `Ablation dataset task ${index + 1} field ${field} must be an array of strings: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+function optionalTaskString(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string | undefined {
+  const value = task[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(
+      `Ablation dataset task ${index + 1} field ${field} must be a non-empty string: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+export function parseAblationDataset(data: unknown, datasetPath: string): AblationDataset {
+  if (!isRecord(data) || !Array.isArray(data.tasks)) {
+    throw new Error(`Ablation dataset must contain a tasks array: ${datasetPath}`);
+  }
+  if (data.tasks.length === 0) {
+    throw new Error(`Ablation dataset has no tasks: ${datasetPath}`);
+  }
+
+  return {
+    tasks: data.tasks.map((task, index) => {
+      if (!isRecord(task)) {
+        throw new Error(`Ablation dataset task ${index + 1} must be an object: ${datasetPath}`);
+      }
+
+      return {
+        id: requireTaskString(task, 'id', index, datasetPath),
+        task: requireTaskString(task, 'task', index, datasetPath),
+        intent: requireTaskString(task, 'intent', index, datasetPath),
+        relevant_files: requireTaskStringArray(task, 'relevant_files', index, datasetPath),
+        relevant_types: optionalTaskStringArray(task, 'relevant_types', index, datasetPath),
+        relevant_keywords: optionalTaskStringArray(task, 'relevant_keywords', index, datasetPath),
+        irrelevant_files: optionalTaskStringArray(task, 'irrelevant_files', index, datasetPath),
+        difficulty: optionalTaskString(task, 'difficulty', index, datasetPath),
+        source: optionalTaskString(task, 'source', index, datasetPath),
+      };
+    }),
+  };
+}
+
+export function loadAblationDataset(datasetPath: string): AblationDataset {
+  let raw: string;
+  try {
+    raw = readFileSync(datasetPath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Unable to read ablation dataset JSON at ${datasetPath}: ${errorMessage(error)}`);
+  }
+
+  try {
+    return parseAblationDataset(JSON.parse(raw) as unknown, datasetPath);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Malformed ablation dataset JSON at ${datasetPath}: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 function hashString(value: string): number {
@@ -193,7 +310,7 @@ function walkDir(dir: string): string[] {
 
 async function runAblation(options: AblationCliOptions) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const dataset: { tasks: BenchmarkTask[] } = JSON.parse(readFileSync(options.dataset, 'utf-8'));
+  const dataset = loadAblationDataset(options.dataset);
 
   const strategies = [
     'keyword',      // Baseline: keyword grep

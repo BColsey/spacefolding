@@ -22,6 +22,10 @@ interface BenchmarkTask {
   relevant_files: string[];
 }
 
+export interface CompressionDataset {
+  tasks: BenchmarkTask[];
+}
+
 interface CompressionResult {
   method: string;
   originalTokens: number;
@@ -53,6 +57,82 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireTaskString(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string {
+  const value = task[field];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(
+      `Compression dataset task ${index + 1} field ${field} must be a non-empty string: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+function requireTaskStringArray(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string[] {
+  const value = task[field];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(
+      `Compression dataset task ${index + 1} field ${field} must be an array of strings: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+export function parseCompressionDataset(data: unknown, datasetPath: string): CompressionDataset {
+  if (!isRecord(data) || !Array.isArray(data.tasks)) {
+    throw new Error(`Compression dataset must contain a tasks array: ${datasetPath}`);
+  }
+  if (data.tasks.length === 0) {
+    throw new Error(`Compression dataset has no tasks: ${datasetPath}`);
+  }
+
+  return {
+    tasks: data.tasks.map((task, index) => {
+      if (!isRecord(task)) {
+        throw new Error(`Compression dataset task ${index + 1} must be an object: ${datasetPath}`);
+      }
+
+      return {
+        id: requireTaskString(task, 'id', index, datasetPath),
+        task: requireTaskString(task, 'task', index, datasetPath),
+        intent: requireTaskString(task, 'intent', index, datasetPath),
+        relevant_files: requireTaskStringArray(task, 'relevant_files', index, datasetPath),
+      };
+    }),
+  };
+}
+
+export function loadCompressionDataset(datasetPath: string): CompressionDataset {
+  let raw: string;
+  try {
+    raw = readFileSync(datasetPath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Unable to read compression dataset JSON at ${datasetPath}: ${errorMessage(error)}`);
+  }
+
+  try {
+    return parseCompressionDataset(JSON.parse(raw) as unknown, datasetPath);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Malformed compression dataset JSON at ${datasetPath}: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
 function hashString(value: string): number {
   let hash = 2166136261;
   for (let i = 0; i < value.length; i++) {
@@ -70,9 +150,7 @@ function deterministicShuffle<T>(items: T[], seed: string, key: (item: T) => str
 
 async function main(options: CompressionCliOptions) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const dataset: { tasks: BenchmarkTask[] } = JSON.parse(
-    readFileSync(join(benchDir, 'dataset.json'), 'utf-8')
-  );
+  const dataset = loadCompressionDataset(join(benchDir, 'dataset.json'));
   const withLlmLingua = options.withLlmLingua;
 
   console.log(`\n${'═'.repeat(70)}`);
