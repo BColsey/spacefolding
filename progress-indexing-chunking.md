@@ -68,3 +68,5 @@
   - Verification: `npx vitest run tests/orchestrator.test.ts`; `npm run build && npm run lint && npm test`
   - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.983, nDCG@10 0.890, MRR 0.933; structural e2e average recall 0.950 and average precision 0.396.
+- 2026-05-25: Review category 5, Dead Code. Checked unused extraction helpers, tree-sitter chunker wiring, structural storage methods, and schema columns from scratch. Removed the unused `buildSymbolIndex()` extractor helper and dropped unused internal chunking/tree-sitter parameters while leaving split behavior unchanged.
+  - Verification: `npm run build && npm run lint && npm test`

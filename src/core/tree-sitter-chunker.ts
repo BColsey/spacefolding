@@ -55,12 +55,12 @@ export async function splitCodeWithTreeSitter(
     if (symbols.length === 0) return null;
 
     const lines = text.split('\n');
-    const importEnd = findImportEnd(lines, language);
+    const importEnd = findImportEnd(lines);
     const importBlock = lines.slice(0, importEnd).join('\n');
     const bodyStart = importEnd;
 
     // Build sorted, non-overlapping symbol ranges
-    const ranges = buildNonOverlappingRanges(symbols, bodyStart, lines.length);
+    const ranges = buildNonOverlappingRanges(symbols, bodyStart);
 
     // Also capture any code between import end and first symbol, and trailing code
     const pieces = buildPieces(lines, ranges, bodyStart, maxTokens, tokenEstimator);
@@ -69,7 +69,7 @@ export async function splitCodeWithTreeSitter(
 
     const chunked = packPiecesWithPrefix(pieces, importBlock, maxTokens, tokenEstimator);
 
-    return applyOverlap(chunked, overlapTokens, tokenEstimator);
+    return applyOverlap(chunked, overlapTokens);
   } catch {
     // Any error means we fall back to regex
     return null;
@@ -80,7 +80,7 @@ export async function splitCodeWithTreeSitter(
  * Find the line index where imports end.
  * Very similar to the logic in splitCode() already.
  */
-function findImportEnd(lines: string[], language?: string): number {
+function findImportEnd(lines: string[]): number {
   let end = 0;
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
@@ -110,8 +110,7 @@ interface LineRange {
  */
 function buildNonOverlappingRanges(
   symbols: CodeSymbol[],
-  bodyStart: number,
-  totalLines: number
+  bodyStart: number
 ): LineRange[] {
   // Sort by startLine, then by size descending (prefer larger containers)
   const sorted = [...symbols].sort((a, b) => {
@@ -352,8 +351,7 @@ function formatCodeChunk(importBlock: string, body: string): string {
  */
 function applyOverlap(
   chunks: string[],
-  overlapTokens: number,
-  tokenEstimator: TokenEstimator
+  overlapTokens: number
 ): string[] {
   if (chunks.length <= 1 || overlapTokens <= 0) return chunks;
 

@@ -200,7 +200,7 @@ function splitWithSeparators(
   tokenEstimator: TokenEstimator
 ): string[] {
   if (tokenEstimator.estimate(text) <= maxTokens) return [text];
-  if (separators.length === 0) return splitByChars(text, maxTokens, overlapTokens, tokenEstimator);
+  if (separators.length === 0) return splitByChars(text, maxTokens, overlapTokens);
 
   const sep = separators[0];
   const remaining = separators.slice(1);
@@ -228,14 +228,13 @@ function splitWithSeparators(
 
   if (current) chunks.push(current);
 
-  return applyOverlap(chunks, overlapTokens, tokenEstimator);
+  return applyOverlap(chunks, overlapTokens);
 }
 
 function splitByChars(
   text: string,
   maxTokens: number,
-  overlapTokens: number,
-  tokenEstimator: TokenEstimator
+  overlapTokens: number
 ): string[] {
   const charsPerToken = 4;
   const maxChars = maxTokens * charsPerToken;
@@ -287,7 +286,7 @@ function splitCode(
     tokenEstimator
   );
 
-  return applyOverlap(chunks, overlapTokens, tokenEstimator);
+  return applyOverlap(chunks, overlapTokens);
 }
 
 interface CodeSegment {
@@ -481,15 +480,14 @@ function splitMarkdown(
 
   if (current) chunks.push(current);
 
-  return applyOverlap(chunks, overlapTokens, tokenEstimator);
+  return applyOverlap(chunks, overlapTokens);
 }
 
 // ── Overlap ────────────────────────────────────────────────────
 
 function applyOverlap(
   chunks: string[],
-  overlapTokens: number,
-  tokenEstimator: TokenEstimator
+  overlapTokens: number
 ): string[] {
   if (chunks.length <= 1 || overlapTokens <= 0) return chunks;
 
