@@ -1,5 +1,5 @@
 import chokidar, { type FSWatcher } from 'chokidar';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, lstatSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import { normalizeContextPath } from './ingester.js';
@@ -25,6 +25,7 @@ export class FileWatcher {
     this.watcher = chokidar.watch(this.watchPath, {
       ignored: (path) => this.shouldIgnore(path),
       ignoreInitial: false,
+      followSymlinks: false,
       persistent: true,
     });
 
@@ -68,6 +69,7 @@ export class FileWatcher {
   private async ingestFile(filePath: string, event: 'add' | 'change'): Promise<void> {
     try {
       if (!existsSync(filePath)) return;
+      if (this.isSymlinkPath(filePath)) return;
       const content = readFileSync(filePath, 'utf-8');
       const storagePath = this.storagePathFor(filePath);
       if (event === 'change') {
@@ -99,6 +101,8 @@ export class FileWatcher {
   }
 
   private shouldIgnore(filePath: string): boolean {
+    if (this.isSymlinkPath(filePath)) return true;
+
     if (DEFAULT_IGNORES.some((pattern) => filePath.includes(`/${pattern}/`) || filePath.endsWith(`/${pattern}`))) {
       return true;
     }
@@ -122,6 +126,14 @@ export class FileWatcher {
       return regex.test(filePath);
     }
     return filePath.includes(normalized);
+  }
+
+  private isSymlinkPath(filePath: string): boolean {
+    try {
+      return lstatSync(filePath).isSymbolicLink();
+    } catch {
+      return false;
+    }
   }
 
   private storagePathFor(filePath: string): string {

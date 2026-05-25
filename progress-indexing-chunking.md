@@ -94,3 +94,6 @@
   - Verification: `npx vitest run tests/orchestrator.test.ts`; `npm run build && npm run lint && npm test`
   - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.958, nDCG@10 0.896, MRR 0.950; structural e2e average recall 0.967 and average precision 0.524.
+- 2026-05-25: Review category 7, Security And Data Integrity. Re-checked stale chunk deletion cleanup, benchmark corpus traversal and output safeguards, and private-data ingress paths from scratch. Fixed file watching so symlinked files are ignored and chokidar does not follow symlinks, preventing watched roots from indexing external target contents through links.
+  - Verification: `npx vitest run tests/watcher.test.ts tests/benchmark-heldout.test.ts tests/benchmark-evaluate.test.ts tests/orchestrator.test.ts tests/benchmark-profile-security.test.ts tests/benchmark-source-files.test.ts`; `npm run build && npm run lint && npm test`
+  - Benchmarks: not run; watcher symlink hardening does not change retrieval indexing quality or ranking behavior.
