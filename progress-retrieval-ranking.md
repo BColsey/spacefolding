@@ -109,6 +109,14 @@ Highest severity first. Resolve before starting new work items.
 
 ## Review Log
 
+- 2026-05-25: Review phase.
+  - **Error Handling**: Re-swept retrieval fallback paths for discarded errors and silent failures. Fixed hybrid/structural vector retrieval so query embedding or vector-index failures degrade to available text/structural results with an explicit result reason, while explicit vector-only retrieval still fails loudly.
+  - Added `tests/rag.test.ts` coverage for hybrid fallback when query embedding fails and vector-only failure propagation.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 297 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.890205`, MRR `0.933333`, precision@10 `0.205000`, average results `22.25`.
+  - Latest structural deltas: R@10 `+0.187500`, NDCG@10 `+0.300656`, MRR `+0.358333`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.407937`, tokens `10947.8`; all tasks stayed below full codebase tokens `41190`.
 - 2026-05-24: Review phase.
   - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 retrieval behavior and the design selection/budgeting invariants. Fixed focused candidate selection so split parent metadata chunks and missing retrieval chunks are reported in `dropped` with concrete reasons instead of being silently filtered.
   - Added `tests/retrieval-policy.test.ts` assertions for split parent and missing chunk drop reasons.

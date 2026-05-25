@@ -84,6 +84,8 @@ export class HybridRetriever {
     const useVector = strategy === 'hybrid' || strategy === 'vector' || strategy === 'structural';
     const useFts = strategy === 'hybrid' || strategy === 'text' || strategy === 'structural';
     const useGraph = strategy === 'graph' || ((strategy === 'hybrid') && maxHops > 0);
+    const fallbackSourcesAvailable = useStructural || useFts;
+    const retrievalWarnings: string[] = [];
 
     if (strategy === 'structural' && !this.vectorReliable) {
       return this.retrieveDeterministicStructural(query, topK);
@@ -120,15 +122,20 @@ export class HybridRetriever {
 
     // Vector search
     if (useVector) {
-      const queryEmbedding = await this.embeddingProvider.embed(query);
-      if (queryEmbedding.length > 0) {
-        const vectorResults = this.storage.searchByVector(queryEmbedding, Math.max(topK, 50));
-        addSource(
-          fused,
-          'vector',
-          vectorResults.map((result) => ({ ...result, reasons: ['vector similarity match'] })),
-          weights.vector
-        );
+      try {
+        const queryEmbedding = await this.embeddingProvider.embed(query);
+        if (queryEmbedding.length > 0) {
+          const vectorResults = this.storage.searchByVector(queryEmbedding, Math.max(topK, 50));
+          addSource(
+            fused,
+            'vector',
+            vectorResults.map((result) => ({ ...result, reasons: ['vector similarity match'] })),
+            weights.vector
+          );
+        }
+      } catch (err) {
+        if (!fallbackSourcesAvailable) throw err;
+        retrievalWarnings.push(`vector retrieval unavailable: ${errorMessage(err)}`);
       }
     }
 
@@ -236,6 +243,7 @@ export class HybridRetriever {
       const sources = [...data.sources] as RetrievalSource[];
 
       reasons.push(...data.reasons);
+      reasons.push(...retrievalWarnings);
       if (data.sources.has('dependency') && !data.reasons.some((reason) => reason.includes('reference'))) {
         reasons.push('direct dependency/reference boost');
       }
@@ -400,6 +408,10 @@ export class HybridRetriever {
         };
       });
   }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 interface SourceResult {

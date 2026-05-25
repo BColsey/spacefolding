@@ -510,4 +510,56 @@ describe('HybridRetriever reranker integration', () => {
 
     expect(results.length).toBeGreaterThan(0);
   });
+
+  it('falls back to text results when hybrid query embedding fails', async () => {
+    const chunks = [
+      makeChunk('a', 'authentication module'),
+      makeChunk('b', 'database module'),
+    ];
+    const failingEmbedding: EmbeddingProvider = {
+      async embed() {
+        throw new Error('embedding provider unavailable');
+      },
+      async embedBatch() {
+        return [];
+      },
+    };
+
+    const storage = createMockStorage(chunks);
+    const retriever = new HybridRetriever(storage, failingEmbedding);
+
+    const results = await retriever.retrieve('authentication', {
+      strategy: 'hybrid',
+      topK: 10,
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].sources).toContain('fts');
+    expect(results[0].sourceScores?.vector).toBe(0);
+    expect(results[0].reasons).toContain(
+      'vector retrieval unavailable: embedding provider unavailable'
+    );
+  });
+
+  it('throws embedding errors when vector is the only requested source', async () => {
+    const chunks = [
+      makeChunk('a', 'authentication module'),
+    ];
+    const failingEmbedding: EmbeddingProvider = {
+      async embed() {
+        throw new Error('embedding provider unavailable');
+      },
+      async embedBatch() {
+        return [];
+      },
+    };
+
+    const storage = createMockStorage(chunks);
+    const retriever = new HybridRetriever(storage, failingEmbedding);
+
+    await expect(retriever.retrieve('authentication', {
+      strategy: 'vector',
+      topK: 10,
+    })).rejects.toThrow('embedding provider unavailable');
+  });
 });
