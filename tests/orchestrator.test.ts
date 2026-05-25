@@ -309,6 +309,31 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
+  it('focused retrieval reports dropped candidate reasons', async () => {
+    const { pipeline } = createTestPipeline();
+
+    for (let index = 0; index < 5; index++) {
+      await pipeline.ingest(
+        'shared-source',
+        `shared needle ranking candidate ${index}`,
+        'reference'
+      );
+    }
+
+    const result = await pipeline.retrieve('shared needle ranking', 10_000, {
+      strategy: 'text',
+      mode: 'focused',
+      topK: 10,
+      returnLimit: 10,
+    });
+
+    expect(result.dropped.length).toBeGreaterThan(0);
+    expect(result.selectionPolicy.droppedCandidates).toBe(result.dropped.length);
+    expect(result.dropped.some((drop) => drop.reason.includes('per-path'))).toBe(true);
+
+    pipeline.close();
+  });
+
   it('processContext returns empty tiers when storage has no chunks', async () => {
     const { pipeline } = createTestPipeline();
 

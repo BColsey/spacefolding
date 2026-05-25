@@ -110,6 +110,12 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 and the design selection/budgeting invariants. Fixed retrieval reporting so focused candidate drops are exposed with concrete reasons instead of only a count.
+  - `PipelineOrchestrator.retrieve()` now returns `dropped`, and CLI/web/MCP retrieval surfaces expose dropped candidate reasons alongside omitted chunks.
+  - Added `tests/orchestrator.test.ts` coverage for focused per-path candidate drops being returned with reasons, and `tests/interface.test.ts` coverage for web retrieval exposing dropped diagnostics.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 298 tests.
+  - Acceptance benchmarks not run because ranking, selection, and budget behavior were unchanged; this iteration only wires existing dropped-candidate diagnostics through retrieval outputs.
+- 2026-05-25: Review phase.
   - **Error Handling**: Re-swept retrieval fallback paths for discarded errors and silent failures. Fixed hybrid/structural vector retrieval so query embedding or vector-index failures degrade to available text/structural results with an explicit result reason, while explicit vector-only retrieval still fails loudly.
   - Added `tests/rag.test.ts` coverage for hybrid fallback when query embedding fails and vector-only failure propagation.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 297 tests.

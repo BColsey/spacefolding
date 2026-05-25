@@ -506,6 +506,13 @@ export function buildCLI(): Command {
       if (result.omitted.length > 0) {
         console.log(chalk.yellow(`\n${result.omitted.length} chunks omitted (budget full)`));
       }
+      if (result.dropped.length > 0) {
+        const reasons = result.dropped
+          .slice(0, 3)
+          .map((drop) => drop.reason)
+          .join(', ');
+        console.log(chalk.yellow(`${result.dropped.length} candidates dropped (${reasons})`));
+      }
 
       pipeline.close();
     });

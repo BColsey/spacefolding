@@ -313,6 +313,8 @@ describe('Web inspector interface', () => {
       plan: { strategy: string };
       selectionPolicy: { mode: string };
       omitted: Array<{ chunkId: string; reason: string }>;
+      droppedCount: number;
+      dropped: Array<{ chunkId: string; reason: string }>;
       compressedSummaries: Array<{ originalChunkId: string; tokensEstimate: number }>;
     }>();
     const selected = result.chunks.find((chunk) => chunk.path === 'src/web/diagnostics.ts');
@@ -327,6 +329,8 @@ describe('Web inspector interface', () => {
     expect(selected?.retrievalReasons.length).toBeGreaterThan(0);
     expect(selected?.retrievalScores?.final).toBeGreaterThan(0);
     expect(Array.isArray(result.omitted)).toBe(true);
+    expect(result.droppedCount).toBe(result.dropped.length);
+    expect(Array.isArray(result.dropped)).toBe(true);
     expect(Array.isArray(result.compressedSummaries)).toBe(true);
   });
 

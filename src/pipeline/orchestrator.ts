@@ -744,6 +744,7 @@ export class PipelineOrchestrator {
     targetBudget: number;
     utilization: number;
     omitted: { chunkId: string; tokensEstimate: number; reason: string }[];
+    dropped: { chunkId: string; reason: string }[];
     compressed: { chunkId: string; summary: string; tokensEstimate: number }[];
     plan: ReturnType<typeof planQuery>;
     retrieval: RetrievalResult[];
@@ -839,6 +840,7 @@ export class PipelineOrchestrator {
       targetBudget: effectiveBudget,
       utilization: hardBudget > 0 ? budgetResult.totalTokens / hardBudget : 0,
       omitted: budgetResult.omitted,
+      dropped: selectedCandidates.dropped,
       compressed: budgetResult.compressed,
       plan,
       retrieval,

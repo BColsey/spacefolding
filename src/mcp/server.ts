@@ -466,6 +466,9 @@ function createServer(pipeline: PipelineOrchestrator): Server {
             targetBudget: result.targetBudget,
             utilization: result.utilization,
             omittedCount: result.omitted.length,
+            omitted: result.omitted,
+            droppedCount: result.dropped.length,
+            dropped: result.dropped,
             compressedCount: result.compressed.length,
             compressedSummaries: result.compressed.map((c) => ({
               originalChunkId: c.chunkId,

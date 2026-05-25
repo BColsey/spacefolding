@@ -87,6 +87,7 @@ async function retrieve(){
     lines.push('No chunks returned.');
   }
   if(result.omittedCount>0)lines.push('\n'+result.omittedCount+' chunks omitted: '+result.omitted.slice(0,3).map(o=>o.reason).join(', '));
+  if(result.droppedCount>0)lines.push(result.droppedCount+' candidates dropped: '+result.dropped.slice(0,3).map(o=>o.reason).join(', '));
   if(result.compressedCount>0)lines.push(result.compressedCount+' chunks compressed');
   document.getElementById('retrieval').textContent=lines.join('\n');
   state.tiers={};
@@ -240,6 +241,8 @@ export function createWebRequestHandler(pipeline: PipelineOrchestrator) {
           utilization: result.utilization,
           omittedCount: result.omitted.length,
           omitted: result.omitted,
+          droppedCount: result.dropped.length,
+          dropped: result.dropped,
           compressedCount: result.compressed.length,
           compressedSummaries: result.compressed.map((c) => ({
             originalChunkId: c.chunkId,
