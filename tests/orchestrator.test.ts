@@ -529,6 +529,34 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
+  it('keeps policy target budget separate from expanded effective budget', async () => {
+    const { pipeline } = createTestPipeline({
+      maxTokens: 30_000,
+      overlapTokens: 0,
+      strategy: 'recursive',
+    });
+    const largeNeedleChunk = (label: string) => `needle ${label}\n${'x '.repeat(14_000)}`;
+
+    for (const label of ['alpha', 'beta', 'gamma']) {
+      await pipeline.ingest(label, largeNeedleChunk(label), 'reference');
+    }
+
+    const result = await pipeline.retrieve('find exact needle', 50_000, {
+      strategy: 'text',
+      mode: 'focused',
+      topK: 3,
+      returnLimit: 3,
+    });
+
+    expect(result.selectionPolicy.mode).toBe('focused');
+    expect(result.selectionPolicy.targetBudget).toBe(6_000);
+    expect(result.selectionPolicy.effectiveBudget).toBeGreaterThan(result.selectionPolicy.targetBudget);
+    expect(result.targetBudget).toBe(result.selectionPolicy.effectiveBudget);
+    expect(result.totalTokens).toBeLessThanOrEqual(result.targetBudget);
+
+    pipeline.close();
+  });
+
   it('processContext returns empty tiers when storage has no chunks', async () => {
     const { pipeline } = createTestPipeline();
 

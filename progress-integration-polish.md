@@ -46,6 +46,10 @@
 - Security And Data Integrity review: verified generated DB/held-out/env
   artifacts are ignored, no generated benchmark JSON is in repo status, and web
   dynamic HTML uses escaping or `textContent`.
+- Code Consistency review: preserved `selectionPolicy.targetBudget` as the
+  nominal focused/broad/exhaustive policy target and reports the protected-set
+  expanded budget through `selectionPolicy.effectiveBudget` and the top-level
+  `targetBudget`.
 
 ## Completed Work Items
 
@@ -183,3 +187,13 @@
   asserting that output includes query, intent, mode, and token-budget usage.
   Verified `npx vitest run tests/interface.test.ts` passed with 24 tests and
   `npm run build && npm run lint && npm test` passed with 321 tests.
+- Code Consistency: performed a fresh sweep of retrieval naming across MCP,
+  CLI, web, pipeline return objects, policy helpers, docs, and benchmark
+  consumers. Fixed `PipelineOrchestrator.retrieve()` so
+  `selectionPolicy.targetBudget` keeps the nominal policy target while the
+  expanded protected-candidate budget is exposed as
+  `selectionPolicy.effectiveBudget` and the top-level user-facing
+  `targetBudget`. Added orchestrator regression coverage for expanded focused
+  budgets. Verified targeted
+  `npx vitest run tests/orchestrator.test.ts --testNamePattern "policy target budget"`
+  and `npm run build && npm run lint && npm test` passed with 322 tests.

@@ -853,7 +853,6 @@ export class PipelineOrchestrator {
       retrieval,
       selectionPolicy: {
         ...selectedCandidates.policy,
-        targetBudget: effectiveBudget,
         effectiveBudget,
         selectedCandidates: rankedForBudget.length,
         droppedCandidates: selectedCandidates.dropped.length,
