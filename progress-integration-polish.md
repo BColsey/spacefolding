@@ -50,6 +50,9 @@
   nominal focused/broad/exhaustive policy target and reports the protected-set
   expanded budget through `selectionPolicy.effectiveBudget` and the top-level
   `targetBudget`.
+- Security And Data Integrity review: tightened the web inspector chunk table so
+  token estimates are escaped before insertion through `innerHTML`, matching the
+  existing path/type/text escaping invariant.
 
 ## Completed Work Items
 
@@ -213,3 +216,13 @@
   reason, omitted/dropped, and compression diagnostics. No integration wiring
   defect required code changes. Verified
   `npm run build && npm run lint && npm test` passed with 322 tests.
+- Security And Data Integrity: performed a fresh sweep of web HTML/JSON output,
+  MCP/CLI JSON serialization, benchmark generated-output paths, SQLite scratch
+  artifact handling, corpus symlink behavior, `.gitignore`, tracked files, and
+  current generated artifacts. Fixed the web inspector chunk table so
+  `tokensEstimate` is escaped before `innerHTML` insertion like path, type, and
+  text fields. Confirmed tracked files do not include DB/WAL/SHM, `.env`, or
+  generated benchmark JSON artifacts; ignored benchmark DB files and `/tmp`
+  benchmark JSON outputs remain untracked. Verified
+  `npx vitest run tests/interface.test.ts` passed with 25 tests and
+  `npm run build && npm run lint && npm test` passed with 323 tests.

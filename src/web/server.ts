@@ -52,7 +52,7 @@ function renderStats(stats){
 function renderRows(){
   document.getElementById('rows').innerHTML=state.chunks.map(chunk=>{
     const tier=tierOf(chunk.id);
-    return '<tr class="'+escapeHtml(tier)+'" data-id="'+escapeHtml(chunk.id)+'"><td class="mono">'+escapeHtml(chunk.id.slice(0,8))+'</td><td class="mono small">'+escapeHtml(chunk.path||chunk.source||'')+'</td><td>'+escapeHtml(chunk.type)+'</td><td>'+(chunk.tokensEstimate||0)+'</td><td>'+escapeHtml(trim(chunk.text.replace(/\\s+/g,' ')))+'</td><td class="muted">'+escapeHtml(new Date(chunk.timestamp).toLocaleString())+'</td></tr>';
+    return '<tr class="'+escapeHtml(tier)+'" data-id="'+escapeHtml(chunk.id)+'"><td class="mono">'+escapeHtml(chunk.id.slice(0,8))+'</td><td class="mono small">'+escapeHtml(chunk.path||chunk.source||'')+'</td><td>'+escapeHtml(chunk.type)+'</td><td>'+escapeHtml(chunk.tokensEstimate||0)+'</td><td>'+escapeHtml(trim(chunk.text.replace(/\\s+/g,' ')))+'</td><td class="muted">'+escapeHtml(new Date(chunk.timestamp).toLocaleString())+'</td></tr>';
   }).join('');
 }
 async function score(){

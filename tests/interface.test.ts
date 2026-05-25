@@ -418,6 +418,17 @@ describe('Web inspector interface', () => {
     expect(invalidBudgetBody.error).toContain('maxTokens must be a positive integer');
   });
 
+  it('escapes client-rendered chunk table values before inserting HTML', async () => {
+    const { pipeline } = createWebFixture();
+
+    const page = await requestWeb(pipeline, '/');
+
+    expect(page.body).toContain('escapeHtml(chunk.path||chunk.source||\'\')');
+    expect(page.body).toContain('escapeHtml(chunk.type)');
+    expect(page.body).toContain('escapeHtml(chunk.tokensEstimate||0)');
+    expect(page.body).toContain('escapeHtml(trim(chunk.text.replace');
+  });
+
   it('returns direct errors for unsupported web methods and routes', async () => {
     const { pipeline } = createWebFixture();
 
