@@ -110,6 +110,11 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 retrieval behavior against the current query planning, retriever, selection policy, budget fill, and orchestrator wiring. Verified required plan fields, structural/vector/FTS source selection rules, graph traversal staying disabled by default, source score reporting, focused thresholds/per-path caps, split-parent exclusion, dropped/omitted diagnostics, and hard budget enforcement.
+  - No spec-compliance defects found in this fresh sweep.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 298 tests.
+  - Acceptance benchmarks not run because no retrieval ranking, selection, or budget behavior changed.
+- 2026-05-25: Review phase.
   - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 and the design selection/budgeting invariants. Fixed retrieval reporting so focused candidate drops are exposed with concrete reasons instead of only a count.
   - `PipelineOrchestrator.retrieve()` now returns `dropped`, and CLI/web/MCP retrieval surfaces expose dropped candidate reasons alongside omitted chunks.
   - Added `tests/orchestrator.test.ts` coverage for focused per-path candidate drops being returned with reasons, and `tests/interface.test.ts` coverage for web retrieval exposing dropped diagnostics.
