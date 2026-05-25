@@ -11,6 +11,7 @@ import { DeterministicTokenEstimator } from '../src/providers/token-estimator.js
 import { DeterministicEmbeddingProvider } from '../src/providers/deterministic-embedding.js';
 import { DeterministicCompressionProvider } from '../src/providers/deterministic-compression.js';
 import { SimpleDependencyAnalyzer } from '../src/providers/dependency-analyzer.js';
+import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../src/types/index.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -233,13 +234,13 @@ describe('MCP interface', () => {
   it('retrieve_context mode enum accepts focused, broad, and exhaustive', () => {
     const retrieve = TOOL_DEFINITIONS.find((tool) => tool.name === 'retrieve_context');
     const modeProp = retrieve?.inputSchema.properties.mode as { enum?: string[] };
-    expect(modeProp?.enum).toEqual(['focused', 'broad', 'exhaustive']);
+    expect(modeProp?.enum).toEqual(RETRIEVAL_MODES);
   });
 
   it('retrieve_context strategy enum accepts all retrieval strategies', () => {
     const retrieve = TOOL_DEFINITIONS.find((tool) => tool.name === 'retrieve_context');
     const strategyProp = retrieve?.inputSchema.properties.strategy as { enum?: string[] };
-    expect(strategyProp?.enum).toEqual(['structural', 'hybrid', 'vector', 'text', 'graph']);
+    expect(strategyProp?.enum).toEqual(RETRIEVAL_STRATEGIES);
   });
 
   it('retrieve_context schema describes mode, strategy, budget, and query options', () => {

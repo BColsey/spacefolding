@@ -1,10 +1,11 @@
 import * as http from 'node:http';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
-import type { RetrievalMode, RetrievalResult } from '../core/retriever.js';
-import type { RetrievalStrategy } from '../types/index.js';
+import type { RetrievalResult } from '../core/retriever.js';
+import type { RetrievalMode, RetrievalStrategy } from '../types/index.js';
+import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
 
-const WEB_RETRIEVAL_MODES: readonly RetrievalMode[] = ['focused', 'broad', 'exhaustive'];
-const WEB_RETRIEVAL_STRATEGIES: readonly RetrievalStrategy[] = ['structural', 'hybrid', 'vector', 'text', 'graph'];
+const WEB_RETRIEVAL_MODES = RETRIEVAL_MODES;
+const WEB_RETRIEVAL_STRATEGIES = RETRIEVAL_STRATEGIES;
 
 const PAGE = String.raw`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

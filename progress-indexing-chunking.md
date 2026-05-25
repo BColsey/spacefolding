@@ -76,3 +76,5 @@
   - Verification: `npx vitest run tests/benchmark-heldout.test.ts tests/benchmark-evaluate.test.ts tests/orchestrator.test.ts tests/benchmark-profile-security.test.ts`; `npm run build && npm run lint && npm test`
   - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.983, nDCG@10 0.890, MRR 0.933; structural e2e average recall 0.950 and average precision 0.406.
+- 2026-05-25: Review category 1, Spec Compliance. Re-checked schema/version migrations, chunk/index lifecycle cleanup, shared structural and retrieval types, and public storage interface alignment against `DESIGN.md` and `IMPLEMENTATION.md`. Fixed retrieval mode/strategy drift by exporting shared runtime constants from `src/types/index.ts` and wiring CLI, MCP, web, and benchmark parsing to them; added explicit `StorageProvider` implementation on `SQLiteRepository` so interface drift is caught by TypeScript.
+  - Verification: `npm run build && npm run lint && npm test`

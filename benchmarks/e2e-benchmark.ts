@@ -18,6 +18,8 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { RetrievalStrategy } from '../src/types/index.js';
+import { RETRIEVAL_STRATEGIES } from '../src/types/index.js';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { benchmarkSqlitePath, createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
@@ -72,11 +74,10 @@ export interface TaskComparison {
   savingsVsCodebase: number;
 }
 
-const SUPPORTED_STRATEGIES = ['structural', 'hybrid', 'vector', 'text', 'graph'] as const;
-type E2EStrategy = typeof SUPPORTED_STRATEGIES[number];
+const SUPPORTED_STRATEGIES = RETRIEVAL_STRATEGIES;
 
 export interface CliOptions {
-  strategy: E2EStrategy;
+  strategy: RetrievalStrategy;
   json: boolean;
   dataset?: string;
 }
@@ -378,11 +379,11 @@ export function loadE2EDatasetTasks(datasetPath: string): E2ETask[] {
   }
 }
 
-function parseStrategy(value: string): E2EStrategy {
-  if (!SUPPORTED_STRATEGIES.includes(value as E2EStrategy)) {
+function parseStrategy(value: string): RetrievalStrategy {
+  if (!SUPPORTED_STRATEGIES.includes(value as RetrievalStrategy)) {
     throw new Error(`--strategy must be one of: ${SUPPORTED_STRATEGIES.join(', ')}`);
   }
-  return value as E2EStrategy;
+  return value as RetrievalStrategy;
 }
 
 export function parseArgs(argv: string[]): CliOptions {

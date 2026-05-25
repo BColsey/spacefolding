@@ -170,6 +170,20 @@ export type RetrievalStrategy = 'hybrid' | 'vector' | 'text' | 'graph' | 'struct
 
 export type RetrievalMode = 'focused' | 'broad' | 'exhaustive';
 
+export const RETRIEVAL_STRATEGIES = [
+  'structural',
+  'hybrid',
+  'vector',
+  'text',
+  'graph',
+] as const satisfies readonly RetrievalStrategy[];
+
+export const RETRIEVAL_MODES = [
+  'focused',
+  'broad',
+  'exhaustive',
+] as const satisfies readonly RetrievalMode[];
+
 // --- Routing Configuration ---
 
 export interface RoutingWeights {

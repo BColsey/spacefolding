@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { RetrievalStrategy } from '../src/types/index.js';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
@@ -366,7 +367,7 @@ async function pathMatchBaseline(
 async function spacefoldingRetrieval(
   task: BenchmarkTask,
   pipeline: any,
-  strategy: 'structural' | 'hybrid' | 'vector' | 'text' = 'structural'
+  strategy: Exclude<RetrievalStrategy, 'graph'> = 'structural'
 ): Promise<string[]> {
   const result = await pipeline.retrieve(task.task, 200_000, {
     strategy,

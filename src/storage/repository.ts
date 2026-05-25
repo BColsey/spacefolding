@@ -8,6 +8,7 @@ import type {
   CompressionResult,
   StructuralQuery,
   StructuralSearchResult,
+  StorageProvider,
 } from '../types/index.js';
 import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
@@ -18,7 +19,7 @@ import { cosineSimilarity } from '../providers/deterministic-embedding.js';
 import type { VectorIndex } from './vector-index.js';
 import { BruteForceVectorIndex, tryCreateSqliteVecIndex } from './vector-index.js';
 
-export class SQLiteRepository {
+export class SQLiteRepository implements StorageProvider {
   private db: Database.Database;
   private vectorIndex: VectorIndex | null = null;
 

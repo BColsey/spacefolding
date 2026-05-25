@@ -20,16 +20,15 @@ import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
 import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
-import type { RetrievalStrategy } from '../core/query-planner.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { formatSourceScoreBreakdown } from '../core/retriever.js';
-import type { RetrievalMode } from '../core/retriever.js';
-import type { EmbeddingProvider } from '../types/index.js';
+import type { EmbeddingProvider, RetrievalMode, RetrievalStrategy } from '../types/index.js';
+import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
 
 type EmbeddingProviderName = 'local' | 'gpu' | 'deterministic';
-const VALID_RETRIEVAL_MODES: readonly RetrievalMode[] = ['focused', 'broad', 'exhaustive'];
-const VALID_RETRIEVAL_STRATEGIES: readonly RetrievalStrategy[] = ['structural', 'hybrid', 'vector', 'text', 'graph'];
+const VALID_RETRIEVAL_MODES = RETRIEVAL_MODES;
+const VALID_RETRIEVAL_STRATEGIES = RETRIEVAL_STRATEGIES;
 
 interface EmbeddingProviderConfig {
   providerName: EmbeddingProviderName;

@@ -5,16 +5,16 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
-import type { RetrievalStrategy } from '../core/query-planner.js';
-import type { RetrievalMode } from '../core/retriever.js';
+import type { RetrievalMode, RetrievalStrategy } from '../types/index.js';
+import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
 
 const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
 const MAX_TEXT_LENGTH = 100_000;
 const MAX_CHUNK_IDS = 1_000;
 
-const VALID_STRATEGIES: readonly string[] = ['structural', 'hybrid', 'vector', 'text', 'graph'];
-const VALID_MODES: readonly string[] = ['focused', 'broad', 'exhaustive'];
+const VALID_STRATEGIES: readonly string[] = RETRIEVAL_STRATEGIES;
+const VALID_MODES: readonly string[] = RETRIEVAL_MODES;
 
 function describeTool(description: string): string {
   return USE_GPU
@@ -202,12 +202,12 @@ export const TOOL_DEFINITIONS = [
         },
         strategy: {
           type: 'string',
-          enum: ['structural', 'hybrid', 'vector', 'text', 'graph'],
+          enum: RETRIEVAL_STRATEGIES,
           description: 'Retrieval strategy (default: structural when code symbols are indexed, otherwise adaptive based on embedding provider)',
         },
         mode: {
           type: 'string',
-          enum: ['focused', 'broad', 'exhaustive'],
+          enum: RETRIEVAL_MODES,
           description: 'Selection mode: focused returns compact high-confidence context, broad returns more coverage, exhaustive preserves legacy breadth',
         },
         topK: {
@@ -248,7 +248,7 @@ export const TOOL_DEFINITIONS = [
         },
         strategy: {
           type: 'string',
-          enum: ['structural', 'hybrid', 'vector', 'text', 'graph'],
+          enum: RETRIEVAL_STRATEGIES,
           description: 'Retrieval strategy per round (default: structural when code symbols are indexed, otherwise adaptive)',
         },
       },

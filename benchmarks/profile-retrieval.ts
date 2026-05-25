@@ -18,6 +18,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
+import type { RetrievalStrategy } from '../src/types/index.js';
+import { RETRIEVAL_STRATEGIES } from '../src/types/index.js';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
@@ -29,8 +31,6 @@ interface BenchmarkTask {
 interface BenchmarkDataset {
   tasks: BenchmarkTask[];
 }
-
-type RetrievalStrategy = 'structural' | 'hybrid' | 'vector' | 'text' | 'graph';
 
 export interface CliOptions {
   corpus: string;
@@ -55,7 +55,7 @@ interface QueryProfile {
 const benchDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(benchDir, '..');
 
-const SUPPORTED_STRATEGIES = new Set<RetrievalStrategy>(['structural', 'hybrid', 'vector', 'text', 'graph']);
+const SUPPORTED_STRATEGIES = new Set<RetrievalStrategy>(RETRIEVAL_STRATEGIES);
 
 export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
