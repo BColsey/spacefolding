@@ -205,3 +205,11 @@
   declarations in retriever normalization, scorer construction, GPU embedding
   readiness metadata, and LLMLingua compression parameter naming. Verified
   `npm run build && npm run lint && npm test` passed with 322 tests.
+- Integration Wiring: performed a fresh sweep of retrieval behavior reaching
+  MCP `retrieve_context`/`iterative_retrieve`, CLI `retrieve`, web
+  `/api/retrieve` and inspector controls, ranking/E2E/profiler benchmark calls,
+  and user docs. Confirmed these surfaces call `PipelineOrchestrator.retrieve()`
+  with the intended strategy, mode, budget, topK, return-limit, graph-hop, plan,
+  reason, omitted/dropped, and compression diagnostics. No integration wiring
+  defect required code changes. Verified
+  `npm run build && npm run lint && npm test` passed with 322 tests.
