@@ -167,3 +167,12 @@
   with `maxHops: 0`; updated MCP schema/help/docs and added interface coverage
   for the disabled default. Verified
   `npm run build && npm run lint && npm test` passed with 319 tests.
+- Error Handling: performed a fresh sweep of MCP, CLI, and web retrieval error
+  paths plus benchmark failure behavior against `IMPLEMENTATION.md` section 9.
+  Fixed MCP validation so required tool arguments are enforced before execution:
+  retrieval tools now reject missing `query`, ingest tools reject missing
+  `path`/`source`/`text`, task tools reject missing `task`, `delete_context`
+  rejects empty or non-string chunk IDs, and no-argument `list_context` remains
+  valid when MCP clients omit `arguments`. Verified
+  `npx vitest run tests/interface.test.ts` passed with 23 tests and
+  `npm run build && npm run lint && npm test` passed with 320 tests.

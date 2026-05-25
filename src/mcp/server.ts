@@ -332,6 +332,8 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
+const TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((tool) => tool.name));
+
 function createServer(pipeline: PipelineOrchestrator): Server {
   const server = new Server(
     { name: 'spacefolding', version: '0.1.0' },
@@ -344,7 +346,11 @@ function createServer(pipeline: PipelineOrchestrator): Server {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    const validationError = validateArgs(args as Record<string, unknown> | undefined);
+    if (!TOOL_NAMES.has(name)) {
+      return errorResponse(`Unknown tool: ${name}`);
+    }
+
+    const validationError = validateArgs(args as Record<string, unknown> | undefined, name);
     if (validationError) {
       return errorResponse(validationError);
     }
@@ -567,9 +573,50 @@ function errorResponse(message: string) {
   };
 }
 
-export function validateArgs(args: Record<string, unknown> | undefined): string | undefined {
+export function validateArgs(args: Record<string, unknown> | undefined, toolName?: string): string | undefined {
   if (!args) {
-    return 'Missing tool arguments';
+    if (!toolName) {
+      return 'Missing tool arguments';
+    }
+    args = {};
+  }
+
+  if (toolName === 'retrieve_context' || toolName === 'iterative_retrieve') {
+    if (typeof args.query !== 'string' || args.query.trim().length === 0) {
+      return 'query must be a non-empty string';
+    }
+  }
+
+  if (
+    toolName === 'score_context' ||
+    toolName === 'compress_context' ||
+    toolName === 'get_relevant_memory' ||
+    toolName === 'explain_routing'
+  ) {
+    if (!args.task || typeof args.task !== 'object') {
+      return 'task must be an object with text string';
+    }
+  }
+
+  if (toolName === 'ingest_context') {
+    if (typeof args.source !== 'string' || args.source.trim().length === 0) {
+      return 'source must be a non-empty string';
+    }
+    if (typeof args.text !== 'string' || args.text.length === 0) {
+      return 'text must be a non-empty string';
+    }
+  }
+
+  if (toolName === 'ingest_project' || toolName === 'ingest_directory') {
+    if (typeof args.path !== 'string' || args.path.trim().length === 0) {
+      return 'path must be a non-empty string';
+    }
+  }
+
+  if (toolName === 'delete_context') {
+    if (!Array.isArray(args.chunkIds) || args.chunkIds.length === 0) {
+      return 'chunkIds must be a non-empty array';
+    }
   }
 
   if (args.query !== undefined) {
@@ -603,6 +650,9 @@ export function validateArgs(args: Record<string, unknown> | undefined): string 
     }
     if (args.chunkIds.length > MAX_CHUNK_IDS) {
       return `chunkIds exceeds ${MAX_CHUNK_IDS} entries`;
+    }
+    if (!args.chunkIds.every((chunkId) => typeof chunkId === 'string' && chunkId.length > 0)) {
+      return 'chunkIds must contain non-empty strings';
     }
   }
 

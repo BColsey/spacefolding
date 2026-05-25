@@ -253,6 +253,18 @@ describe('MCP input validation', () => {
   it('rejects missing or empty retrieve query', () => {
     expect(validateArgs({ query: '' })).toContain('query must be a non-empty string');
     expect(validateArgs({ query: 42 })).toContain('query must be a non-empty string');
+    expect(validateArgs({}, 'retrieve_context')).toContain('query must be a non-empty string');
+    expect(validateArgs(undefined, 'iterative_retrieve')).toContain('query must be a non-empty string');
+  });
+
+  it('validates MCP required arguments by tool without rejecting no-arg tools', () => {
+    expect(validateArgs(undefined, 'list_context')).toBeUndefined();
+    expect(validateArgs({}, 'ingest_project')).toContain('path must be a non-empty string');
+    expect(validateArgs({}, 'delete_context')).toContain('chunkIds must be a non-empty array');
+    expect(validateArgs({ chunkIds: ['valid', ''] }, 'delete_context')).toContain(
+      'chunkIds must contain non-empty strings'
+    );
+    expect(validateArgs({}, 'score_context')).toContain('task must be an object with text string');
   });
 });
 
