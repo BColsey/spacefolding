@@ -94,9 +94,7 @@ export class PipelineOrchestrator {
     newChunks?: ContextChunk[]
   ): Promise<ScoreResult> {
     if (newChunks) {
-      for (const chunk of newChunks) {
-        await this.storeChunkWithEmbedding(chunk);
-      }
+      await this.storeIncomingChunks(newChunks);
     }
 
     const allChunks = this.storage.getAllChunks();
@@ -669,6 +667,47 @@ export class PipelineOrchestrator {
       }
     }
     await this.storeChunkStructure(chunk);
+  }
+
+  private async storeIncomingChunks(chunks: ContextChunk[]): Promise<void> {
+    const incomingIds = new Set(chunks.map((chunk) => chunk.id));
+    const containsLinks = new Map<string, Set<string>>();
+
+    const addContainsLink = (fromId: string, toId: string) => {
+      const links = containsLinks.get(fromId) ?? new Set<string>();
+      links.add(toId);
+      containsLinks.set(fromId, links);
+    };
+
+    for (const chunk of chunks) {
+      if (!chunk.metadata?.split) continue;
+      this.storage.storeChunk(chunk);
+      await this.storeChunkStructure(chunk);
+      for (const childId of chunk.childrenIds) {
+        addContainsLink(chunk.id, childId);
+      }
+    }
+
+    for (const chunk of chunks) {
+      if (chunk.metadata?.split) continue;
+      await this.storeChunkWithEmbedding(chunk);
+      if (chunk.parentId) {
+        addContainsLink(chunk.parentId, chunk.id);
+      }
+    }
+
+    for (const [fromId, toIds] of containsLinks) {
+      if (!incomingIds.has(fromId) && !this.storage.getChunk(fromId)) continue;
+      for (const toId of toIds) {
+        if (!incomingIds.has(toId) && !this.storage.getChunk(toId)) continue;
+        this.storage.storeDependency({
+          fromId,
+          toId,
+          type: 'contains',
+          weight: 1.0,
+        });
+      }
+    }
   }
 
   private async storeChunkStructure(chunk: ContextChunk): Promise<void> {

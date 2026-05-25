@@ -384,6 +384,45 @@ describe('PipelineOrchestrator', () => {
     }
   });
 
+  it('stores split ingestAndProcess chunks as metadata parent plus indexed children', async () => {
+    const { pipeline, storage } = createTestPipeline({
+      maxTokens: 80,
+      overlapTokens: 0,
+      strategy: 'recursive',
+    });
+
+    const { chunk: parent, result } = await pipeline.ingestAndProcess(
+      'conversation',
+      [
+        functionBlock('processAlphaNeedle', 'alpha'),
+        functionBlock('processBetaNeedle', 'beta'),
+      ].join('\n\n'),
+      { text: 'route split process needle' },
+      'reference'
+    );
+    const children = pipeline.getAllChunks()
+      .filter((chunk) => chunk.parentId === parent.id)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    const containsIds = storage.getDependencies(parent.id)
+      .filter((link) => link.type === 'contains' && link.fromId === parent.id)
+      .map((link) => link.toId)
+      .sort();
+    const alphaChild = children.find((child) => child.text.includes('processAlphaNeedle'));
+
+    expect(parent.metadata.split).toBe(true);
+    expect(result.hot.length + result.warm.length + result.cold.length).toBeGreaterThan(0);
+    expect(children.length).toBeGreaterThan(0);
+    expect(alphaChild).toBeDefined();
+    expect(storage.getEmbedding(parent.id)).toBeNull();
+    expect(children.every((child) => storage.getEmbedding(child.id) !== null)).toBe(true);
+    expect(storage.getCodeSymbols(parent.id)).toEqual([]);
+    expect(containsIds).toEqual(children.map((child) => child.id));
+    expect(storage.searchByText('processAlphaNeedle', 20).map((row) => row.chunkId))
+      .toContain(alphaChild!.id);
+
+    pipeline.close();
+  });
+
   it('clears stale structure for unsupported files on deduplicated ingest', async () => {
     const { pipeline, storage } = createTestPipeline();
     const markdown = '# Notes\n\nNo structural code should remain here.';
