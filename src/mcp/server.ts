@@ -5,7 +5,6 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
-import { getAdaptiveStrategy } from '../core/query-planner.js';
 import type { RetrievalStrategy } from '../core/query-planner.js';
 import type { RetrievalMode } from '../core/retriever.js';
 
@@ -250,7 +249,7 @@ export const TOOL_DEFINITIONS = [
         strategy: {
           type: 'string',
           enum: ['structural', 'hybrid', 'vector', 'text', 'graph'],
-          description: 'Retrieval strategy per round (default: adaptive based on embedding provider)',
+          description: 'Retrieval strategy per round (default: structural when code symbols are indexed, otherwise adaptive)',
         },
       },
       required: ['query'],
@@ -481,7 +480,7 @@ function createServer(pipeline: PipelineOrchestrator): Server {
           const query = args!.query as string;
           const maxTokens = (args!.maxTokens as number | undefined) ?? 100_000;
           const rounds = (args!.rounds as number | undefined) ?? 2;
-          const strategy = (args!.strategy as RetrievalStrategy | undefined) ?? getAdaptiveStrategy();
+          const strategy = args!.strategy as RetrievalStrategy | undefined;
 
           const result = await pipeline.iterativeRetrieve(query, rounds, maxTokens, { strategy });
           return jsonResponse({
@@ -619,6 +618,12 @@ export function validateArgs(args: Record<string, unknown> | undefined): string 
       if (typeof args[key] !== 'number' || !Number.isSafeInteger(args[key]) || args[key] <= 0) {
         return `${key} must be a positive integer`;
       }
+    }
+  }
+
+  if (args.rounds !== undefined) {
+    if (typeof args.rounds !== 'number' || !Number.isSafeInteger(args.rounds) || args.rounds <= 0) {
+      return 'rounds must be a positive integer';
     }
   }
 

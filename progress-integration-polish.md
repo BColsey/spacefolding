@@ -36,6 +36,9 @@
   graph component alongside structural/vector/FTS/dependency/final.
 - Dead Code review: removed unused web inspector client state fields for raw
   score and retrieval results; rendering now keeps only chunks and tier state.
+- Integration Wiring review: MCP `iterative_retrieve` now defers strategy
+  selection to the pipeline by default, so it uses structural retrieval when
+  code symbols are indexed just like `retrieve_context`.
 
 ## Completed Work Items
 
@@ -132,3 +135,11 @@
   unused web inspector `state.result` and `state.retrievalResult` fields and
   their assignments; no exposed CLI/MCP/web retrieval option was found unwired.
   Verified `npm run build && npm run lint && npm test` passed with 288 tests.
+- Integration Wiring: reviewed MCP retrieval tools, CLI retrieve, web retrieve,
+  and benchmark/docs wiring for implemented retrieval behavior. Fixed
+  `iterative_retrieve` so its default strategy is not forced to the old adaptive
+  provider default; it now passes `undefined` to `PipelineOrchestrator.retrieve()`
+  per round, preserving the structural-when-indexed default used by
+  `retrieve_context`. Tightened `rounds` validation and schema description.
+  Verified `npx vitest run tests/interface.test.ts` passed with 21 tests and
+  `npm run build && npm run lint && npm test` passed with 289 tests.

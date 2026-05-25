@@ -193,6 +193,13 @@ describe('MCP interface', () => {
     expect(props.topK?.description).toBeTruthy();
     expect(props.returnLimit?.description).toBeTruthy();
   });
+
+  it('iterative_retrieve describes structural default strategy wiring', () => {
+    const iterative = TOOL_DEFINITIONS.find((tool) => tool.name === 'iterative_retrieve');
+    const strategy = iterative?.inputSchema.properties.strategy as { description?: string };
+
+    expect(strategy?.description).toContain('structural when code symbols are indexed');
+  });
 });
 
 describe('MCP input validation', () => {
@@ -228,6 +235,7 @@ describe('MCP input validation', () => {
     expect(validateArgs({ query: 'test', topK: 1.5 })).toContain('topK must be a positive integer');
     expect(validateArgs({ query: 'test', returnLimit: -1 })).toContain('returnLimit must be a positive integer');
     expect(validateArgs({ query: 'test', maxHops: -1 })).toContain('maxHops must be a non-negative integer');
+    expect(validateArgs({ query: 'test', rounds: 0 })).toContain('rounds must be a positive integer');
   });
 
   it('rejects missing or empty retrieve query', () => {
