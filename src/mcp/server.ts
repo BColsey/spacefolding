@@ -570,6 +570,12 @@ export function validateArgs(args: Record<string, unknown> | undefined): string 
     return 'Missing tool arguments';
   }
 
+  if (args.query !== undefined) {
+    if (typeof args.query !== 'string' || args.query.trim().length === 0) {
+      return 'query must be a non-empty string';
+    }
+  }
+
   const task = args.task;
   if (task && typeof task === 'object') {
     const taskText = (task as { text?: unknown }).text;
@@ -599,8 +605,26 @@ export function validateArgs(args: Record<string, unknown> | undefined): string 
   }
 
   if (args.maxTokens !== undefined) {
-    if (typeof args.maxTokens !== 'number' || !Number.isFinite(args.maxTokens) || args.maxTokens <= 0) {
-      return 'maxTokens must be a positive number';
+    if (
+      typeof args.maxTokens !== 'number' ||
+      !Number.isSafeInteger(args.maxTokens) ||
+      args.maxTokens <= 0
+    ) {
+      return 'maxTokens must be a positive integer';
+    }
+  }
+
+  for (const key of ['topK', 'returnLimit'] as const) {
+    if (args[key] !== undefined) {
+      if (typeof args[key] !== 'number' || !Number.isSafeInteger(args[key]) || args[key] <= 0) {
+        return `${key} must be a positive integer`;
+      }
+    }
+  }
+
+  if (args.maxHops !== undefined) {
+    if (typeof args.maxHops !== 'number' || !Number.isSafeInteger(args.maxHops) || args.maxHops < 0) {
+      return 'maxHops must be a non-negative integer';
     }
   }
 

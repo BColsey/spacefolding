@@ -24,7 +24,11 @@
 
 ## Resolved Issues
 
-(Issues moved here after being fixed and committed.)
+- Error Handling review: MCP and CLI retrieval controls now reject malformed
+  numeric values before they reach the pipeline. CLI `--max-tokens`, `--top-k`,
+  `--return-limit`, and `--max-hops` use strict integer parsing; MCP validates
+  `maxTokens`, `topK`, `returnLimit`, `maxHops`, and non-empty `query`; web
+  `/api/retrieve` has explicit invalid budget coverage.
 
 ## Completed Work Items
 
@@ -98,3 +102,11 @@
   selected paths, and score breakdown; benchmark docs use `/tmp` artifacts and
   current acceptance commands. No spec-compliance defect required code changes.
   Verified `npm run build && npm run lint && npm test` passed with 283 tests.
+- Error Handling: reviewed invalid MCP/CLI retrieval inputs and web
+  empty/error states against `IMPLEMENTATION.md` section 9. Fixed loose CLI
+  `parseInt` handling that accepted malformed numeric flags, added strict CLI
+  parser coverage for `--max-tokens`, `--top-k`, `--return-limit`,
+  `--max-hops`, and empty query, tightened MCP validation for retrieval numeric
+  controls and query shape, and added web invalid `maxTokens` coverage.
+  Verified `npx vitest run tests/interface.test.ts` passed with 19 tests and
+  `npm run build && npm run lint && npm test` passed with 287 tests.

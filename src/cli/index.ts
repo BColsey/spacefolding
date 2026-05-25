@@ -27,11 +27,87 @@ import type { RetrievalMode } from '../core/retriever.js';
 import type { EmbeddingProvider } from '../types/index.js';
 
 type EmbeddingProviderName = 'local' | 'gpu' | 'deterministic';
+const VALID_RETRIEVAL_MODES: readonly RetrievalMode[] = ['focused', 'broad', 'exhaustive'];
+const VALID_RETRIEVAL_STRATEGIES: readonly RetrievalStrategy[] = ['structural', 'hybrid', 'vector', 'text', 'graph'];
 
 interface EmbeddingProviderConfig {
   providerName: EmbeddingProviderName;
   provider: EmbeddingProvider;
   model: string;
+}
+
+export interface ParsedRetrieveCommandOptions {
+  query: string;
+  maxTokens: number;
+  strategy?: RetrievalStrategy;
+  mode?: RetrievalMode;
+  topK?: number;
+  returnLimit?: number;
+  maxHops?: number;
+}
+
+function parseIntegerOption(
+  value: unknown,
+  flagName: string,
+  options: { required?: boolean; allowZero?: boolean } = {}
+): { value?: number; error?: string } {
+  if (value === undefined || value === null || value === '') {
+    return options.required ? { error: `${flagName} must be provided` } : {};
+  }
+
+  const text = String(value);
+  if (!/^\d+$/.test(text)) {
+    return { error: `${flagName} must be a ${options.allowZero ? 'non-negative' : 'positive'} integer` };
+  }
+
+  const parsed = Number(text);
+  if (!Number.isSafeInteger(parsed) || (!options.allowZero && parsed <= 0)) {
+    return { error: `${flagName} must be a ${options.allowZero ? 'non-negative' : 'positive'} integer` };
+  }
+
+  return { value: parsed };
+}
+
+export function parseRetrieveCommandOptions(opts: Record<string, unknown>): {
+  options?: ParsedRetrieveCommandOptions;
+  error?: string;
+} {
+  const query = typeof opts.query === 'string' ? opts.query.trim() : '';
+  if (!query) return { error: 'query must be a non-empty string' };
+
+  const mode = opts.mode as RetrievalMode | undefined;
+  if (mode && !VALID_RETRIEVAL_MODES.includes(mode)) {
+    return { error: `Invalid mode "${mode}". Must be one of: ${VALID_RETRIEVAL_MODES.join(', ')}` };
+  }
+
+  const strategy = opts.strategy as RetrievalStrategy | undefined;
+  if (strategy && !VALID_RETRIEVAL_STRATEGIES.includes(strategy)) {
+    return { error: `Invalid strategy "${strategy}". Must be one of: ${VALID_RETRIEVAL_STRATEGIES.join(', ')}` };
+  }
+
+  const maxTokens = parseIntegerOption(opts.maxTokens ?? '100000', '--max-tokens', { required: true });
+  if (maxTokens.error) return { error: maxTokens.error };
+
+  const topK = parseIntegerOption(opts.topK, '--top-k');
+  if (topK.error) return { error: topK.error };
+
+  const returnLimit = parseIntegerOption(opts.returnLimit, '--return-limit');
+  if (returnLimit.error) return { error: returnLimit.error };
+
+  const maxHops = parseIntegerOption(opts.maxHops ?? '0', '--max-hops', { allowZero: true });
+  if (maxHops.error) return { error: maxHops.error };
+
+  return {
+    options: {
+      query,
+      maxTokens: maxTokens.value!,
+      strategy,
+      mode,
+      topK: topK.value,
+      returnLimit: returnLimit.value,
+      maxHops: maxHops.value,
+    },
+  };
 }
 
 function createCompressionProvider() {
@@ -375,29 +451,24 @@ export function buildCLI(): Command {
     .option('--max-hops <number>', 'Max graph traversal hops', '0')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
-
-      const validModes = ['focused', 'broad', 'exhaustive'];
-      const validStrategies = ['structural', 'hybrid', 'vector', 'text', 'graph'];
-      if (opts.mode && !validModes.includes(opts.mode)) {
-        console.error(chalk.red(`Invalid mode "${opts.mode}". Must be one of: ${validModes.join(', ')}`));
+      const parsed = parseRetrieveCommandOptions(opts);
+      if (parsed.error) {
+        console.error(chalk.red(parsed.error));
         process.exit(1);
       }
-      if (opts.strategy && !validStrategies.includes(opts.strategy)) {
-        console.error(chalk.red(`Invalid strategy "${opts.strategy}". Must be one of: ${validStrategies.join(', ')}`));
-        process.exit(1);
-      }
+      const retrieveOptions = parsed.options!;
 
       const pipeline = createPipeline(dbPath);
 
-      const result = await pipeline.retrieve(opts.query, parseInt(opts.maxTokens ?? opts.maxTokens, 10), {
-        strategy: opts.strategy as RetrievalStrategy | undefined,
-        mode: opts.mode as RetrievalMode | undefined,
-        topK: opts.topK ? parseInt(opts.topK, 10) : undefined,
-        returnLimit: opts.returnLimit ? parseInt(opts.returnLimit, 10) : undefined,
-        maxHops: opts.maxHops ? parseInt(opts.maxHops, 10) : undefined,
+      const result = await pipeline.retrieve(retrieveOptions.query, retrieveOptions.maxTokens, {
+        strategy: retrieveOptions.strategy,
+        mode: retrieveOptions.mode,
+        topK: retrieveOptions.topK,
+        returnLimit: retrieveOptions.returnLimit,
+        maxHops: retrieveOptions.maxHops,
       });
 
-      console.log(chalk.bold(`Query: ${opts.query}`));
+      console.log(chalk.bold(`Query: ${retrieveOptions.query}`));
       console.log(chalk.gray(
         `Intent: ${result.plan.intent} | Strategy: ${result.plan.strategy} | Mode: ${result.selectionPolicy.mode} | ` +
         `Tokens: ${result.totalTokens}/${result.targetBudget} target (${result.budget} hard cap)`

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildCLI } from '../src/cli/index.js';
+import { buildCLI, parseRetrieveCommandOptions } from '../src/cli/index.js';
 import { TOOL_DEFINITIONS, validateArgs } from '../src/mcp/server.js';
 import { createWebRequestHandler } from '../src/web/server.js';
 import { createRepository } from '../src/storage/repository.js';
@@ -121,6 +121,38 @@ describe('CLI interface', () => {
 
     expect(modeOpt?.defaultValue).toBe('focused');
   });
+
+  it('strictly parses retrieve numeric options', () => {
+    const parsed = parseRetrieveCommandOptions({
+      query: 'find auth',
+      maxTokens: '50000',
+      mode: 'focused',
+      strategy: 'structural',
+      topK: '12',
+      returnLimit: '8',
+      maxHops: '0',
+    });
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.options).toEqual({
+      query: 'find auth',
+      maxTokens: 50000,
+      mode: 'focused',
+      strategy: 'structural',
+      topK: 12,
+      returnLimit: 8,
+      maxHops: 0,
+    });
+  });
+
+  it('rejects malformed retrieve numeric options before running retrieval', () => {
+    expect(parseRetrieveCommandOptions({ query: 'x', maxTokens: '5abc' }).error).toContain('--max-tokens');
+    expect(parseRetrieveCommandOptions({ query: 'x', maxTokens: '0' }).error).toContain('--max-tokens');
+    expect(parseRetrieveCommandOptions({ query: 'x', topK: '1.5' }).error).toContain('--top-k');
+    expect(parseRetrieveCommandOptions({ query: 'x', returnLimit: '0' }).error).toContain('--return-limit');
+    expect(parseRetrieveCommandOptions({ query: 'x', maxHops: '-1' }).error).toContain('--max-hops');
+    expect(parseRetrieveCommandOptions({ query: '   ' }).error).toContain('query must be a non-empty string');
+  });
 });
 
 describe('MCP interface', () => {
@@ -187,6 +219,18 @@ describe('MCP input validation', () => {
 
   it('accepts request without mode or strategy', () => {
     expect(validateArgs({ query: 'test' })).toBeUndefined();
+  });
+
+  it('rejects invalid retrieve numeric controls with useful messages', () => {
+    expect(validateArgs({ query: 'test', maxTokens: 0 })).toContain('maxTokens must be a positive integer');
+    expect(validateArgs({ query: 'test', topK: 1.5 })).toContain('topK must be a positive integer');
+    expect(validateArgs({ query: 'test', returnLimit: -1 })).toContain('returnLimit must be a positive integer');
+    expect(validateArgs({ query: 'test', maxHops: -1 })).toContain('maxHops must be a non-negative integer');
+  });
+
+  it('rejects missing or empty retrieve query', () => {
+    expect(validateArgs({ query: '' })).toContain('query must be a non-empty string');
+    expect(validateArgs({ query: 42 })).toContain('query must be a non-empty string');
   });
 });
 
@@ -283,11 +327,15 @@ describe('Web inspector interface', () => {
     const chunks = requestWeb(pipeline, '/api/chunks').then((response) => response.json<unknown[]>());
     const invalidMode = await requestWeb(pipeline, '/api/retrieve?query=test&mode=everything');
     const invalidModeBody = invalidMode.json<{ error: string }>();
+    const invalidBudget = await requestWeb(pipeline, '/api/retrieve?query=test&maxTokens=5abc');
+    const invalidBudgetBody = invalidBudget.json<{ error: string }>();
 
     expect(page.body).toContain('id="empty-msg"');
     expect(page.body).toContain('No chunks ingested.');
     expect(await chunks).toEqual([]);
     expect(invalidMode.status).toBe(400);
     expect(invalidModeBody.error).toContain('mode must be one of');
+    expect(invalidBudget.status).toBe(400);
+    expect(invalidBudgetBody.error).toContain('maxTokens must be a positive integer');
   });
 });
