@@ -15,7 +15,7 @@ import type {
 import { SQLiteRepository } from '../storage/repository.js';
 import { ContextScorer } from '../core/scorer.js';
 import { ContextRouter } from '../core/router.js';
-import { ContextIngester, inferLanguageFromPath } from '../core/ingester.js';
+import { ContextIngester, inferLanguageFromPath, normalizeContextPath as normalizePath } from '../core/ingester.js';
 import type { IngestResult } from '../core/ingester.js';
 import type { CompressionProvider } from '../types/index.js';
 import type { DependencyAnalyzer } from '../types/index.js';
@@ -260,24 +260,25 @@ export class PipelineOrchestrator {
     path?: string,
     language?: string
   ): Promise<ContextChunk> {
+    const normalizedPath = path !== undefined ? normalizePath(path) : undefined;
     // Deduplication: file content is scoped by path so identical files at
     // different paths remain distinct chunks.
     const contentHash = this.contentHash(text);
-    const resolvedLanguage = path !== undefined
-      ? language ?? inferLanguageFromPath(path)
+    const resolvedLanguage = normalizedPath !== undefined
+      ? language ?? inferLanguageFromPath(normalizedPath)
       : language;
-    const existing = this.storage.findChunkByContentHash(contentHash, path);
+    const existing = this.storage.findChunkByContentHash(contentHash, normalizedPath);
     if (existing) {
-      if (path !== undefined && existing.metadata?.split) {
-        const refreshed = await this.refreshStoredChunksForPath(path, resolvedLanguage);
+      if (normalizedPath !== undefined && existing.metadata?.split) {
+        const refreshed = await this.refreshStoredChunksForPath(normalizedPath, resolvedLanguage);
         return refreshed.find((chunk) => chunk.id === existing.id) ?? existing;
       }
       return this.refreshStoredChunk(existing, resolvedLanguage);
     }
 
     const result: IngestResult =
-      path !== undefined
-        ? await this.ingester.ingestFileAsync(path, text, resolvedLanguage, type as ChunkType | undefined)
+      normalizedPath !== undefined
+        ? await this.ingester.ingestFileAsync(normalizedPath, text, resolvedLanguage, type as ChunkType | undefined)
         : await this.ingester.ingestTextAsync(source, text, type as ContextChunk['type']);
 
     const chunk = result.primary;
@@ -316,17 +317,18 @@ export class PipelineOrchestrator {
     type?: string,
     language?: string
   ): Promise<FileReingestResult> {
+    const normalizedPath = normalizePath(path);
     const fullContentHash = this.contentHash(text);
-    const resolvedLanguage = language ?? inferLanguageFromPath(path);
-    const existingPathChunks = this.storage.queryChunks({ path });
+    const resolvedLanguage = language ?? inferLanguageFromPath(normalizedPath);
+    const existingPathChunks = this.storage.queryChunks({ path: normalizedPath });
     const alreadyCurrent = existingPathChunks.some((chunk) =>
       this.chunkContentHash(chunk) === fullContentHash && (chunk.metadata?.split || !chunk.parentId)
     );
 
     if (alreadyCurrent) {
-      const refreshedChunks = await this.refreshStoredChunksForPath(path, resolvedLanguage);
+      const refreshedChunks = await this.refreshStoredChunksForPath(normalizedPath, resolvedLanguage);
       return {
-        path,
+        path: normalizedPath,
         changed: false,
         chunks: refreshedChunks.map((chunk) => chunk.id),
         reusedChunks: refreshedChunks.length,
@@ -352,7 +354,7 @@ export class PipelineOrchestrator {
       return reusable ?? null;
     };
 
-    const result = await this.ingester.ingestFileAsync(path, text, resolvedLanguage, type as ChunkType | undefined);
+    const result = await this.ingester.ingestFileAsync(normalizedPath, text, resolvedLanguage, type as ChunkType | undefined);
     const keptIds = new Set<string>();
     const storedChunkIds: string[] = [];
     let reusedChunks = 0;
@@ -426,7 +428,7 @@ export class PipelineOrchestrator {
     this.enforceMaxChunks();
 
     return {
-      path,
+      path: normalizedPath,
       changed: true,
       chunks: storedChunkIds,
       reusedChunks,
@@ -584,7 +586,7 @@ export class PipelineOrchestrator {
 
   /** Delete all chunks currently associated with a file path. */
   deleteChunksForPath(path: string): number {
-    const chunks = this.storage.queryChunks({ path });
+    const chunks = this.storage.queryChunks({ path: normalizePath(path) });
     return this.deleteChunks(chunks.map((chunk) => chunk.id));
   }
 
@@ -713,7 +715,7 @@ export class PipelineOrchestrator {
     language?: string
   ): Promise<ContextChunk[]> {
     const refreshedChunks: ContextChunk[] = [];
-    for (const chunk of this.storage.queryChunks({ path })) {
+    for (const chunk of this.storage.queryChunks({ path: normalizePath(path) })) {
       refreshedChunks.push(await this.refreshStoredChunk(chunk, language));
     }
     return refreshedChunks;
@@ -1110,8 +1112,4 @@ function isTestPath(filePath: string): boolean {
     || /\.(test|spec)\.[cm]?[jt]sx?$/i.test(normalized)
     || /test_.*\.py$/i.test(normalized)
     || /_test\.go$/i.test(normalized);
-}
-
-function normalizePath(filePath: string): string {
-  return filePath.split(/[\\/]+/).join('/');
 }

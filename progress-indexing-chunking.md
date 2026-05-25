@@ -5,6 +5,7 @@
 ## Codebase Patterns
 
 - Language inference for ingested files lives in `src/core/ingester.ts`; project ingestion should reuse that helper so extension support stays consistent.
+- Stored file paths are normalized to `/` at the ingester/orchestrator boundary so chunks, structural rows, and re-ingest lookups share one path key.
 - `PipelineOrchestrator.storeChunkStructure()` is the integration point that keeps code structure aligned with stored chunks. Unsupported files and split metadata parents should clear structural rows.
 - Content-hash dedupe can bypass normal storage paths, so deduped and unchanged re-ingest paths must refresh language metadata and structural rows.
 - Split chunks carry content hashes when created; the orchestrator may overwrite them with the same SHA-256 hash convention before storage.
@@ -63,3 +64,7 @@
   - Verification: `npx vitest run tests/orchestrator.test.ts`; `npm run build && npm run lint && npm test`
 - 2026-05-25: Review category 3, Test Coverage. Checked chunking, structural extraction, re-ingestion, watcher modification flow, and vector index deletion coverage from scratch. Added regression coverage for oversized declaration splitting, unsupported-language StructuralIndexer degradation, unchanged file re-ingest without duplicate chunks or structure, and active vector index cleanup when stored chunk text changes.
   - Verification: `npx vitest run tests/chunker.test.ts tests/structural-indexer.test.ts tests/orchestrator.test.ts tests/vector-index.test.ts`; `npm run build && npm run lint && npm test`
+- 2026-05-25: Review category 4, Code Consistency. Checked path normalization, language inference, and metadata keys across ingest, re-ingest, structural storage, and project scanning. Fixed direct file ingest/re-ingest to normalize stored paths to `/` before content-hash lookup, chunk creation, structure storage, and delete-by-path, and added regression coverage for backslash paths reusing the same normalized chunk and structural rows.
+  - Verification: `npx vitest run tests/orchestrator.test.ts`; `npm run build && npm run lint && npm test`
+  - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
+  - Benchmark summary: structural recall@10 0.983, nDCG@10 0.890, MRR 0.933; structural e2e average recall 0.950 and average precision 0.396.

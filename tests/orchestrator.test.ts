@@ -142,6 +142,34 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
+  it('normalizes file paths across ingest, structure, and re-ingest', async () => {
+    const { pipeline, storage } = createTestPipeline();
+    const rawPath = 'src\\feature\\service.ts';
+    const normalizedPath = 'src/feature/service.ts';
+    const content = 'export function runService() { return true; }';
+
+    const chunk = await pipeline.ingest('file', content, 'code', rawPath);
+    const result = await pipeline.reingestFile(rawPath, content, 'code');
+    const chunksForPath = pipeline.getAllChunks().filter((stored) => stored.path === normalizedPath);
+    const symbolsForPath = storage.getAllCodeSymbols().filter((symbol) => symbol.path === normalizedPath);
+
+    expect(chunk.path).toBe(normalizedPath);
+    expect(result).toMatchObject({
+      path: normalizedPath,
+      changed: false,
+      chunks: [chunk.id],
+      reusedChunks: 1,
+      createdChunks: 0,
+      deletedChunks: 0,
+      totalChunks: 1,
+    });
+    expect(pipeline.getAllChunks().some((stored) => stored.path === rawPath)).toBe(false);
+    expect(chunksForPath.map((stored) => stored.id)).toEqual([chunk.id]);
+    expect(symbolsForPath.map((symbol) => symbol.name)).toEqual(['runService']);
+
+    pipeline.close();
+  });
+
   it('counts unreadable project files as skipped', async () => {
     const dir = createProjectDir({
       'src/unreadable.ts': 'export function hidden() { return true; }',

@@ -29,7 +29,11 @@ const EXT_TO_LANG: Record<string, string> = {
 };
 
 export function inferLanguageFromPath(filePath: string): string | undefined {
-  return EXT_TO_LANG[extname(filePath).toLowerCase()];
+  return EXT_TO_LANG[extname(normalizeContextPath(filePath)).toLowerCase()];
+}
+
+export function normalizeContextPath(filePath: string): string {
+  return filePath.split(/[\\/]+/).join('/');
 }
 
 export interface IngestResult {
@@ -102,13 +106,14 @@ export class ContextIngester {
     language?: string,
     overrideType?: ChunkType
   ): IngestResult {
-    const lang = language ?? inferLanguageFromPath(filePath);
+    const normalizedPath = normalizeContextPath(filePath);
+    const lang = language ?? inferLanguageFromPath(normalizedPath);
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
     const split = maybeSplit(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
       source: 'file',
       type,
-      path: filePath,
+      path: normalizedPath,
       language: lang,
     });
     if (split) return { primary: split.parent, split };
@@ -119,7 +124,7 @@ export class ContextIngester {
         type,
         text: content,
         timestamp: Date.now(),
-        path: filePath,
+        path: normalizedPath,
         language: lang,
         tokensEstimate,
         childrenIds: [],
@@ -139,13 +144,14 @@ export class ContextIngester {
     language?: string,
     overrideType?: ChunkType
   ): Promise<IngestResult> {
-    const lang = language ?? inferLanguageFromPath(filePath);
+    const normalizedPath = normalizeContextPath(filePath);
+    const lang = language ?? inferLanguageFromPath(normalizedPath);
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
     const split = await maybeSplitAsync(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
       source: 'file',
       type,
-      path: filePath,
+      path: normalizedPath,
       language: lang,
     });
     if (split) return { primary: split.parent, split };
@@ -156,7 +162,7 @@ export class ContextIngester {
         type,
         text: content,
         timestamp: Date.now(),
-        path: filePath,
+        path: normalizedPath,
         language: lang,
         tokensEstimate,
         childrenIds: [],
@@ -203,7 +209,7 @@ export class ContextIngester {
     files: { path: string; content: string }[]
   ): IngestResult[] {
     return files.map((f) =>
-      this.ingestFile(`${basePath}/${f.path}`, f.content)
+      this.ingestFile(`${normalizeContextPath(basePath)}/${normalizeContextPath(f.path)}`, f.content)
     );
   }
 }
