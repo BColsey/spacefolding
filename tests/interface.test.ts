@@ -46,12 +46,12 @@ function createWebFixture(): WebFixture {
   return { pipeline };
 }
 
-async function requestWeb(pipeline: PipelineOrchestrator, url: string): Promise<WebTestResponse> {
+async function requestWeb(pipeline: PipelineOrchestrator, url: string, method = 'GET'): Promise<WebTestResponse> {
   let status = 0;
   let body = '';
   const handler = createWebRequestHandler(pipeline);
   await handler(
-    { method: 'GET', url },
+    { method, url },
     {
       writeHead(nextStatus) {
         status = nextStatus;
@@ -152,6 +152,8 @@ describe('CLI interface', () => {
     expect(parseRetrieveCommandOptions({ query: 'x', returnLimit: '0' }).error).toContain('--return-limit');
     expect(parseRetrieveCommandOptions({ query: 'x', maxHops: '-1' }).error).toContain('--max-hops');
     expect(parseRetrieveCommandOptions({ query: '   ' }).error).toContain('query must be a non-empty string');
+    expect(parseRetrieveCommandOptions({ query: 'x', mode: 'all' }).error).toContain('Invalid mode');
+    expect(parseRetrieveCommandOptions({ query: 'x', strategy: 'all' }).error).toContain('Invalid strategy');
   });
 });
 
@@ -337,5 +339,19 @@ describe('Web inspector interface', () => {
     expect(invalidModeBody.error).toContain('mode must be one of');
     expect(invalidBudget.status).toBe(400);
     expect(invalidBudgetBody.error).toContain('maxTokens must be a positive integer');
+  });
+
+  it('returns direct errors for unsupported web methods and routes', async () => {
+    const { pipeline } = createWebFixture();
+
+    const wrongMethod = await requestWeb(pipeline, '/api/stats', 'POST');
+    const wrongMethodBody = wrongMethod.json<{ error: string }>();
+    const missingRoute = await requestWeb(pipeline, '/api/not-real');
+    const missingRouteBody = missingRoute.json<{ error: string }>();
+
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethodBody.error).toBe('Method not allowed');
+    expect(missingRoute.status).toBe(404);
+    expect(missingRouteBody.error).toBe('Not found');
   });
 });

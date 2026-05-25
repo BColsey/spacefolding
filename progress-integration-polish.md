@@ -29,6 +29,8 @@
   `--return-limit`, and `--max-hops` use strict integer parsing; MCP validates
   `maxTokens`, `topK`, `returnLimit`, `maxHops`, and non-empty `query`; web
   `/api/retrieve` has explicit invalid budget coverage.
+- Test Coverage review: interface tests now cover CLI invalid mode/strategy
+  parsing through the shared parser and web handler 405/404 error branches.
 
 ## Completed Work Items
 
@@ -110,3 +112,8 @@
   controls and query shape, and added web invalid `maxTokens` coverage.
   Verified `npx vitest run tests/interface.test.ts` passed with 19 tests and
   `npm run build && npm run lint && npm test` passed with 287 tests.
+- Test Coverage: reviewed MCP, CLI, and web interface coverage for retrieval
+  controls and web error states. Added coverage for CLI invalid mode/strategy
+  through `parseRetrieveCommandOptions()` and web request-handler 405/404
+  branches. Verified `npx vitest run tests/interface.test.ts` passed with 20
+  tests and `npm run build && npm run lint && npm test` passed with 288 tests.
