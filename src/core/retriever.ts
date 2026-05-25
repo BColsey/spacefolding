@@ -580,7 +580,7 @@ function normalizeSourceResults(results: SourceResult[]): Array<SourceResult & {
 
   const max = sorted[0].score;
   const min = sorted[sorted.length - 1].score;
-  return sorted.map((result, index) => {
+  return sorted.map((result) => {
     const scoreRange = max - min;
     const normalizedScore = scoreRange > 1e-9
       ? (result.score - min) / scoreRange

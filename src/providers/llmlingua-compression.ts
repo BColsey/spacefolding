@@ -98,7 +98,7 @@ export class LlmLinguaCompressionProvider implements CompressionProvider {
     });
   }
 
-  async compress(task: TaskDescription, chunks: ContextChunk[]): Promise<CompressionResult> {
+  async compress(_task: TaskDescription, chunks: ContextChunk[]): Promise<CompressionResult> {
     const context = chunks.map((c) => c.text).join('\n\n');
 
     const result = await this.rpc('compress', {

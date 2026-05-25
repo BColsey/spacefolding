@@ -197,3 +197,11 @@
   budgets. Verified targeted
   `npx vitest run tests/orchestrator.test.ts --testNamePattern "policy target budget"`
   and `npm run build && npm run lint && npm test` passed with 322 tests.
+- Dead Code: performed a fresh sweep for integration-owned retrieval options
+  and diagnostics across MCP, CLI, web, pipeline policy helpers, tests, and
+  docs, then ran `npx tsc --noEmit --noUnusedLocals --noUnusedParameters`.
+  Confirmed mode/strategy/topK/returnLimit/maxHops and budget/reason
+  diagnostics remain wired to user surfaces. Removed compiler-detected dead
+  declarations in retriever normalization, scorer construction, GPU embedding
+  readiness metadata, and LLMLingua compression parameter naming. Verified
+  `npm run build && npm run lint && npm test` passed with 322 tests.

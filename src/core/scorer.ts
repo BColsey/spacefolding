@@ -12,7 +12,7 @@ export class ContextScorer {
   constructor(
     private config: RoutingConfig,
     private embeddingProvider: EmbeddingProvider,
-    private tokenEstimator: TokenEstimator
+    _tokenEstimator: TokenEstimator
   ) {}
 
   async scoreChunks(

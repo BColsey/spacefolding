@@ -19,9 +19,6 @@ import { createInterface } from 'node:readline';
 export class GpuEmbeddingProvider implements EmbeddingProvider {
   private process: ChildProcess | null = null;
   private ready = false;
-  private dim = 0;
-  private modelName = '';
-  private deviceName = '';
   private pending = new Map<number, {
     resolve: (value: number[][]) => void;
     reject: (error: Error) => void;
@@ -68,9 +65,6 @@ export class GpuEmbeddingProvider implements EmbeddingProvider {
           // Ready signal
           if (msg.status === 'ready') {
             this.ready = true;
-            this.modelName = msg.model;
-            this.deviceName = msg.device;
-            this.dim = msg.dim;
             resolve();
             return;
           }
