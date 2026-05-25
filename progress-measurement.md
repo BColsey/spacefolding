@@ -615,3 +615,16 @@
   fail with direct messages, confirmed no generated/private benchmark artifacts
   are tracked, and confirmed no generated benchmark JSON appeared in repo
   status.
+- Spec Compliance: rechecked `DESIGN.md` success metrics and benchmark design
+  against `IMPLEMENTATION.md` testing strategy, loop ownership, and v1
+  benchmark-credibility constraints. Verified the documented retrieval, E2E,
+  and acceptance-checker commands generated JSON under `/tmp` and passed with
+  exact actual/expected metrics. Inspected retrieval JSON for requested
+  strategies, per-strategy averages, per-task hit/miss diagnostics, and
+  `successGate.structuralBeatsKeyword`; inspected E2E JSON for average
+  recall/precision/tokens, current-vs-structural deltas, full-codebase token
+  diagnostics, and `successGate.focusedRetrievalPasses`. Confirmed the result
+  snapshot docs match the freshly generated metrics, fixture held-out
+  generation writes under `/tmp`, and no generated benchmark JSON appeared in
+  repo status. Verified `npm run build && npm run lint && npm test` passed. No
+  spec-compliance defect required code changes.
