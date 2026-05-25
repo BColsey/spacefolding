@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { parseArgs } from '../benchmarks/profile-retrieval.ts';
+import { loadProfileDataset, parseArgs, parseProfileDataset } from '../benchmarks/profile-retrieval.ts';
 
 describe('retrieval profiler CLI parsing', () => {
   it('parses profiler arguments without executing the benchmark on import', () => {
@@ -49,5 +52,38 @@ describe('retrieval profiler CLI parsing', () => {
     expect(() => parseArgs(['--unknown'])).toThrow(
       'Unknown argument: --unknown'
     );
+  });
+
+  it('rejects malformed profiler datasets with direct messages', () => {
+    expect(() => parseProfileDataset({ notTasks: [] }, '/tmp/profile.json')).toThrow(
+      'Profiler dataset must contain a tasks array: /tmp/profile.json'
+    );
+    expect(() => parseProfileDataset({ tasks: [] }, '/tmp/profile.json')).toThrow(
+      'Dataset has no tasks: /tmp/profile.json'
+    );
+    expect(() =>
+      parseProfileDataset({
+        tasks: [{
+          id: 'P01',
+          task: 42,
+        }],
+      }, '/tmp/profile.json')
+    ).toThrow(
+      'Profiler dataset task 1 field task must be a non-empty string: /tmp/profile.json'
+    );
+  });
+
+  it('reports malformed profiler dataset JSON with the file path', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'spacefolding-profile-test-'));
+    const datasetPath = join(tempDir, 'malformed.json');
+    writeFileSync(datasetPath, '{bad json');
+
+    try {
+      expect(() => loadProfileDataset(datasetPath)).toThrow(
+        new RegExp(`Malformed profiler dataset JSON at ${datasetPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

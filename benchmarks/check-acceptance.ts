@@ -45,11 +45,9 @@ export function parseArgs(argv: string[]): CliOptions {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--retrieval-json' || arg === '--retrieval') {
-      if (!argv[i + 1]) throw new Error(`${arg} requires a JSON path`);
-      options.retrievalJson = argv[++i];
+      options.retrievalJson = readOptionValue(argv, i++, arg);
     } else if (arg === '--e2e-json' || arg === '--e2e') {
-      if (!argv[i + 1]) throw new Error(`${arg} requires a JSON path`);
-      options.e2eJson = argv[++i];
+      options.e2eJson = readOptionValue(argv, i++, arg);
     } else if (arg === '--json') {
       options.json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -65,6 +63,14 @@ export function parseArgs(argv: string[]): CliOptions {
   }
 
   return options;
+}
+
+function readOptionValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a JSON path`);
+  }
+  return value;
 }
 
 export function printUsage(): void {

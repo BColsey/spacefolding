@@ -126,6 +126,68 @@ function parsePositiveInt(value: string, name: string): number {
   return parsed;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireTaskString(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string {
+  const value = task[field];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(
+      `Profiler dataset task ${index + 1} field ${field} must be a non-empty string: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+export function parseProfileDataset(data: unknown, datasetPath: string): BenchmarkDataset {
+  if (!isRecord(data) || !Array.isArray(data.tasks)) {
+    throw new Error(`Profiler dataset must contain a tasks array: ${datasetPath}`);
+  }
+  if (data.tasks.length === 0) {
+    throw new Error(`Dataset has no tasks: ${datasetPath}`);
+  }
+
+  return {
+    tasks: data.tasks.map((task, index) => {
+      if (!isRecord(task)) {
+        throw new Error(`Profiler dataset task ${index + 1} must be an object: ${datasetPath}`);
+      }
+      return {
+        id: requireTaskString(task, 'id', index, datasetPath),
+        task: requireTaskString(task, 'task', index, datasetPath),
+      };
+    }),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function loadProfileDataset(datasetPath: string): BenchmarkDataset {
+  let raw: string;
+  try {
+    raw = readFileSync(datasetPath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Unable to read profiler dataset JSON at ${datasetPath}: ${errorMessage(error)}`);
+  }
+
+  try {
+    return parseProfileDataset(JSON.parse(raw) as unknown, datasetPath);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Malformed profiler dataset JSON at ${datasetPath}: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
 export function walkProfileCorpus(dir: string, includeTests: boolean): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -179,10 +241,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   if (!existsSync(options.corpus)) throw new Error(`Corpus not found: ${options.corpus}`);
   if (!existsSync(options.dataset)) throw new Error(`Dataset not found: ${options.dataset}`);
 
-  const dataset: BenchmarkDataset = JSON.parse(readFileSync(options.dataset, 'utf-8'));
-  if (!Array.isArray(dataset.tasks) || dataset.tasks.length === 0) {
-    throw new Error(`Dataset has no tasks: ${options.dataset}`);
-  }
+  const dataset = loadProfileDataset(options.dataset);
   const log = (...args: unknown[]) => {
     if (!options.json) console.log(...args);
   };
@@ -307,7 +366,7 @@ function isMainModule(): boolean {
 
 if (isMainModule()) {
   main().catch((error) => {
-    console.error('Profile failed:', error);
+    console.error(`Profile failed: ${errorMessage(error)}`);
     process.exit(1);
   });
 }

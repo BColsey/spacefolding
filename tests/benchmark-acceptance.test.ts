@@ -125,6 +125,153 @@ describe('acceptance checker report', () => {
     }));
   });
 
+  it('fails non-object benchmark roots and missing top-level sections directly', () => {
+    const report = buildAcceptanceReport({
+      retrieval: 'not an object',
+      e2e: {
+        successGate: {
+          focusedRetrievalPasses: true,
+        },
+      },
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'retrieval.root_object_present',
+      passed: false,
+      actual: 'not an object',
+      expected: 'retrieval JSON is an object',
+    }));
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'e2e.summary_present',
+      passed: false,
+      actual: 'missing',
+      expected: 'top-level summary object',
+    }));
+  });
+
+  it('fails missing retrieval strategies arrays before comparing metrics', () => {
+    const report = buildAcceptanceReport({
+      retrieval: {
+        successGate: {
+          structuralBeatsKeyword: true,
+        },
+      },
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'retrieval.strategies_present',
+      passed: false,
+      actual: 'missing',
+      expected: 'top-level strategies array',
+    }));
+  });
+
+  it('fails field-level retrieval diagnostics when summaries or gate values are incomplete', () => {
+    const report = buildAcceptanceReport({
+      retrieval: {
+        strategies: [
+          {
+            strategy: 'keyword',
+            averages: { recallAt10: 0.5, ndcgAt10: 0.4, mrr: 0.25 },
+          },
+          {
+            strategy: 'structural',
+            averages: { recallAt10: 0.7, mrr: Number.NaN },
+          },
+        ],
+        successGate: {},
+      },
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'retrieval.ndcgAt10',
+      passed: false,
+      actual: 'missing/invalid: structural.averages.ndcgAt10',
+      expected: 'numeric keyword and structural averages for NDCG@10',
+    }));
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'retrieval.mrr',
+      passed: false,
+      actual: 'missing/invalid: structural.averages.mrr',
+      expected: 'numeric keyword and structural averages for MRR',
+    }));
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'retrieval.success_gate',
+      passed: false,
+      actual: 'missing/invalid: successGate.structuralBeatsKeyword',
+      expected: 'successGate.structuralBeatsKeyword is true',
+    }));
+  });
+
+  it('reports E2E tasks that return more tokens than the full codebase', () => {
+    const report = buildAcceptanceReport({
+      e2e: {
+        summary: {
+          averageRecallVsCurrent: 0.1,
+          averagePrecisionVsCurrent: 0.05,
+          averageTokensVsCurrent: 1_500,
+          tasksReturningMoreThanCodebase: ['E01', 'E03'],
+          averageRecall: 0.96,
+          averagePrecision: 0.36,
+          averageTokens: 22_000,
+          totalCodebaseTokens: 20_000,
+        },
+        successGate: {
+          focusedRetrievalPasses: false,
+        },
+      },
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'e2e.no_task_exceeds_codebase_tokens',
+      passed: false,
+      actual: 'E01, E03',
+      expected: 'summary.tasksReturningMoreThanCodebase is an empty array',
+    }));
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'e2e.average_tokens_below_codebase',
+      passed: false,
+      actual: 22_000,
+      expected: 'summary.averageTokens < summary.totalCodebaseTokens (20000)',
+    }));
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'e2e.success_gate',
+      passed: false,
+      actual: false,
+      expected: 'successGate.focusedRetrievalPasses is true',
+    }));
+  });
+
+  it('fails field-level E2E diagnostics when success-gate values are incomplete', () => {
+    const report = buildAcceptanceReport({
+      e2e: {
+        summary: {
+          averageRecallVsCurrent: 0.1,
+          averagePrecisionVsCurrent: 0.05,
+          averageTokensVsCurrent: 1_500,
+          tasksReturningMoreThanCodebase: [],
+          averageRecall: 0.96,
+          averagePrecision: 0.36,
+          averageTokens: 12_000,
+          totalCodebaseTokens: 20_000,
+        },
+        successGate: {},
+      },
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(expect.objectContaining({
+      name: 'e2e.success_gate',
+      passed: false,
+      actual: 'missing/invalid: successGate.focusedRetrievalPasses',
+      expected: 'successGate.focusedRetrievalPasses is true',
+    }));
+  });
+
   it('represents malformed temporary JSON as a failed checker report', () => {
     const dir = mkdtempSync(join(tmpdir(), 'spacefolding-acceptance-'));
     try {
@@ -169,9 +316,35 @@ describe('acceptance checker report', () => {
     });
   });
 
+  it('reports missing checker inputs at the report-builder boundary', () => {
+    const report = buildAcceptanceReport({});
+
+    expect(report).toEqual({
+      passed: false,
+      checks: [{
+        name: 'cli.inputs_present',
+        passed: false,
+        actual: 'none',
+        expected: 'at least one of --retrieval-json or --e2e-json',
+      }],
+    });
+  });
+
   it('fails CLI argument parsing when no input JSON path is provided', () => {
     expect(() => parseArgs(['--json'])).toThrow(
       'Provide --retrieval-json, --e2e-json, or both'
+    );
+    expect(() => parseArgs(['--unknown'])).toThrow(
+      'Unknown argument: --unknown'
+    );
+  });
+
+  it('rejects missing checker JSON path values before consuming the next flag', () => {
+    expect(() => parseArgs(['--retrieval-json', '--json'])).toThrow(
+      '--retrieval-json requires a JSON path'
+    );
+    expect(() => parseArgs(['--e2e-json'])).toThrow(
+      '--e2e-json requires a JSON path'
     );
   });
 });

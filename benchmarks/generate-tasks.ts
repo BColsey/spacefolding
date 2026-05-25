@@ -228,7 +228,7 @@ function walkDir(dir: string): string[] {
       results.push(fullPath);
     }
   }
-  return results;
+  return results.sort();
 }
 
 // ── Task generation ──────────────────────────────────────────────
