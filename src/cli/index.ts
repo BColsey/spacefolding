@@ -449,7 +449,7 @@ export function buildCLI(): Command {
     .option('--mode <type>', 'Selection mode: focused, broad, exhaustive', 'focused')
     .option('--top-k <number>', 'Max results to return (default: adaptive)')
     .option('--return-limit <number>', 'Max scored candidates to consider before token budgeting')
-    .option('--max-hops <number>', 'Max graph traversal hops', '0')
+    .option('--max-hops <number>', 'Max graph traversal hops (default: 0; graph traversal disabled)', '0')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const parsed = parseRetrieveCommandOptions(opts);

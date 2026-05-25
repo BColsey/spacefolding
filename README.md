@@ -330,11 +330,11 @@ The system automatically detects query intent and adjusts strategy:
 
 | Intent | Example | Strategy | Hard token budget |
 |--------|---------|----------|-------------|
-| **debug** | "fix the auth error" | adaptive + 2 hops | 60% |
-| **implement** | "add rate limiting" | adaptive + 1 hop | 40% |
-| **explain** | "how does routing work" | adaptive + 1 hop | 30% |
-| **code_search** | "where is the auth middleware" | adaptive + 1 hop | 35% |
-| **general** | anything else | adaptive + 1 hop | 50% |
+| **debug** | "fix the auth error" | adaptive, graph hops 0 | 60% |
+| **implement** | "add rate limiting" | adaptive, graph hops 0 | 40% |
+| **explain** | "how does routing work" | adaptive, graph hops 0 | 30% |
+| **code_search** | "where is the auth middleware" | adaptive, graph hops 0 | 35% |
+| **general** | anything else | adaptive, graph hops 0 | 50% |
 
 When code symbols are indexed, retrieval defaults to `structural`. Otherwise, strategy adapts to embedding model quality:
 - **`gpu`** (GTE-ModernBERT) → `vector` only (ablation: +7-19% over hybrid with strong embeddings)

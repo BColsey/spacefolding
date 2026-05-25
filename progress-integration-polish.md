@@ -24,6 +24,10 @@
 
 ## Resolved Issues
 
+- Spec Compliance review: aligned graph-hop default descriptions across MCP,
+  CLI help, README, and the integration guide. Graph traversal is now described
+  as disabled by default with `maxHops: 0`, matching `planQuery()` and the CLI
+  default.
 - Error Handling review: MCP and CLI retrieval controls now reject malformed
   numeric values before they reach the pipeline. CLI `--max-tokens`, `--top-k`,
   `--return-limit`, and `--max-hops` use strict integer parsing; MCP validates
@@ -154,3 +158,12 @@
   benchmark JSON or DB artifacts. No security/data-integrity defect required
   code changes. Verified `npm run build && npm run lint && npm test` passed
   with 289 tests.
+- Spec Compliance: performed a fresh sweep of `DESIGN.md` user surfaces and
+  retrieval constraints plus `IMPLEMENTATION.md` public interface, retrieval
+  behavior, configuration, and testing contracts against MCP `retrieve_context`,
+  CLI `retrieve`, web `/api/retrieve`, README, configuration docs, integration
+  guide, and benchmark docs. Fixed stale graph-hop descriptions that claimed
+  intent-based automatic hops even though graph traversal is disabled by default
+  with `maxHops: 0`; updated MCP schema/help/docs and added interface coverage
+  for the disabled default. Verified
+  `npm run build && npm run lint && npm test` passed with 319 tests.

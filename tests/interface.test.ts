@@ -114,6 +114,16 @@ describe('CLI interface', () => {
     expect(modeOpt?.description).toContain('exhaustive');
   });
 
+  it('retrieve command max-hops option describes the disabled graph default', () => {
+    const cli = buildCLI();
+    const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
+    const maxHopsOpt = retrieve?.options.find((option) => option.long === '--max-hops');
+
+    expect(maxHopsOpt?.defaultValue).toBe('0');
+    expect(maxHopsOpt?.description).toContain('default: 0');
+    expect(maxHopsOpt?.description).toContain('disabled');
+  });
+
   it('retrieve command defaults to focused mode', () => {
     const cli = buildCLI();
     const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
@@ -192,6 +202,8 @@ describe('MCP interface', () => {
     expect(props.maxTokens?.description).toBeTruthy();
     expect(props.topK?.description).toBeTruthy();
     expect(props.returnLimit?.description).toBeTruthy();
+    expect(props.maxHops?.description).toContain('default: 0');
+    expect(props.maxHops?.description).toContain('disabled');
   });
 
   it('iterative_retrieve describes structural default strategy wiring', () => {
