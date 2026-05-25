@@ -110,6 +110,9 @@
 - Git ignore rules should include all loop housekeeping artifacts, including
   `coverage/`, so local quality-gate output cannot accidentally become commit
   surface.
+- Standalone benchmark doc flows that run scripts importing `dist` should
+  include `npm run build` before those scripts, even when a nearby acceptance
+  flow already includes the build step.
 
 ## Known Issues
 
@@ -679,3 +682,14 @@
   --noUnusedParameters`, the documented acceptance checker command, and
   `npm run build && npm run lint && npm test` passed. No generated benchmark
   JSON appeared in repo status.
+- Integration Wiring: compared documented benchmark commands in `DESIGN.md`,
+  `IMPLEMENTATION.md`, `benchmarks/ACCEPTANCE.md`, `benchmarks/HELDOUT.md`, and
+  `README.md` against `package.json` scripts and benchmark CLI parsers. Fixed
+  the README held-out example so it includes `npm run build` before the
+  standalone held-out `evaluate.ts` command, matching the scripts that import
+  `dist`. Verified `npm run build && npm run lint && npm test` passed, the
+  documented retrieval and E2E benchmark commands generated JSON under `/tmp`,
+  and the documented acceptance checker passed with exact actual/expected
+  metrics. Smoke-tested fixture held-out generation, held-out evaluation, and
+  profiler JSON under `/tmp`, and verified `bash -n ralph.sh` passed. No
+  generated benchmark JSON appeared in repo status.

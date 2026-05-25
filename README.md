@@ -371,6 +371,7 @@ npx tsx benchmarks/generate-heldout.ts \
   --corpus /path/to/other/repo \
   --output /tmp/spacefolding-heldout-repo.json \
   --limit 60
+npm run build
 npx tsx benchmarks/evaluate.ts \
   --dataset /tmp/spacefolding-heldout-repo.json \
   --corpus /path/to/other/repo \
