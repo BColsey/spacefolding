@@ -274,3 +274,13 @@
   budgeting; aligned the MCP schema description, integration guide, and
   interface coverage with that terminology. Verified
   `npm run build && npm run lint && npm test` passed with 352 tests.
+- Dead Code: performed a fresh sweep for exposed retrieval options and
+  diagnostics across MCP `retrieve_context`, CLI `retrieve`, web
+  `/api/retrieve`, pipeline retrieval, selection policy helpers, benchmark
+  callers, tests, and user-facing docs. Ran
+  `npx tsc --noEmit --noUnusedLocals --noUnusedParameters`; confirmed
+  `mode`, `strategy`, `maxTokens`, `topK`, `returnLimit`, `maxHops`, budget
+  metadata, dropped/omitted/compressed diagnostics, score breakdowns, and
+  retrieval reasons remain wired to user surfaces or benchmarks. No dead-code
+  defect required code changes. Verified
+  `npm run build && npm run lint && npm test` passed with 352 tests.
