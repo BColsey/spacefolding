@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { extname } from 'node:path';
+import { extname, posix } from 'node:path';
 import type { ChunkType, ContextChunk, TokenEstimator } from '../types/index.js';
 import { classifyChunk } from './classifier.js';
 import { maybeSplit, maybeSplitAsync, DEFAULT_CHUNKING_CONFIG } from './chunker.js';
@@ -28,12 +28,36 @@ const EXT_TO_LANG: Record<string, string> = {
   '.html': 'html',
 };
 
+const LANGUAGE_ALIASES: Record<string, string> = {
+  cjs: 'javascript',
+  cts: 'typescript',
+  js: 'javascript',
+  jsx: 'javascript',
+  md: 'markdown',
+  mjs: 'javascript',
+  mts: 'typescript',
+  py: 'python',
+  rs: 'rust',
+  sh: 'shell',
+  ts: 'typescript',
+  tsx: 'typescript',
+  yml: 'yaml',
+};
+
 export function inferLanguageFromPath(filePath: string): string | undefined {
   return EXT_TO_LANG[extname(normalizeContextPath(filePath)).toLowerCase()];
 }
 
+export function normalizeLanguage(language?: string): string | undefined {
+  const normalized = language?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  return LANGUAGE_ALIASES[normalized] ?? normalized;
+}
+
 export function normalizeContextPath(filePath: string): string {
-  return filePath.split(/[\\/]+/).join('/');
+  const slashed = filePath.split(/[\\/]+/).join('/');
+  const normalized = posix.normalize(slashed);
+  return normalized === '.' ? '' : normalized;
 }
 
 export interface IngestResult {
@@ -107,7 +131,7 @@ export class ContextIngester {
     overrideType?: ChunkType
   ): IngestResult {
     const normalizedPath = normalizeContextPath(filePath);
-    const lang = language ?? inferLanguageFromPath(normalizedPath);
+    const lang = normalizeLanguage(language) ?? inferLanguageFromPath(normalizedPath);
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
     const split = maybeSplit(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {
@@ -145,7 +169,7 @@ export class ContextIngester {
     overrideType?: ChunkType
   ): Promise<IngestResult> {
     const normalizedPath = normalizeContextPath(filePath);
-    const lang = language ?? inferLanguageFromPath(normalizedPath);
+    const lang = normalizeLanguage(language) ?? inferLanguageFromPath(normalizedPath);
     const type = overrideType ?? (classifyChunk(content, 'file') as ChunkType);
     const tokensEstimate = this.tokenEstimator.estimate(content);
     const split = await maybeSplitAsync(content, tokensEstimate, this.chunkingConfig, this.tokenEstimator, {

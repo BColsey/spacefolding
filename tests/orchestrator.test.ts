@@ -167,16 +167,18 @@ describe('PipelineOrchestrator', () => {
 
   it('normalizes file paths across ingest, structure, and re-ingest', async () => {
     const { pipeline, storage } = createTestPipeline();
-    const rawPath = 'src\\feature\\service.ts';
+    const rawPath = '.\\src\\feature\\.\\service.ts';
+    const alternateRawPath = 'src/feature/../feature/service.ts';
     const normalizedPath = 'src/feature/service.ts';
     const content = 'export function runService() { return true; }';
 
-    const chunk = await pipeline.ingest('file', content, 'code', rawPath);
-    const result = await pipeline.reingestFile(rawPath, content, 'code');
+    const chunk = await pipeline.ingest('file', content, 'code', rawPath, 'TypeScript');
+    const result = await pipeline.reingestFile(alternateRawPath, content, 'code');
     const chunksForPath = pipeline.getAllChunks().filter((stored) => stored.path === normalizedPath);
     const symbolsForPath = storage.getAllCodeSymbols().filter((symbol) => symbol.path === normalizedPath);
 
     expect(chunk.path).toBe(normalizedPath);
+    expect(chunk.language).toBe('typescript');
     expect(result).toMatchObject({
       path: normalizedPath,
       changed: false,
@@ -189,6 +191,33 @@ describe('PipelineOrchestrator', () => {
     expect(pipeline.getAllChunks().some((stored) => stored.path === rawPath)).toBe(false);
     expect(chunksForPath.map((stored) => stored.id)).toEqual([chunk.id]);
     expect(symbolsForPath.map((symbol) => symbol.name)).toEqual(['runService']);
+    expect(symbolsForPath.map((symbol) => symbol.language)).toEqual(['typescript']);
+
+    pipeline.close();
+  });
+
+  it('applies project context metadata to deduplicated split children', async () => {
+    const readme = `# Demo\n\n${'Project documentation context for retrieval. '.repeat(80)}`;
+    const dir = createProjectDir({ 'README.md': readme });
+    const { pipeline } = createTestPipeline({
+      maxTokens: 60,
+      overlapTokens: 0,
+      strategy: 'markdown',
+    });
+
+    await pipeline.ingest('file', readme, 'reference', 'README.md');
+    const beforeChildren = pipeline.getAllChunks()
+      .filter((chunk) => chunk.path === 'README.md' && chunk.parentId);
+    expect(beforeChildren.length).toBeGreaterThan(0);
+    expect(beforeChildren.every((chunk) => chunk.metadata.projectContext === undefined)).toBe(true);
+
+    await pipeline.ingestProject(dir);
+    const afterChildren = pipeline.getAllChunks()
+      .filter((chunk) => chunk.path === 'README.md' && chunk.parentId);
+
+    expect(afterChildren).toHaveLength(beforeChildren.length);
+    expect(afterChildren.every((chunk) => chunk.metadata.projectContext === true)).toBe(true);
+    expect(afterChildren.every((chunk) => chunk.metadata.projectContextKind === 'documentation')).toBe(true);
 
     pipeline.close();
   });

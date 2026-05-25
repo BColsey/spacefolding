@@ -7,6 +7,7 @@ import type { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
 
 type WatcherInternals = {
   ingestFile(filePath: string, event: 'add' | 'change'): Promise<void>;
+  storagePathFor(filePath: string): string;
 };
 
 const tempDirs: string[] = [];
@@ -49,7 +50,20 @@ describe('FileWatcher', () => {
 
     await (watcher as unknown as WatcherInternals).ingestFile(filePath, 'change');
 
-    expect(reingestFile).toHaveBeenCalledWith(filePath, content);
+    expect(reingestFile).toHaveBeenCalledWith('src/service.ts', content);
     expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('normalizes watcher file paths relative to the watched root', () => {
+    const { dir, filePath } = createTempFile('src/feature/service.ts', 'export const value = true;');
+    const pipeline = {
+      reingestFile: vi.fn(),
+      ingest: vi.fn(),
+      deleteChunksForPath: vi.fn(),
+    } as unknown as PipelineOrchestrator;
+    const watcher = new FileWatcher(dir, pipeline);
+
+    expect((watcher as unknown as WatcherInternals).storagePathFor(filePath))
+      .toBe('src/feature/service.ts');
   });
 });

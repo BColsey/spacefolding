@@ -256,7 +256,7 @@ export function extractStructureFallback(
     switch (normalizedLanguage) {
       case 'typescript':
       case 'javascript':
-        extractJsLine(trimmed, i, addSymbol, addReference);
+        extractJsLine(trimmed, line, i, addSymbol, addReference);
         break;
       case 'python':
         prunePythonClassStack(pythonClassIndents, line);
@@ -286,6 +286,7 @@ export function extractStructureFallback(
 
 function extractJsLine(
   line: string,
+  originalLine: string,
   index: number,
   addSymbol: AddSymbol,
   addReference: AddReference
@@ -344,9 +345,11 @@ function extractJsLine(
     const variableMatch = line.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=/);
     if (!variableMatch) return;
     const kind: CodeSymbolKind = /=>|\bfunction\b/.test(line) ? 'function' : 'variable';
-    addSymbol(variableMatch[1], kind, index, line, isExported);
     excludedCalls.add(variableMatch[1]);
-    if (isExported) addReference(variableMatch[1], 'export', index);
+    if (!/^\s/.test(originalLine) || isExported) {
+      addSymbol(variableMatch[1], kind, index, line, isExported);
+      if (isExported) addReference(variableMatch[1], 'export', index);
+    }
   } else {
     const methodMatch = line.match(/^(?:public\s+|private\s+|protected\s+|static\s+|readonly\s+|async\s+|get\s+|set\s+)*([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::\s*[^={]+)?\s*\{/);
     if (methodMatch && !CONTROL_WORDS.has(methodMatch[1])) {

@@ -1,7 +1,8 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
+import { normalizeContextPath } from './ingester.js';
 
 const DEFAULT_IGNORES = ['node_modules', '.git', 'dist'];
 const BINARY_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot'];
@@ -30,7 +31,8 @@ export class FileWatcher {
     this.watcher.on('add', (filePath) => this.scheduleIngest(filePath, 'add'));
     this.watcher.on('change', (filePath) => this.scheduleIngest(filePath, 'change'));
     this.watcher.on('unlink', (filePath) => {
-      const deleted = this.pipeline.deleteChunksForPath(filePath);
+      const storagePath = this.storagePathFor(filePath);
+      const deleted = this.pipeline.deleteChunksForPath(storagePath);
       process.stderr.write(`Unlinked ${filePath}; deleted ${deleted} stored chunks.\n`);
     });
     this.watcher.on('error', (error) => {
@@ -67,13 +69,14 @@ export class FileWatcher {
     try {
       if (!existsSync(filePath)) return;
       const content = readFileSync(filePath, 'utf-8');
+      const storagePath = this.storagePathFor(filePath);
       if (event === 'change') {
-        const result = await this.pipeline.reingestFile(filePath, content);
+        const result = await this.pipeline.reingestFile(storagePath, content);
         process.stderr.write(
           `Watched ${event}: ${filePath} (${result.reusedChunks} reused, ${result.createdChunks} created, ${result.deletedChunks} deleted)\n`
         );
       } else {
-        await this.pipeline.ingest('file', content, undefined, filePath);
+        await this.pipeline.ingest('file', content, undefined, storagePath);
         process.stderr.write(`Watched ${event}: ${filePath}\n`);
       }
     } catch (error) {
@@ -119,5 +122,13 @@ export class FileWatcher {
       return regex.test(filePath);
     }
     return filePath.includes(normalized);
+  }
+
+  private storagePathFor(filePath: string): string {
+    const relativePath = relative(resolve(this.watchPath), resolve(filePath));
+    if (relativePath && !relativePath.startsWith('..') && !isAbsolute(relativePath)) {
+      return normalizeContextPath(relativePath);
+    }
+    return normalizeContextPath(filePath);
   }
 }

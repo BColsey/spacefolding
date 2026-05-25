@@ -150,8 +150,9 @@ function buildSplitResult(
 }
 
 function detectStrategy(path?: string, language?: string, _text?: string): ChunkingConfig['strategy'] {
-  if (language === 'markdown' || path?.endsWith('.md')) return 'markdown';
-  if (language && ['typescript', 'javascript', 'python', 'rust', 'go', 'java'].includes(language)) return 'code';
+  const normalizedLanguage = language?.toLowerCase();
+  if (normalizedLanguage === 'markdown' || path?.endsWith('.md')) return 'markdown';
+  if (normalizedLanguage && ['typescript', 'javascript', 'python', 'rust', 'go', 'java'].includes(normalizedLanguage)) return 'code';
   if (path) {
     const ext = path.split('.').pop()?.toLowerCase() ?? '';
     if (['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'rs', 'go', 'java'].includes(ext)) return 'code';

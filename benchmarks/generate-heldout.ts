@@ -10,8 +10,10 @@
  */
 
 import { lstatSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inferLanguageFromPath } from '../src/core/ingester.js';
+import { isSupportedCodeLanguage } from '../src/providers/structural-indexer.js';
 
 type Intent = 'code_search' | 'debug' | 'explain' | 'implement';
 
@@ -68,17 +70,6 @@ export interface CliOptions {
 const benchDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(benchDir, '..');
 const heldoutOutputRoot = '/tmp';
-
-const EXT_TO_LANGUAGE: Record<string, string> = {
-  '.ts': 'typescript',
-  '.tsx': 'typescript',
-  '.js': 'javascript',
-  '.jsx': 'javascript',
-  '.py': 'python',
-  '.rs': 'rust',
-  '.go': 'go',
-  '.java': 'java',
-};
 
 const SKIP_DIRS = new Set([
   '.cache',
@@ -266,12 +257,16 @@ function walkDir(dir: string, includeTests: boolean): string[] {
       continue;
     }
 
-    const ext = extname(entry).toLowerCase();
-    if (!EXT_TO_LANGUAGE[ext]) continue;
+    if (!codeLanguageForPath(entry)) continue;
     if (!includeTests && isTestPath(fullPath)) continue;
     files.push(fullPath);
   }
   return files.sort();
+}
+
+function codeLanguageForPath(filePath: string): string | undefined {
+  const language = inferLanguageFromPath(filePath);
+  return isSupportedCodeLanguage(language) ? language : undefined;
 }
 
 function shouldSkipDirectory(entry: string, includeTests: boolean): boolean {
@@ -288,8 +283,7 @@ function isTestPath(filePath: string): boolean {
 }
 
 function extractSymbols(content: string, filePath: string): SymbolCandidate[] {
-  const ext = extname(filePath).toLowerCase();
-  const language = EXT_TO_LANGUAGE[ext];
+  const language = codeLanguageForPath(filePath);
   if (!language) return [];
 
   switch (language) {

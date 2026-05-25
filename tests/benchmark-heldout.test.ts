@@ -160,6 +160,36 @@ describe('held-out benchmark dataset generator', () => {
     expect(JSON.stringify(dataset)).not.toContain('TestOnlySymbol');
   });
 
+  it('uses shared language inference for modern TypeScript module extensions', () => {
+    const corpus = mkdtempSync(join(tmpdir(), 'spacefolding-heldout-modern-ext-'));
+    const output = join(tmpdir(), `spacefolding-heldout-modern-ext-${process.pid}.json`);
+    generatedPaths.push(corpus, output);
+
+    const sourcePath = join(corpus, 'src', 'modern.mts');
+    mkdirSync(join(corpus, 'src'), { recursive: true });
+    writeFileSync(sourcePath, 'export function LoadModernModuleProfiles() { return true; }\n');
+
+    const options = parseArgs([
+      '--corpus',
+      corpus,
+      '--output',
+      output,
+      '--limit',
+      '10',
+      '--seed',
+      'modern-extensions',
+    ]);
+
+    const summary = writeHeldoutDataset(options);
+    const dataset = JSON.parse(readFileSync(output, 'utf-8')) as HeldoutDataset;
+
+    expect(summary.tasks).toBe(1);
+    expect(dataset.tasks[0].symbol.language).toBe('typescript');
+    expect(dataset.tasks[0].relevant_files).toEqual([
+      relative(process.cwd(), sourcePath).split(sep).join('/'),
+    ]);
+  });
+
   it('does not follow corpus symlinks into external source trees', () => {
     const corpus = mkdtempSync(join(tmpdir(), 'spacefolding-heldout-corpus-'));
     const external = mkdtempSync(join(tmpdir(), 'spacefolding-heldout-private-'));

@@ -6,6 +6,8 @@
 
 - Language inference for ingested files lives in `src/core/ingester.ts`; project ingestion should reuse that helper so extension support stays consistent.
 - Stored file paths are normalized to `/` at the ingester/orchestrator boundary so chunks, structural rows, and re-ingest lookups share one path key.
+- Path normalization also collapses `.`/`..` segments, and explicit language inputs are canonicalized before chunking, storage, and structure extraction.
+- Watcher file events are converted to watched-root-relative storage paths so they line up with project ingest paths.
 - `PipelineOrchestrator.storeChunkStructure()` is the integration point that keeps code structure aligned with stored chunks. Unsupported files and split metadata parents should clear structural rows.
 - Content-hash dedupe can bypass normal storage paths, so deduped and unchanged re-ingest paths must refresh language metadata and structural rows.
 - Split chunks carry content hashes when created; the orchestrator may overwrite them with the same SHA-256 hash convention before storage.
@@ -82,3 +84,7 @@
   - Verification: `npx vitest run tests/orchestrator.test.ts`; `npm run build && npm run lint && npm test`
 - 2026-05-25: Review category 3, Test Coverage. Re-checked chunking, structural extraction, re-ingestion, watcher modification flow, and vector index deletion coverage from scratch. Added regression coverage for changed split-file re-ingestion that shrinks to a single chunk, proving stale split parents and children are removed from chunk storage, dependencies, embeddings, vector search, FTS, and code structure while the replacement chunk keeps embeddings and symbols.
   - Verification: `npx vitest run tests/orchestrator.test.ts`; `npm run build && npm run lint && npm test`
+- 2026-05-25: Review category 4, Code Consistency. Re-checked path normalization, language inference, metadata keys, watcher update paths, structural symbol noise, and held-out generator language drift from scratch. Fixed path normalization to collapse dot segments, canonicalized explicit language inputs, aligned watcher updates/deletes to project-relative storage paths, hydrated split child IDs before project-context annotation, reused shared language inference in held-out generation, and stopped indexing local TypeScript variables as structural symbols while preserving exported/top-level declarations.
+  - Verification: `npx vitest run tests/structural-indexer.test.ts tests/symbol-extractor.test.ts tests/orchestrator.test.ts tests/watcher.test.ts tests/benchmark-heldout.test.ts`; `npm run build && npm run lint && npm test`
+  - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
+  - Benchmark summary: structural recall@10 0.958, nDCG@10 0.896, MRR 0.950; structural e2e average recall 0.967 and average precision 0.524.

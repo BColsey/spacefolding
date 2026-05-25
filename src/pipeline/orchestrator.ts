@@ -15,7 +15,12 @@ import type {
 import { SQLiteRepository } from '../storage/repository.js';
 import { ContextScorer } from '../core/scorer.js';
 import { ContextRouter } from '../core/router.js';
-import { ContextIngester, inferLanguageFromPath, normalizeContextPath as normalizePath } from '../core/ingester.js';
+import {
+  ContextIngester,
+  inferLanguageFromPath,
+  normalizeContextPath as normalizePath,
+  normalizeLanguage,
+} from '../core/ingester.js';
 import type { IngestResult } from '../core/ingester.js';
 import type { CompressionProvider } from '../types/index.js';
 import type { DependencyAnalyzer } from '../types/index.js';
@@ -269,9 +274,10 @@ export class PipelineOrchestrator {
     // Deduplication: file content is scoped by path so identical files at
     // different paths remain distinct chunks.
     const contentHash = this.contentHash(text);
+    const explicitLanguage = normalizeLanguage(language);
     const resolvedLanguage = normalizedPath !== undefined
-      ? language ?? inferLanguageFromPath(normalizedPath)
-      : language;
+      ? explicitLanguage ?? inferLanguageFromPath(normalizedPath)
+      : explicitLanguage;
     const existing = this.storage.findChunkByContentHash(contentHash, normalizedPath);
     if (existing) {
       if (normalizedPath !== undefined && existing.metadata?.split) {
@@ -324,7 +330,7 @@ export class PipelineOrchestrator {
   ): Promise<FileReingestResult> {
     const normalizedPath = normalizePath(path);
     const fullContentHash = this.contentHash(text);
-    const resolvedLanguage = language ?? inferLanguageFromPath(normalizedPath);
+    const resolvedLanguage = normalizeLanguage(language) ?? inferLanguageFromPath(normalizedPath);
     const existingPathChunks = this.storage.queryChunks({ path: normalizedPath });
     const alreadyCurrent = existingPathChunks.some((chunk) =>
       this.chunkContentHash(chunk) === fullContentHash && (chunk.metadata?.split || !chunk.parentId)
@@ -710,8 +716,9 @@ export class PipelineOrchestrator {
     chunk: ContextChunk,
     language?: string
   ): Promise<ContextChunk> {
-    if (language !== undefined && chunk.language !== language) {
-      const updated = { ...chunk, language };
+    const normalizedLanguage = normalizeLanguage(language);
+    if (normalizedLanguage !== undefined && chunk.language !== normalizedLanguage) {
+      const updated = { ...chunk, language: normalizedLanguage };
       this.storage.updateChunk(updated);
       await this.storeChunkStructure(updated);
       return updated;
@@ -726,13 +733,25 @@ export class PipelineOrchestrator {
     language?: string
   ): Promise<ContextChunk[]> {
     const refreshedChunks: ContextChunk[] = [];
-    for (const chunk of this.storage.queryChunks({ path: normalizePath(path) })) {
+    const chunks = this.hydrateChildIds(this.storage.queryChunks({ path: normalizePath(path) }));
+    for (const chunk of chunks) {
       refreshedChunks.push(await this.refreshStoredChunk(chunk, language));
     }
     return refreshedChunks;
   }
 
   private annotateChunkTree(chunk: ContextChunk, metadata: Record<string, unknown>): void {
+    const childIds = new Set(chunk.childrenIds);
+    for (const stored of this.storage.getAllChunks()) {
+      if (stored.parentId === chunk.id) childIds.add(stored.id);
+    }
+    for (const dependency of this.storage.getDependencies(chunk.id)) {
+      if (dependency.type === 'contains' && dependency.fromId === chunk.id) {
+        childIds.add(dependency.toId);
+      }
+    }
+    chunk.childrenIds = [...childIds];
+
     const annotate = (chunkId: string) => {
       const stored = this.storage.getChunk(chunkId);
       if (!stored) return;
@@ -742,6 +761,22 @@ export class PipelineOrchestrator {
 
     annotate(chunk.id);
     for (const childId of chunk.childrenIds) annotate(childId);
+  }
+
+  private hydrateChildIds(chunks: ContextChunk[]): ContextChunk[] {
+    const ids = new Set(chunks.map((chunk) => chunk.id));
+    const childIdsByParent = new Map<string, string[]>();
+    for (const chunk of chunks) {
+      if (!chunk.parentId || !ids.has(chunk.parentId)) continue;
+      const childIds = childIdsByParent.get(chunk.parentId) ?? [];
+      childIds.push(chunk.id);
+      childIdsByParent.set(chunk.parentId, childIds);
+    }
+
+    return chunks.map((chunk) => {
+      const childIds = childIdsByParent.get(chunk.id);
+      return childIds ? { ...chunk, childrenIds: childIds } : chunk;
+    });
   }
 
   /** Retrieve context for a query using search + selection policy + budget control */
@@ -968,7 +1003,6 @@ function defaultEmbeddingModelForProvider(provider?: EmbeddingProvider): string 
 }
 
 const BINARY_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot', '.svg', '.webp', '.mp3', '.mp4', '.zip', '.gz', '.tar', '.db']);
-const CODE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rs', '.go', '.java']);
 const PROJECT_SKIP_DIRS = new Set([
   '.cache',
   '.git',
@@ -1086,7 +1120,7 @@ function walkProjectFiles(
 }
 
 function isCodePath(filePath: string): boolean {
-  return CODE_EXTENSIONS.has(extname(filePath).toLowerCase());
+  return isSupportedCodeLanguage(inferLanguageFromPath(filePath));
 }
 
 function getProjectContextKind(

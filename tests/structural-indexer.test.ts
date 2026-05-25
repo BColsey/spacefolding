@@ -117,6 +117,25 @@ describe('structural extraction fallback', () => {
     ]));
   });
 
+  it('does not index local TypeScript variables as structural symbols', () => {
+    const result = extractStructureFallback(
+      [
+        'export function summarizeChunks() {',
+        '  const chunk = { count: 1 };',
+        '  return chunk.count;',
+        '}',
+        'const topLevelHelper = () => true;',
+      ].join('\n'),
+      'typescript',
+      'src/summary.ts'
+    );
+
+    expect(result.symbols.map((symbol) => [symbol.kind, symbol.name])).toEqual([
+      ['function', 'summarizeChunks'],
+      ['function', 'topLevelHelper'],
+    ]);
+  });
+
   it('extracts JavaScript CommonJS references', () => {
     const result = extractStructureFallback(
       "const api = require('./api');\nmodule.exports = function createServer() {}",
