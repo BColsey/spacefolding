@@ -1,6 +1,6 @@
 # integration-polish - Progress Tracker
 
-## Status: IN PROGRESS
+## Status: REVIEW
 
 ## Codebase Patterns
 
@@ -14,6 +14,9 @@
 - README benchmark docs should describe gate commands and thresholds instead of
   embedding exact pass results unless the acceptance gate was run in the same
   iteration.
+- In this sandbox, `npx tsx benchmarks/e2e-benchmark.ts` may fail with
+  `listen EPERM` on `/tmp/tsx-*`; rerun outside the sandbox or with approval
+  before treating it as an application failure.
 
 ## Known Issues
 
@@ -54,6 +57,15 @@
   score/reason diagnostics, compressed summary metadata, and the current focused
   target budget example.
 
+### 5. Final Acceptance And Wiring Sweep
+- Full acceptance gate passed with all 13 checks green.
+- Structural retrieval averages: R@10 `0.983333`, NDCG@10 `0.890205`, MRR
+  `0.933333`, precision@10 `0.205000`, average results `22.40`.
+- E2E focused averages: recall `1.000000`, precision `0.407937`, tokens
+  `10906.7`; no task returned more tokens than the full indexed codebase
+  (`40618` tokens).
+- `git status --short` showed no generated benchmark JSON or DB artifacts.
+
 ## Iteration Log
 
 - **68438f9** — Work Item 1: MCP input validation for mode and strategy, plus interface schema and validation tests.
@@ -66,6 +78,11 @@
   Manually verified documented CLI flags and benchmark scripts against
   `src/cli/index.ts` and `benchmarks/*.ts`. Verified
   `npm run build && npm run lint && npm test` passed with 283 tests.
+- Work Item 5: Final acceptance gate. Verified `npm run build`, generated
+  `/tmp/spacefolding-eval.json`, generated `/tmp/spacefolding-e2e.json`, and
+  ran `benchmarks/check-acceptance.ts` with both files. The E2E `npx tsx`
+  command hit sandbox `listen EPERM` on the first attempt, then passed when run
+  outside the sandbox. Acceptance checker passed all 13 checks.
 
 ## Review Log
 
