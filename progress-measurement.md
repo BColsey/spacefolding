@@ -38,6 +38,9 @@
   need to lock down the script contract.
 - Benchmark scripts that expose testable helpers should guard execution with an
   `isMainModule()` check so imports in Vitest do not run the benchmark.
+- Secondary benchmark scripts should follow the same strict `parseArgs` and
+  `isMainModule()` pattern as the acceptance-gate scripts, so parser tests can
+  cover bad flags without starting expensive benchmark work.
 - Dead-code review for benchmark scripts should include a targeted TypeScript
   pass with `--noUnusedLocals` and `--noUnusedParameters`, because benchmark
   files live outside the main `tsconfig.json` include.
@@ -546,3 +549,16 @@
   tests/benchmark-profile.test.ts tests/benchmark-generate-tasks.test.ts` and
   `npm run build && npm run lint && npm test` passed. No test-coverage defect
   required code changes.
+- Code Consistency: reviewed CLI parsing and import behavior across benchmark
+  scripts against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` sections
+  9 and 10. Fixed secondary ablation and compression benchmark scripts so they
+  use strict exported `parseArgs` helpers, reject unknown flags and missing
+  `--dataset` values before benchmark work starts, and guard execution with
+  `isMainModule()` for import-safe tests. Added Vitest coverage in
+  `tests/benchmark-secondary-cli.test.ts`. Verified `npx vitest run
+  tests/benchmark-secondary-cli.test.ts`, `npx tsc -p benchmarks/tsconfig.json
+  --noEmit`, and `npm run build && npm run lint && npm test` passed.
+  Smoke-tested `npx tsx benchmarks/ablation.ts --dataset` and
+  `npx tsx benchmarks/compression-comparison.ts --dataset /tmp/tasks.json`;
+  both exited nonzero with direct parser messages. No generated benchmark JSON
+  appeared in repo status.

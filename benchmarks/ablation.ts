@@ -17,7 +17,7 @@
  */
 
 import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { join, dirname, extname } from 'node:path';
+import { join, dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // ── Types ──
@@ -50,6 +50,69 @@ interface Metrics {
 interface EmbeddingProviderLike {
   embed(text: string): Promise<number[]>;
   embedBatch(texts: string[]): Promise<number[][]>;
+}
+
+export interface AblationCliOptions {
+  dataset: string;
+  localEmbeddings: boolean;
+  gpu: boolean;
+}
+
+export function parseArgs(
+  argv: string[],
+  benchDir: string = dirname(fileURLToPath(import.meta.url))
+): AblationCliOptions {
+  const options: AblationCliOptions = {
+    dataset: join(benchDir, 'dataset.json'),
+    localEmbeddings: false,
+    gpu: false,
+  };
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--dataset') {
+      options.dataset = resolve(benchDir, readOptionValue(argv, i++, arg));
+    } else if (arg === '--local-embeddings') {
+      options.localEmbeddings = true;
+    } else if (arg === '--gpu') {
+      options.gpu = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  return options;
+}
+
+function readOptionValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createRng(seedText: string): () => number {
+  let state = hashString(seedText) || 1;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 0xffffffff;
+  };
 }
 
 // ── Metrics ──
@@ -98,13 +161,14 @@ function bootstrapCI(
   const values = taskResults.map((r) => r.metrics[metricKey]);
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const std = Math.sqrt(values.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1));
+  const rng = createRng(`bootstrap:${String(metricKey)}:${values.map((v) => v.toFixed(6)).join(',')}`);
 
   // Bootstrap resampling
   const bootMeans: number[] = [];
   for (let b = 0; b < nBoot; b++) {
     let sum = 0;
     for (let i = 0; i < n; i++) {
-      sum += values[Math.floor(Math.random() * n)];
+      sum += values[Math.floor(rng() * n)];
     }
     bootMeans.push(sum / n);
   }
@@ -128,19 +192,14 @@ function walkDir(dir: string): string[] {
       if (!['node_modules', '.git', 'dist'].includes(entry)) results.push(...walkDir(fullPath));
     } else if (extname(entry) === '.ts') results.push(fullPath);
   }
-  return results;
+  return results.sort();
 }
 
 // ── Main ──
 
-async function runAblation() {
+async function runAblation(options: AblationCliOptions) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
-  const datasetIndex = process.argv.indexOf('--dataset');
-  const datasetFile =
-    datasetIndex >= 0 && process.argv[datasetIndex + 1]
-      ? process.argv[datasetIndex + 1]
-      : 'dataset.json';
-  const dataset: { tasks: BenchmarkTask[] } = JSON.parse(readFileSync(join(benchDir, datasetFile), 'utf-8'));
+  const dataset: { tasks: BenchmarkTask[] } = JSON.parse(readFileSync(options.dataset, 'utf-8'));
 
   const strategies = [
     'keyword',      // Baseline: keyword grep
@@ -167,8 +226,8 @@ async function runAblation() {
   const { ContextIngester } = await import('../dist/core/ingester.js');
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
 
-  const useLocalEmbeddings = process.argv.includes('--local-embeddings');
-  const useGpu = process.argv.includes('--gpu');
+  const useLocalEmbeddings = options.localEmbeddings;
+  const useGpu = options.gpu;
   let embeddingProvider: EmbeddingProviderLike;
   if (useGpu) {
     const { GpuEmbeddingProvider } = await import('../dist/providers/gpu-embedding.js');
@@ -460,10 +519,11 @@ async function runAblation() {
       const meanDiff = diffs.reduce((a, b) => a + b, 0) / diffs.length;
       // Bootstrap CI of difference
       const bootDiffs: number[] = [];
+      const rng = createRng(`pairwise:${String(metricKey)}:${strat}:${diffs.map((v) => v.toFixed(6)).join(',')}`);
       for (let b = 0; b < 10_000; b++) {
         let sum = 0;
         for (let i = 0; i < diffs.length; i++) {
-          sum += diffs[Math.floor(Math.random() * diffs.length)];
+          sum += diffs[Math.floor(rng() * diffs.length)];
         }
         bootDiffs.push(sum / diffs.length);
       }
@@ -489,7 +549,20 @@ async function runAblation() {
   console.log(`${'═'.repeat(70)}\n`);
 }
 
-runAblation().catch((err) => {
-  console.error('Ablation failed:', err);
-  process.exit(1);
-});
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  try {
+    const options = parseArgs(process.argv.slice(2));
+    runAblation(options).catch((err) => {
+      console.error(`Ablation failed: ${errorMessage(err)}`);
+      process.exit(1);
+    });
+  } catch (error) {
+    console.error(`Ablation failed: ${errorMessage(error)}`);
+    process.exit(1);
+  }
+}

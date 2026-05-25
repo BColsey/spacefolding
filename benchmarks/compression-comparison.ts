@@ -10,7 +10,7 @@
  */
 
 import { readFileSync, unlinkSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 interface BenchmarkTask {
@@ -29,12 +29,49 @@ interface CompressionResult {
   summary: string;
 }
 
-async function main() {
+export interface CompressionCliOptions {
+  withLlmLingua: boolean;
+}
+
+export function parseArgs(argv: string[]): CompressionCliOptions {
+  const options: CompressionCliOptions = { withLlmLingua: false };
+
+  for (const arg of argv) {
+    if (arg === '--with-llmlingua') {
+      options.withLlmLingua = true;
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+
+  return options;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function deterministicShuffle<T>(items: T[], seed: string, key: (item: T) => string): T[] {
+  return [...items].sort((a, b) =>
+    hashString(`${seed}:${key(a)}`) - hashString(`${seed}:${key(b)}`)
+  );
+}
+
+async function main(options: CompressionCliOptions) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
   const dataset: { tasks: BenchmarkTask[] } = JSON.parse(
     readFileSync(join(benchDir, 'dataset.json'), 'utf-8')
   );
-  const withLlmLingua = process.argv.includes('--with-llmlingua');
+  const withLlmLingua = options.withLlmLingua;
 
   console.log(`\n${'═'.repeat(70)}`);
   console.log(`  COMPRESSION COMPARISON BENCHMARK`);
@@ -82,7 +119,7 @@ async function main() {
         if (!['node_modules', '.git', 'dist'].includes(entry)) results.push(...walkDir(fullPath));
       } else if (entry.endsWith('.ts')) results.push(fullPath);
     }
-    return results;
+    return results.sort();
   }
 
   const srcDir = join(benchDir, '..', 'src');
@@ -176,9 +213,11 @@ async function main() {
     console.log(`Task: ${task.task.slice(0, 60)}...`);
 
     // Pick 3 random chunks to compress (simulate overflow)
-    const sampleChunks = allChunks
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
+    const sampleChunks = deterministicShuffle(
+      allChunks,
+      `compression:${task.id}`,
+      (chunk) => `${chunk.path ?? ''}:${chunk.id}`
+    ).slice(0, 3);
 
     const originalTexts = sampleChunks.map(c => c.text);
     const originalTokens = originalTexts.reduce((s, t) => s + Math.ceil(t.split(/\s+/).length * 1.3), 0);
@@ -232,7 +271,20 @@ async function main() {
   try { unlinkSync(dbPath); } catch {}
 }
 
-main().catch((err) => {
-  console.error('Compression comparison failed:', err);
-  process.exit(1);
-});
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  try {
+    const options = parseArgs(process.argv.slice(2));
+    main(options).catch((err) => {
+      console.error(`Compression comparison failed: ${errorMessage(err)}`);
+      process.exit(1);
+    });
+  } catch (error) {
+    console.error(`Compression comparison failed: ${errorMessage(error)}`);
+    process.exit(1);
+  }
+}
