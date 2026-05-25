@@ -755,3 +755,11 @@
   retrieval and E2E JSON under `/tmp`, ran the documented acceptance checker
   successfully, and confirmed no generated benchmark JSON appeared in repo
   status.
+- Test Coverage: reviewed benchmark helper functions and checker branches
+  against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` sections 9 and
+  10. Added helper-level coverage for unreadable retrieval, E2E, and profiler
+  dataset JSON paths so missing local files keep producing path-specific
+  diagnostics without relying only on CLI smoke tests. Verified `npx vitest run
+  tests/benchmark-evaluate.test.ts tests/benchmark-e2e.test.ts
+  tests/benchmark-profile.test.ts` and `npm run build && npm run lint && npm
+  test` passed. No generated benchmark JSON appeared in repo status.

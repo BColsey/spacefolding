@@ -86,4 +86,17 @@ describe('retrieval profiler CLI parsing', () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it('reports unreadable profiler dataset JSON with the file path', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'spacefolding-profile-test-'));
+    const datasetPath = join(tempDir, 'missing.json');
+
+    try {
+      expect(() => loadProfileDataset(datasetPath)).toThrow(
+        `Unable to read profiler dataset JSON at ${datasetPath}`
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

@@ -107,6 +107,19 @@ describe('E2E benchmark report', () => {
     }
   });
 
+  it('reports unreadable E2E dataset JSON with the file path', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'spacefolding-e2e-test-'));
+    const datasetPath = join(tempDir, 'missing.json');
+
+    try {
+      expect(() => loadE2EDatasetTasks(datasetPath)).toThrow(
+        `Unable to read E2E dataset JSON at ${datasetPath}`
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('maps held-out benchmark dataset tasks into E2E comparisons', () => {
     expect(parseE2EDatasetTasks({
       tasks: [{

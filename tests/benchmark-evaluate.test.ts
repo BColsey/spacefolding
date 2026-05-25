@@ -162,6 +162,19 @@ describe('retrieval benchmark report', () => {
     }
   });
 
+  it('reports unreadable benchmark dataset JSON with the file path', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'spacefolding-evaluate-test-'));
+    const datasetPath = join(tempDir, 'missing.json');
+
+    try {
+      expect(() => loadBenchmarkDataset(datasetPath)).toThrow(
+        `Unable to read benchmark dataset JSON at ${datasetPath}`
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('includes per-strategy averages and per-task hit and miss details', () => {
     const report = buildEvaluationReport({
       dataset: 'benchmarks/dataset.json',
