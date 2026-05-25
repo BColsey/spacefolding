@@ -88,3 +88,5 @@
   - Verification: `npx vitest run tests/structural-indexer.test.ts tests/symbol-extractor.test.ts tests/orchestrator.test.ts tests/watcher.test.ts tests/benchmark-heldout.test.ts`; `npm run build && npm run lint && npm test`
   - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.958, nDCG@10 0.896, MRR 0.950; structural e2e average recall 0.967 and average precision 0.524.
+- 2026-05-25: Review category 5, Dead Code. Re-checked unused extraction helpers, unwired indexers, public barrel exports, benchmark helper exports, schema constants, and structural storage columns from scratch. No actionable dead-code defects were found; internal unused-local/unused-parameter checks were clean and all schema/index constants remain wired through migrations or repository calls.
+  - Verification: `npm run build && npm run lint && npm test`
