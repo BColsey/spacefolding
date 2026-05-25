@@ -284,3 +284,14 @@
   retrieval reasons remain wired to user surfaces or benchmarks. No dead-code
   defect required code changes. Verified
   `npm run build && npm run lint && npm test` passed with 352 tests.
+- Integration Wiring: performed a fresh sweep of retrieval behavior from
+  `DESIGN.md` user surfaces and `IMPLEMENTATION.md` public interface,
+  retrieval behavior, benchmark, and ownership contracts through MCP
+  `retrieve_context`/`iterative_retrieve`, CLI `retrieve`, web `/api/retrieve`
+  and inspector rendering, `PipelineOrchestrator.retrieve()`, ranking/E2E/
+  profiler benchmark callers, and user docs. Confirmed `strategy`, `mode`,
+  adaptive and explicit budgets, `topK`, `returnLimit`, `maxHops`, selected
+  chunks, tiers, score/reason diagnostics, omitted/dropped candidates, and
+  compression summaries remain reachable from user surfaces or benchmarks. No
+  integration wiring defect required code changes. Verified
+  `npm run build && npm run lint && npm test` passed with 352 tests.
