@@ -126,6 +126,18 @@ describe('CLI interface', () => {
     expect(maxHopsOpt?.description).toContain('0 otherwise');
   });
 
+  it('retrieve command leaves max-tokens adaptive by default', () => {
+    const cli = buildCLI();
+    const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
+    const maxTokensOpt = retrieve?.options.find((option) => option.long === '--max-tokens');
+    const parsed = parseRetrieveCommandOptions({ query: 'find auth' });
+
+    expect(maxTokensOpt?.defaultValue).toBeUndefined();
+    expect(maxTokensOpt?.description).toContain('adaptive by query intent');
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.options?.maxTokens).toBeUndefined();
+  });
+
   it('retrieve command defaults to focused mode', () => {
     const cli = buildCLI();
     const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
@@ -163,6 +175,7 @@ describe('CLI interface', () => {
     });
 
     expect(parsed.error).toBeUndefined();
+    expect(parsed.options?.maxTokens).toBeUndefined();
     expect(parsed.options?.maxHops).toBeUndefined();
   });
 

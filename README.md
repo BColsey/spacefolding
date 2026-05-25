@@ -185,7 +185,7 @@ node dist/main.js score --task "How does routing work?"
 
 # Focused RAG retrieval
 node dist/main.js retrieve --query "how does authentication work" --mode focused
-# → Intent: explain | Strategy: structural | Mode: focused | Tokens: <returned>/<target> target (100000 hard cap)
+# → Intent: explain | Strategy: structural | Mode: focused | Tokens: <returned>/<target> target (<adaptive> hard cap)
 # → [WARM] abc12345 src/auth.ts ~300 tokens (structural+fts)
 
 node dist/main.js symbols src/core/scorer.ts
@@ -270,7 +270,7 @@ spacefolding ingest-project <path>    # Ingest source plus project context
 spacefolding watch <path>             # Watch for file changes
 spacefolding score --task "..."       # Score context against a task
 spacefolding retrieve --query "..."   # Focused RAG retrieval
-spacefolding retrieve --query "..." --mode broad --return-limit 25
+spacefolding retrieve --query "..." --mode broad --max-tokens 50000 --return-limit 25
 spacefolding explain --task "..."     # Explain routing decisions
 spacefolding graph --chunk <id>       # View dependency graph
 spacefolding symbols <path>           # Extract code symbols

@@ -38,7 +38,7 @@ interface EmbeddingProviderConfig {
 
 export interface ParsedRetrieveCommandOptions {
   query: string;
-  maxTokens: number;
+  maxTokens?: number;
   strategy?: RetrievalStrategy;
   mode?: RetrievalMode;
   topK?: number;
@@ -85,7 +85,7 @@ export function parseRetrieveCommandOptions(opts: Record<string, unknown>): {
     return { error: `Invalid strategy "${strategy}". Must be one of: ${VALID_RETRIEVAL_STRATEGIES.join(', ')}` };
   }
 
-  const maxTokens = parseIntegerOption(opts.maxTokens ?? '100000', '--max-tokens', { required: true });
+  const maxTokens = parseIntegerOption(opts.maxTokens, '--max-tokens');
   if (maxTokens.error) return { error: maxTokens.error };
 
   const topK = parseIntegerOption(opts.topK, '--top-k');
@@ -100,7 +100,7 @@ export function parseRetrieveCommandOptions(opts: Record<string, unknown>): {
   return {
     options: {
       query,
-      maxTokens: maxTokens.value!,
+      maxTokens: maxTokens.value,
       strategy,
       mode,
       topK: topK.value,
@@ -443,7 +443,7 @@ export function buildCLI(): Command {
     .command('retrieve')
     .description('Retrieve relevant context using structural, vector, and FTS search')
     .requiredOption('--query <text>', 'Search query')
-    .option('--max-tokens <number>', 'Max token budget', '100000')
+    .option('--max-tokens <number>', 'Max token budget (default: adaptive by query intent)')
     .option('--strategy <type>', 'Search strategy: structural, hybrid, vector, text, graph')
     .option('--mode <type>', 'Selection mode: focused, broad, exhaustive', 'focused')
     .option('--top-k <number>', 'Max results to return (default: adaptive)')

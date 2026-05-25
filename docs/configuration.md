@@ -118,7 +118,7 @@ Project ingestion and retrieval are configured per MCP/CLI call rather than with
 - `retrieve_context` defaults to `mode: "focused"`, which targets compact context by query complexity: 6k tokens for narrow tasks, 13k for moderate tasks, and 18k for broad tasks, always bounded by the caller's `maxTokens`.
 - Use `mode: "broad"` for higher recall on ambiguous tasks; broad targets 16k, 28k, or 40k tokens by query complexity.
 - Use `mode: "exhaustive"` for manual inspection and benchmark ranking; exhaustive uses the caller's full hard budget without focused pruning.
-- The CLI `retrieve` command defaults `--max-tokens` to `100000`. MCP `retrieve_context` without `maxTokens` derives the hard budget from query intent and complexity.
+- CLI `retrieve` and MCP `retrieve_context` derive the hard budget from query intent and complexity when `--max-tokens`/`maxTokens` is omitted. Pass the option when you need an explicit hard cap.
 
 ### Compression Provider
 

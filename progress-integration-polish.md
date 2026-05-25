@@ -53,6 +53,10 @@
 - Security And Data Integrity review: tightened the web inspector chunk table so
   token estimates are escaped before insertion through `innerHTML`, matching the
   existing path/type/text escaping invariant.
+- Spec Compliance review: CLI `retrieve` now leaves `--max-tokens` unset by
+  default so `PipelineOrchestrator.retrieve()` applies its query-adaptive hard
+  budget; README/configuration docs and interface coverage now reflect the
+  adaptive default.
 
 ## Completed Work Items
 
@@ -226,3 +230,14 @@
   benchmark JSON outputs remain untracked. Verified
   `npx vitest run tests/interface.test.ts` passed with 25 tests and
   `npm run build && npm run lint && npm test` passed with 323 tests.
+- Spec Compliance: performed a fresh sweep of `DESIGN.md` user surfaces,
+  retrieval defaults, graph traversal constraints, and success metrics plus
+  `IMPLEMENTATION.md` retrieval behavior, configuration, and testing contracts
+  against MCP `retrieve_context`, CLI `retrieve`, web `/api/retrieve`, README,
+  configuration docs, integration guide, and benchmark docs. Fixed CLI
+  `retrieve` so omitting `--max-tokens` no longer forces `100000`; the command
+  now passes `undefined` and lets `PipelineOrchestrator.retrieve()` derive the
+  hard budget from query intent and complexity like MCP. Updated docs and
+  interface coverage for the adaptive default. Verified
+  `npx vitest run tests/interface.test.ts` passed with 28 tests and
+  `npm run build && npm run lint && npm test` passed with 348 tests.
