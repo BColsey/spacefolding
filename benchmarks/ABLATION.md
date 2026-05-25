@@ -1,5 +1,7 @@
 # Ablation Study Results
 
+Historical snapshot: this April 2026 ablation predates the current structural retrieval acceptance gate. Use `benchmarks/RESULTS.md` and `benchmarks/E2E-RESULTS.md` for current verified status.
+
 **Date:** 2026-04-20
 **Codebase:** Spacefolding (34 files, 44 chunks)
 **Tasks:** 20 (5 debug, 7 explain, 5 implement, 3 code_search)

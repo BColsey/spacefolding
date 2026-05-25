@@ -1,5 +1,7 @@
 # Embedding Model Research for Code Search/Retrieval
 
+Status: historical research note. The "Current Best" line below records the state when this note was written; later model-comparison and acceptance results are tracked in `benchmarks/MODEL-COMPARISON.md`, `benchmarks/RESULTS.md`, and `benchmarks/E2E-RESULTS.md`.
+
 **Date:** 2026-04-26
 **Current Best:** all-mpnet-base-v2 (CUDA, 768-dim) — R@10 = 0.729
 **Keyword Baseline:** R@10 = 0.787

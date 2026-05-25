@@ -1,5 +1,7 @@
 # Plan: Oversized Context Splitting (Context Chunker)
 
+Status: implemented historical plan. The current chunking path lives in `src/core/chunker.ts`, `src/core/tree-sitter-chunker.ts`, and `src/core/ingester.ts`; see `README.md` for current behavior and environment variables.
+
 ## Problem
 
 Spacefolding currently ingests text/files as single chunks regardless of size. If a user

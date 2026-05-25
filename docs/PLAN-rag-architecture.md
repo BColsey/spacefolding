@@ -1,5 +1,7 @@
 # Plan: Full RAG Architecture for Spacefolding
 
+Status: historical plan. The current implementation now includes persisted embeddings, FTS5, structural search, score-weighted source fusion, reranking, graph traversal controls, focused/broad/exhaustive selection policies, and budget filling. Use `README.md`, `DESIGN.md`, and `IMPLEMENTATION.md` as the current architecture references.
+
 ## What Spacefolding Already Has
 
 Before designing what's missing, here's what the system already does:

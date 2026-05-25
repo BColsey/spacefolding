@@ -2,11 +2,13 @@
 
 ## Status: REVIEW
 
+Note: this is a historical Ralph loop tracker. Metrics and test counts in the iteration and review logs reflect the run where each entry was recorded. Use `benchmarks/RESULTS.md`, `benchmarks/E2E-RESULTS.md`, and fresh `/tmp` benchmark JSON for the current verified snapshot.
+
 ## Codebase Patterns
 
 - Acceptance gate uses `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`; generated JSON stays uncommitted.
 - Retrieval evaluation now indexes the project root with benchmark-context files such as `.env.example`, while skipping local agent/worktree noise; otherwise dataset tasks can name files that were never ingested.
-- Structural retrieval currently beats keyword on the acceptance deltas, but several task-level misses are still ranking/selection problems rather than benchmark-script failures.
+- Structural retrieval currently beats keyword on the acceptance deltas. Any remaining task-level misses should be treated as ranking/selection problems unless benchmark diagnostics prove otherwise.
 
 ## Known Issues
 

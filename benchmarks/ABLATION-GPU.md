@@ -1,5 +1,7 @@
 # GPU Ablation Study — CUDA-Accelerated Embeddings
 
+Historical snapshot: this April 2026 ablation predates the current structural retrieval acceptance gate. Use `benchmarks/RESULTS.md` and `benchmarks/E2E-RESULTS.md` for current verified status.
+
 **Date:** 2026-04-20
 **GPU:** NVIDIA RTX 3080 (CUDA 13.0)
 **Model:** `all-mpnet-base-v2` (768-dim, #1 sentence-transformer)

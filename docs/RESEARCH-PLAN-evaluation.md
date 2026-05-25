@@ -1,5 +1,7 @@
 # Research Plan: Is Spacefolding Better Than Stock LLMs and CLIs?
 
+Status: historical research plan. It predates the benchmark suite and retrieval-ranking loop now documented in `benchmarks/ACCEPTANCE.md`, `benchmarks/RESULTS.md`, and `benchmarks/E2E-RESULTS.md`. Treat the "right now" claims below as the state at the time this plan was written, not current project status.
+
 ## The Honest Answer
 
 **It depends on what problem you're solving. And right now, the honest answer is "we don't know."**

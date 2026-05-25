@@ -1,5 +1,7 @@
 # Plan: Automatic Compression in Retrieve Path
 
+Status: implemented historical plan. Retrieval now compresses selected omitted chunks through `compressOmitted()` in `src/core/budget.ts` and `PipelineOrchestrator.retrieve()`. See `docs/PATTERN-compress-overflow.md` for the current pattern description.
+
 ## Problem
 
 `retrieve_context` returns **full verbatim text** of every chunk that fits the token budget. Large chunks eat the budget, and chunks that *almost* fit are just omitted entirely. The compression provider (deterministic, local, or LLM) is only used when you explicitly call `compress_context` — it never runs during retrieval.

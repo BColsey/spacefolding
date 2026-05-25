@@ -1,5 +1,7 @@
 # Remaining Recommendations — Plans
 
+Status: mixed historical planning notes. Some items are implemented, some are still recommendations, and commit references in this file may predate the Ralph loop commit series. Use benchmark result files and current code as source of truth before starting new work from this list.
+
 ## ✅ Completed
 
 ### #3: Adaptive Budget Sizing

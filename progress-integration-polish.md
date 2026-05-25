@@ -2,6 +2,8 @@
 
 ## Status: REVIEW
 
+Note: this is a historical Ralph loop tracker. Metrics and test counts in the iteration and review logs reflect the run where each entry was recorded. Use `benchmarks/RESULTS.md`, `benchmarks/E2E-RESULTS.md`, and fresh `/tmp` benchmark JSON for the current verified snapshot.
+
 ## Codebase Patterns
 
 - Web endpoint tests use `createWebRequestHandler()` directly so Vitest does not

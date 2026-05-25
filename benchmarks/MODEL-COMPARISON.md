@@ -1,5 +1,7 @@
 # Model Comparison — All Embedding Models Tested
 
+Historical snapshot: this April 2026 model comparison is still useful for provider tradeoffs, but it is not the current acceptance benchmark. Use `benchmarks/RESULTS.md` and `benchmarks/E2E-RESULTS.md` for current verified status.
+
 **Date:** 2026-04-20
 **GPU:** NVIDIA RTX 3080 (10GB VRAM)
 **Codebase:** Spacefolding (35 files, 45 chunks)
