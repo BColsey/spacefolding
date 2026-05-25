@@ -176,3 +176,10 @@
   valid when MCP clients omit `arguments`. Verified
   `npx vitest run tests/interface.test.ts` passed with 23 tests and
   `npm run build && npm run lint && npm test` passed with 320 tests.
+- Test Coverage: performed a fresh sweep of MCP, CLI, web, and docs-sensitive
+  retrieval coverage against `DESIGN.md` user surfaces and
+  `IMPLEMENTATION.md` section 10. Fixed the remaining CLI coverage gap by
+  exercising the real `retrieve` command action against a temporary DB and
+  asserting that output includes query, intent, mode, and token-budget usage.
+  Verified `npx vitest run tests/interface.test.ts` passed with 24 tests and
+  `npm run build && npm run lint && npm test` passed with 321 tests.

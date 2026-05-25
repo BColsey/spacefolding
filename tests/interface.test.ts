@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildCLI, parseRetrieveCommandOptions } from '../src/cli/index.js';
 import { TOOL_DEFINITIONS, validateArgs } from '../src/mcp/server.js';
 import { createWebRequestHandler } from '../src/web/server.js';
@@ -69,6 +69,7 @@ async function requestWeb(pipeline: PipelineOrchestrator, url: string, method = 
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   const fixtures = webFixtures.splice(0);
   for (const fixture of fixtures) {
     fixture.pipeline.close();
@@ -164,6 +165,46 @@ describe('CLI interface', () => {
     expect(parseRetrieveCommandOptions({ query: '   ' }).error).toContain('query must be a non-empty string');
     expect(parseRetrieveCommandOptions({ query: 'x', mode: 'all' }).error).toContain('Invalid mode');
     expect(parseRetrieveCommandOptions({ query: 'x', strategy: 'all' }).error).toContain('Invalid strategy');
+  });
+
+  it('retrieve command output includes retrieval token usage metadata', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spacefolding-cli-test-'));
+    const dbPath = join(dir, 'spacefolding.db');
+    const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
+    process.env.EMBEDDING_PROVIDER = 'deterministic';
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const cli = buildCLI();
+      cli.exitOverride();
+      await cli.parseAsync([
+        'node',
+        'spacefolding',
+        '--db',
+        dbPath,
+        'retrieve',
+        '--query',
+        'where is retrieve command output',
+        '--max-tokens',
+        '8000',
+        '--mode',
+        'focused',
+      ]);
+
+      const output = log.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(output).toContain('Query: where is retrieve command output');
+      expect(output).toContain('Intent:');
+      expect(output).toContain('Mode: focused');
+      expect(output).toMatch(/Tokens: \d+\/\d+ target \(8000 hard cap\)/);
+    } finally {
+      if (originalEmbeddingProvider === undefined) {
+        delete process.env.EMBEDDING_PROVIDER;
+      } else {
+        process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
