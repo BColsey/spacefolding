@@ -12,14 +12,14 @@ import { DeterministicEmbeddingProvider } from '../src/providers/deterministic-e
 import { DeterministicCompressionProvider } from '../src/providers/deterministic-compression.js';
 import { SimpleDependencyAnalyzer } from '../src/providers/dependency-analyzer.js';
 import { createRepository } from '../src/storage/repository.js';
-import type { CodeSymbol, DependencyLink } from '../src/types/index.js';
+import type { CodeSymbol, DependencyLink, EmbeddingProvider } from '../src/types/index.js';
 
 let dbCounter = 0;
 const dbPaths: string[] = [];
 const projectDirs: string[] = [];
 const originalDisableAst = process.env.SPACEFOLDING_DISABLE_AST_SUBPROCESS;
 
-function createTestPipeline(chunkingConfig?: ChunkingConfig): {
+function createTestPipeline(chunkingConfig?: ChunkingConfig, embeddingProvider?: EmbeddingProvider): {
   pipeline: PipelineOrchestrator;
   dbPath: string;
   storage: ReturnType<typeof createRepository>;
@@ -30,19 +30,19 @@ function createTestPipeline(chunkingConfig?: ChunkingConfig): {
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
-  const embeddingProvider = new DeterministicEmbeddingProvider();
+  const resolvedEmbeddingProvider = embeddingProvider ?? new DeterministicEmbeddingProvider();
 
   return {
     dbPath,
     storage,
     pipeline: new PipelineOrchestrator(
       storage,
-      new ContextScorer(DEFAULT_ROUTING_CONFIG, embeddingProvider, tokenEstimator),
+      new ContextScorer(DEFAULT_ROUTING_CONFIG, resolvedEmbeddingProvider, tokenEstimator),
       new ContextRouter(DEFAULT_ROUTING_CONFIG),
       new DeterministicCompressionProvider(),
       new SimpleDependencyAnalyzer(),
       new ContextIngester(tokenEstimator, chunkingConfig),
-      embeddingProvider
+      resolvedEmbeddingProvider
     ),
   };
 }
@@ -203,6 +203,84 @@ describe('PipelineOrchestrator', () => {
 
     try {
       await expect(pipeline.ingestProject(dir, { includeDocs: false })).rejects.toThrow(storeError);
+    } finally {
+      storeSpy.mockRestore();
+      pipeline.close();
+    }
+  });
+
+  it('keeps chunk, FTS, and structure when embedding provider extraction fails', async () => {
+    const embeddingProvider: EmbeddingProvider = {
+      embed: vi.fn().mockRejectedValue(new Error('embedding provider unavailable')),
+      embedBatch: vi.fn().mockResolvedValue([]),
+    };
+    const { pipeline, storage } = createTestPipeline(undefined, embeddingProvider);
+
+    const chunk = await pipeline.ingest(
+      'file',
+      "export function providerFallback() { return 'provider fallback marker'; }",
+      'code',
+      'src/provider-fallback.ts'
+    );
+
+    expect(storage.getChunk(chunk.id)).not.toBeNull();
+    expect(storage.getEmbedding(chunk.id)).toBeNull();
+    expect(storage.searchByText('provider fallback marker', 10).map((row) => row.chunkId))
+      .toContain(chunk.id);
+    expect(storage.getCodeSymbols(chunk.id).map((symbol) => symbol.name))
+      .toEqual(['providerFallback']);
+
+    pipeline.close();
+  });
+
+  it('propagates embedding storage failures instead of silently dropping vector indexing', async () => {
+    const { pipeline, storage } = createTestPipeline();
+    const path = 'src/embedding-write.ts';
+    const writeError = new Error('embedding table write failed');
+    const storeSpy = vi.spyOn(storage, 'storeEmbedding').mockImplementation(() => {
+      throw writeError;
+    });
+
+    try {
+      await expect(pipeline.ingest(
+        'file',
+        "export function embeddingWrite() { return 'embedding write marker'; }",
+        'code',
+        path
+      )).rejects.toThrow(writeError);
+
+      const stored = storage.queryChunks({ path })[0];
+      expect(stored).toBeDefined();
+      expect(storage.searchByText('embedding write marker', 10).map((row) => row.chunkId))
+        .toContain(stored!.id);
+    } finally {
+      storeSpy.mockRestore();
+      pipeline.close();
+    }
+  });
+
+  it('propagates code structure storage failures while keeping chunk, FTS, and embeddings visible', async () => {
+    const { pipeline, storage } = createTestPipeline();
+    const path = 'src/structure-write.ts';
+    const writeError = new Error('code structure table write failed');
+    const storeSpy = vi.spyOn(storage, 'storeCodeStructure').mockImplementation(() => {
+      throw writeError;
+    });
+
+    try {
+      await expect(pipeline.ingest(
+        'file',
+        "export function structureWrite() { return 'structure write marker'; }",
+        'code',
+        path
+      )).rejects.toThrow(writeError);
+
+      const stored = storage.queryChunks({ path })[0];
+      expect(stored).toBeDefined();
+      expect(storage.getEmbedding(stored!.id)).not.toBeNull();
+      expect(storage.searchByText('structure write marker', 10).map((row) => row.chunkId))
+        .toContain(stored!.id);
+      expect(storage.getCodeSymbols(stored!.id)).toEqual([]);
     } finally {
       storeSpy.mockRestore();
       pipeline.close();

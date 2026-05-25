@@ -645,13 +645,14 @@ export class PipelineOrchestrator {
   private async storeChunkWithEmbedding(chunk: ContextChunk): Promise<void> {
     this.storage.storeChunk(chunk);
     if (this.embeddingProvider) {
+      let embedding: number[] = [];
       try {
-        const embedding = await this.embeddingProvider.embed(chunk.text);
-        if (embedding.length > 0) {
-          this.storage.storeEmbedding(chunk.id, embedding, this.embeddingModel);
-        }
+        embedding = await this.embeddingProvider.embed(chunk.text);
       } catch {
         // Embedding failure is non-fatal — chunk is still stored
+      }
+      if (embedding.length > 0) {
+        this.storage.storeEmbedding(chunk.id, embedding, this.embeddingModel);
       }
     }
     await this.storeChunkStructure(chunk);
@@ -662,28 +663,31 @@ export class PipelineOrchestrator {
       this.storage.deleteCodeStructure(chunk.id);
       return;
     }
+    let extraction: Awaited<ReturnType<StructuralIndexer['extract']>>;
     try {
-      const extraction = await this.structuralIndexer.extract(chunk.text, chunk.language, chunk.path);
-      this.storage.storeCodeStructure(
-        chunk.id,
-        extraction.symbols.map((symbol) => ({
-          ...symbol,
-          chunkId: chunk.id,
-          path: chunk.path,
-          language: chunk.language,
-          metadata: { ...symbol.metadata, backend: extraction.backend },
-        })),
-        extraction.references.map((reference) => ({
-          ...reference,
-          chunkId: chunk.id,
-          path: chunk.path,
-          language: chunk.language,
-          metadata: { ...reference.metadata, backend: extraction.backend },
-        }))
-      );
+      extraction = await this.structuralIndexer.extract(chunk.text, chunk.language, chunk.path);
     } catch {
       this.storage.deleteCodeStructure(chunk.id);
+      return;
     }
+
+    this.storage.storeCodeStructure(
+      chunk.id,
+      extraction.symbols.map((symbol) => ({
+        ...symbol,
+        chunkId: chunk.id,
+        path: chunk.path,
+        language: chunk.language,
+        metadata: { ...symbol.metadata, backend: extraction.backend },
+      })),
+      extraction.references.map((reference) => ({
+        ...reference,
+        chunkId: chunk.id,
+        path: chunk.path,
+        language: chunk.language,
+        metadata: { ...reference.metadata, backend: extraction.backend },
+      }))
+    );
   }
 
   private contentHash(text: string): string {
