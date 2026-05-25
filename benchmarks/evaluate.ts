@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
-import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
+import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -515,8 +515,8 @@ async function runEvaluation(options: CliOptions) {
   const { parseStructuralQuery } = await import('../dist/core/query-planner.js');
 
   // Create a test pipeline with the Spacefolding codebase ingested
-  const dbPath = benchmarkSqlitePath('benchmark-eval');
-  removeSqliteArtifacts(dbPath);
+  const dbArtifact = createBenchmarkSqliteArtifact('benchmark-eval');
+  const dbPath = dbArtifact.path;
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -659,7 +659,7 @@ async function runEvaluation(options: CliOptions) {
 
   // Cleanup
   pipeline.close();
-  removeSqliteArtifacts(dbPath);
+  dbArtifact.cleanup();
 
   const report = buildEvaluationReport({
     dataset: options.dataset,

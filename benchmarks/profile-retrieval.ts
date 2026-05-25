@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
-import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
+import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
 interface BenchmarkTask {
   id: string;
@@ -213,8 +213,8 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   const { ContextIngester } = await import('../dist/core/ingester.js');
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
 
-  const dbPath = benchmarkSqlitePath('profile');
-  removeSqliteArtifacts(dbPath);
+  const dbArtifact = createBenchmarkSqliteArtifact('profile');
+  const dbPath = dbArtifact.path;
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -301,7 +301,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   };
 
   pipeline.close();
-  removeSqliteArtifacts(dbPath);
+  dbArtifact.cleanup();
 
   if (options.json) {
     console.log(JSON.stringify(output, null, 2));

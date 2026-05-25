@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseArgs as parseAblationArgs } from '../benchmarks/ablation.ts';
 import { parseArgs as parseCompressionArgs } from '../benchmarks/compression-comparison.ts';
-import { benchmarkSqlitePath, removeSqliteArtifacts } from '../benchmarks/temp-artifacts.ts';
+import {
+  benchmarkSqlitePath,
+  createBenchmarkSqliteArtifact,
+  removeSqliteArtifacts,
+} from '../benchmarks/temp-artifacts.ts';
 
 describe('secondary benchmark CLI parsing', () => {
   it('parses ablation benchmark options without executing on import', () => {
@@ -77,6 +81,29 @@ describe('secondary benchmark CLI parsing', () => {
       expect(existsSync(`${dbPath}-shm`)).toBe(false);
     } finally {
       removeSqliteArtifacts(dbPath);
+    }
+  });
+
+  it('registers cleanup for benchmark SQLite artifacts', () => {
+    const exitListeners = process.listenerCount('exit');
+    const artifact = createBenchmarkSqliteArtifact('secondary-cli-cleanup-test');
+
+    try {
+      expect(process.listenerCount('exit')).toBe(exitListeners + 1);
+
+      writeFileSync(artifact.path, '');
+      writeFileSync(`${artifact.path}-wal`, '');
+      writeFileSync(`${artifact.path}-shm`, '');
+
+      artifact.cleanup();
+
+      expect(process.listenerCount('exit')).toBe(exitListeners);
+      expect(existsSync(artifact.path)).toBe(false);
+      expect(existsSync(`${artifact.path}-wal`)).toBe(false);
+      expect(existsSync(`${artifact.path}-shm`)).toBe(false);
+    } finally {
+      artifact.cleanup();
+      removeSqliteArtifacts(artifact.path);
     }
   });
 });

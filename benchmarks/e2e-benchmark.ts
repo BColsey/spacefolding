@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
-import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
+import { benchmarkSqlitePath, createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -561,8 +561,8 @@ async function runE2EBenchmark(options: CliOptions) {
 
   // Support EMBEDDING_PROVIDER=local for real ONNX embeddings
   const embeddingProviderEnv = process.env.EMBEDDING_PROVIDER ?? 'deterministic';
-  const dbPath = resolveBenchmarkDbPath();
-  removeSqliteArtifacts(dbPath);
+  const dbArtifact = createBenchmarkSqliteArtifact('e2e-benchmark');
+  const dbPath = dbArtifact.path;
 
   let embeddingProvider;
   if (embeddingProviderEnv === 'local') {
@@ -995,7 +995,7 @@ async function runE2EBenchmark(options: CliOptions) {
   // ── Cleanup ─────────────────────────────────────────────────────
 
   pipeline.close();
-  removeSqliteArtifacts(dbPath);
+  dbArtifact.cleanup();
 
   const report = buildE2EReport({
     strategy: options.strategy,

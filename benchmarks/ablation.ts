@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
-import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
+import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
 // ── Types ──
 
@@ -239,8 +239,8 @@ async function runAblation(options: AblationCliOptions) {
     embeddingProvider = new DeterministicEmbeddingProvider();
   }
 
-  const dbPath = benchmarkSqlitePath('ablation-eval');
-  removeSqliteArtifacts(dbPath);
+  const dbArtifact = createBenchmarkSqliteArtifact('ablation-eval');
+  const dbPath = dbArtifact.path;
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -536,7 +536,7 @@ async function runAblation(options: AblationCliOptions) {
   if ('close' in embeddingProvider && typeof (embeddingProvider as any).close === 'function') {
     (embeddingProvider as any).close();
   }
-  removeSqliteArtifacts(dbPath);
+  dbArtifact.cleanup();
 
   console.log(`\n${'═'.repeat(70)}`);
   console.log(`  ABLATION COMPLETE`);

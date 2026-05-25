@@ -107,6 +107,9 @@
 - Benchmark scripts must ignore production `DB_PATH` for scratch databases; the
   E2E benchmark uses the `/tmp` temp-artifact helper so a caller's shell
   environment cannot delete or reuse an application database.
+- Benchmark scratch SQLite helpers should register synchronous exit cleanup, so
+  failed runs against private corpora do not leave source-containing SQLite
+  artifacts under `/tmp`.
 - Git ignore rules should include all loop housekeeping artifacts, including
   `coverage/`, so local quality-gate output cannot accidentally become commit
   surface.
@@ -693,3 +696,21 @@
   metrics. Smoke-tested fixture held-out generation, held-out evaluation, and
   profiler JSON under `/tmp`, and verified `bash -n ralph.sh` passed. No
   generated benchmark JSON appeared in repo status.
+- Security And Data Integrity: reviewed held-out generation, generated task
+  generation, profiler output, benchmark scratch DB paths, ignored artifacts,
+  tracked benchmark/env/data files, and failure cleanup against `DESIGN.md`
+  benchmark design and `IMPLEMENTATION.md` sections 10 and 12. Fixed benchmark
+  scratch SQLite handling so retrieval evaluation, E2E, profiler, ablation, and
+  compression runs register synchronous exit cleanup for `/tmp` DB, WAL, and SHM
+  files; this prevents failed runs against private corpora from leaving
+  source-containing SQLite artifacts behind. Added temp-artifact helper
+  regression coverage. Verified `npx vitest run
+  tests/benchmark-secondary-cli.test.ts tests/benchmark-e2e-db-path.test.ts`,
+  `npx tsc -p benchmarks/tsconfig.json --noEmit`, and `npm run build && npm run
+  lint && npm test` passed. Smoke-tested benchmark failure cleanup with a
+  missing retrieval corpus, generated retrieval and E2E JSON under `/tmp`, ran
+  the documented acceptance checker successfully, smoke-tested fixture profiler
+  and held-out generation under `/tmp`, verified `/var/tmp` held-out/generated
+  task outputs fail with direct messages, confirmed no matching scratch DB
+  artifacts remained in `/tmp`, and confirmed no generated benchmark JSON
+  appeared in repo status.
