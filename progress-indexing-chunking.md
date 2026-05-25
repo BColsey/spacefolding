@@ -55,3 +55,7 @@
 ## Review Log
 
 (Entries added during review phase: category reviewed, what was checked, what was fixed.)
+- 2026-05-25: Review category 1, Spec Compliance. Checked schema migrations, chunk/index lifecycle cleanup, and shared structural/retrieval types against `DESIGN.md` and `IMPLEMENTATION.md`. Fixed retrieval strategy/mode aliases so they are exported from shared types and compatibility re-exported by existing modules, expanded `StorageProvider` to include the indexing/retrieval methods listed in the spec, and added migration version 5 to rebuild FTS for databases that already had chunks before the FTS migration.
+  - Verification: `npm run build && npm run lint && npm test`
+  - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
+  - Benchmark summary: structural recall@10 0.983, nDCG@10 0.890, MRR 0.933; structural e2e average recall 1.000 and average precision 0.416.

@@ -168,6 +168,9 @@ CREATE INDEX IF NOT EXISTS idx_code_references_language ON code_references(langu
 export const CREATE_INDEX_CODE_REFERENCES_TARGET = `
 CREATE INDEX IF NOT EXISTS idx_code_references_target ON code_references(normalizedTarget)`;
 
+export const REBUILD_FTS_INDEX = `
+INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')`;
+
 export interface Migration {
   version: number;
   up: string[];
@@ -219,6 +222,12 @@ export const MIGRATIONS: Migration[] = [
       CREATE_INDEX_CODE_REFERENCES_PATH,
       CREATE_INDEX_CODE_REFERENCES_LANGUAGE,
       CREATE_INDEX_CODE_REFERENCES_TARGET,
+    ],
+  },
+  {
+    version: 5,
+    up: [
+      REBUILD_FTS_INDEX,
     ],
   },
 ];

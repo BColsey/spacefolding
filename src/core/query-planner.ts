@@ -1,4 +1,4 @@
-import type { StructuralQuery } from '../types/index.js';
+import type { RetrievalStrategy, StructuralQuery } from '../types/index.js';
 import { normalizeIdentifier, normalizeSymbolName, splitIdentifier } from '../providers/structural-indexer.js';
 
 export type QueryIntent = 'code_search' | 'debug' | 'explain' | 'implement' | 'general';
@@ -186,7 +186,7 @@ export function estimateComplexity(query: string, expandedTerms: string[]): 'nar
   return 'moderate';
 }
 
-export type RetrievalStrategy = 'hybrid' | 'vector' | 'text' | 'graph' | 'structural';
+export type { RetrievalStrategy } from '../types/index.js';
 
 /**
  * Determine the optimal retrieval strategy based on the embedding provider.

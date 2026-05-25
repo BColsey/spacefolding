@@ -4,13 +4,16 @@ import type {
   ContextChunk,
   EmbeddingProvider,
   RerankerProvider,
+  RetrievalMode,
+  RetrievalStrategy,
   StructuralQuery,
   StructuralSearchResult,
 } from '../types/index.js';
 import type { SQLiteRepository } from '../storage/repository.js';
-import type { RetrievalStrategy } from './query-planner.js';
 import { parseStructuralQuery } from './query-planner.js';
 import { normalizeSymbolName, splitIdentifier } from '../providers/structural-indexer.js';
+
+export type { RetrievalMode } from '../types/index.js';
 
 export interface RetrievalResult {
   chunkId: string;
@@ -37,8 +40,6 @@ export interface RetrievalOptions {
   strategy?: RetrievalStrategy;
   mode?: RetrievalMode;
 }
-
-export type RetrievalMode = 'focused' | 'broad' | 'exhaustive';
 
 const RRF_K = 60; // Reciprocal Rank Fusion constant
 

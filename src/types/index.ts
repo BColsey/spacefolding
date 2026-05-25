@@ -166,6 +166,10 @@ export interface StructuralSearchResult {
   reasons: string[];
 }
 
+export type RetrievalStrategy = 'hybrid' | 'vector' | 'text' | 'graph' | 'structural';
+
+export type RetrievalMode = 'focused' | 'broad' | 'exhaustive';
+
 // --- Routing Configuration ---
 
 export interface RoutingWeights {
@@ -218,12 +222,24 @@ export interface StorageProvider {
   storeChunk(chunk: ContextChunk): void;
   getChunk(id: string): ContextChunk | null;
   queryChunks(filter: ContextFilter): ContextChunk[];
+  getAllChunks(): ContextChunk[];
   updateChunk(chunk: ContextChunk): void;
   deleteChunk(id: string): void;
   storeDependency(link: DependencyLink): void;
   removeDependency(fromId: string, toId: string, type: DependencyType): void;
   removeAllDependenciesForChunk(chunkId: string): void;
   getDependencies(chunkId: string): DependencyLink[];
+  storeEmbedding(chunkId: string, embedding: number[], model: string): void;
+  searchByVector(queryEmbedding: number[], topK?: number): { chunkId: string; score: number }[];
+  searchByText(query: string, topK?: number): { chunkId: string; score: number }[];
+  searchByLexical(query: string, topK?: number): { chunkId: string; score: number }[];
+  storeCodeStructure(chunkId: string, symbols: CodeSymbol[], references: CodeReference[]): void;
+  deleteCodeStructure(chunkId: string): void;
+  getCodeSymbols(chunkId: string): CodeSymbol[];
+  getCodeReferences(chunkId: string): CodeReference[];
+  getAllCodeSymbols(): CodeSymbol[];
+  hasCodeStructure(): boolean;
+  searchByStructure(query: StructuralQuery, topK?: number): StructuralSearchResult[];
 }
 
 // --- MCP Tool Types ---
