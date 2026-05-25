@@ -669,3 +669,13 @@
   `npm run build && npm run lint && npm test`, the documented retrieval and E2E
   benchmark JSON commands, and the documented acceptance checker command all
   passed. No generated benchmark JSON appeared in repo status.
+- Dead Code: reviewed unused benchmark fields, stale result docs, and unwired
+  checker branches against `DESIGN.md` benchmark design and
+  `IMPLEMENTATION.md` section 10. The targeted benchmark TypeScript unused
+  check passed. Fresh `/tmp` retrieval and E2E JSON showed
+  `benchmarks/RESULTS.md` and `benchmarks/E2E-RESULTS.md` were stale, so those
+  result snapshots were refreshed from the generated acceptance inputs.
+  Verified `npx tsc -p benchmarks/tsconfig.json --noEmit --noUnusedLocals
+  --noUnusedParameters`, the documented acceptance checker command, and
+  `npm run build && npm run lint && npm test` passed. No generated benchmark
+  JSON appeared in repo status.
