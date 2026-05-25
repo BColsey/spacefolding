@@ -15,9 +15,10 @@
  *   EMBEDDING_PROVIDER=deterministic npx tsx benchmarks/e2e-benchmark.ts
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, extname, relative, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -260,18 +261,7 @@ const TASKS: E2ETask[] = [
 // ── Helpers ──────────────────────────────────────────────────────
 
 function walkDir(dir: string): string[] {
-  const results: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
-      if (!['node_modules', '.git', 'dist'].includes(entry))
-        results.push(...walkDir(fullPath));
-    } else if (extname(entry) === '.ts') {
-      results.push(fullPath);
-    }
-  }
-  return results.sort();
+  return walkBenchmarkSourceFiles(dir, { extensions: ['.ts'] });
 }
 
 /** Estimate tokens for a string (rough: words * 1.3) */
@@ -610,7 +600,7 @@ async function runE2EBenchmark(options: CliOptions) {
 
   for (const filePath of files) {
     const content = readFileSync(filePath, 'utf-8');
-    const relativePath = relative(projectRoot, filePath);
+    const relativePath = projectRelativePath(projectRoot, filePath);
     fileContents.set(relativePath, content);
     await pipeline.ingest('file', content, undefined, relativePath, undefined);
   }

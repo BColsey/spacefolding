@@ -16,9 +16,10 @@
  *   npx tsx benchmarks/ablation.ts [--local-embeddings]
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, extname, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 // ── Types ──
@@ -185,15 +186,7 @@ function bootstrapCI(
 // ── Walk dir ──
 
 function walkDir(dir: string): string[] {
-  const results: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
-      if (!['node_modules', '.git', 'dist'].includes(entry)) results.push(...walkDir(fullPath));
-    } else if (extname(entry) === '.ts') results.push(fullPath);
-  }
-  return results.sort();
+  return walkBenchmarkSourceFiles(dir, { extensions: ['.ts'] });
 }
 
 // ── Main ──
@@ -267,7 +260,7 @@ async function runAblation(options: AblationCliOptions) {
   console.log(`Ingesting ${files.length} files...\n`);
   for (const filePath of files) {
     const content = readFileSync(filePath, 'utf-8');
-    const relativePath = filePath.replace(/.*\/spacefolding\//, '');
+    const relativePath = projectRelativePath(join(benchDir, '..'), filePath);
     await pipeline.ingest('file', content, undefined, relativePath, undefined);
   }
   const allChunks = storage.getAllChunks();

@@ -84,6 +84,9 @@
 - Benchmark scripts should sort walked source files before ingesting or
   generating tasks, because raw filesystem iteration order can make fixed
   dataset/corpus measurements drift.
+- Benchmark source traversal should use `walkBenchmarkSourceFiles` and
+  `projectRelativePath`, so scripts skip symlinked/private trees consistently
+  and do not rely on the checkout directory being named `spacefolding`.
 - Benchmark CLI parsers should reject undocumented positional arguments; the
   documented flag surface is the contract other loops can rely on.
 - Security reviews should check tracked files with `git ls-files` and ignore
@@ -653,3 +656,16 @@
   and `npm run build && npm run lint && npm test` passed. No test-coverage
   defect required code changes, and no generated benchmark JSON appeared in
   repo status.
+- Code Consistency: reviewed benchmark CLI parsing, source-file traversal, and
+  path normalization across retrieval evaluation, E2E, profiler, ablation, and
+  compression scripts against `DESIGN.md` benchmark design and
+  `IMPLEMENTATION.md` sections 9 and 10. Fixed the benchmark walkers to share a
+  symlink-skipping `walkBenchmarkSourceFiles` helper and a
+  checkout-name-independent `projectRelativePath` helper, replacing ad hoc
+  traversal and `spacefolding` path regexes in the secondary benchmarks. Added
+  `tests/benchmark-source-files.test.ts` coverage for ignored directories,
+  test-file filtering, symlink skipping, and path normalization. Verified the
+  focused benchmark tests, `npx tsc -p benchmarks/tsconfig.json --noEmit`,
+  `npm run build && npm run lint && npm test`, the documented retrieval and E2E
+  benchmark JSON commands, and the documented acceptance checker command all
+  passed. No generated benchmark JSON appeared in repo status.

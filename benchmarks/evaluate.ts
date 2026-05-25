@@ -9,9 +9,10 @@
  *   npx tsx benchmarks/evaluate.ts --strategy vector
  */
 
-import { lstatSync, readFileSync, readdirSync } from 'node:fs';
-import { join, dirname, extname, relative, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────
@@ -536,7 +537,7 @@ async function runEvaluation(options: CliOptions) {
 
   for (const filePath of files) {
     const content = readFileSync(filePath, 'utf-8');
-    const relativePath = relative(projectRoot, filePath);
+    const relativePath = projectRelativePath(projectRoot, filePath);
     await pipeline.ingest('file', content, undefined, relativePath, undefined);
   }
 
@@ -681,64 +682,11 @@ async function runEvaluation(options: CliOptions) {
   }
 }
 
-const SKIP_DIRS = new Set([
-  '.claude',
-  '.codex',
-  '.cursor',
-  '.git',
-  '.hg',
-  '.next',
-  '.svn',
-  '.turbo',
-  '.venv',
-  '__pycache__',
-  'benchmarks',
-  'build',
-  'coverage',
-  'data',
-  'dist',
-  'node_modules',
-  'out',
-  'target',
-  'vendor',
-  'venv',
-]);
-
-const BENCHMARK_CONTEXT_FILES = new Set([
-  '.env.example',
-]);
-
 export function walkDir(dir: string, includeTests: boolean): string[] {
-  const results: string[] = [];
-  const entries = readdirSync(dir);
-  for (const entry of entries) {
-    const fullPath = join(dir, entry);
-    const stat = lstatSync(fullPath);
-    if (stat.isSymbolicLink()) continue;
-    if (stat.isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) results.push(...walkDir(fullPath, includeTests));
-    } else {
-      const ext = extname(entry);
-      if (
-        (
-          ['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java'].includes(ext)
-          || BENCHMARK_CONTEXT_FILES.has(entry.toLowerCase())
-        )
-        && (includeTests || !isTestPath(fullPath))
-      ) {
-        results.push(fullPath);
-      }
-    }
-  }
-  return results.sort();
-}
-
-function isTestPath(filePath: string): boolean {
-  const normalized = filePath.split(/[\\/]+/).join('/');
-  return /(^|\/)(__tests__|tests?|spec|fixtures|mocks?)(\/|$)/i.test(normalized)
-    || /\.(test|spec)\.[cm]?[jt]sx?$/i.test(normalized)
-    || /test_.*\.py$/i.test(normalized)
-    || /_test\.go$/i.test(normalized);
+  return walkBenchmarkSourceFiles(dir, {
+    includeTests,
+    extraFileNames: ['.env.example'],
+  });
 }
 
 function isMainModule(): boolean {

@@ -14,10 +14,11 @@
  * returned context size (tokensReturned, chunksReturned), and memory.
  */
 
-import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, extname, join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
+import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 interface BenchmarkTask {
@@ -54,26 +55,7 @@ interface QueryProfile {
 const benchDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(benchDir, '..');
 
-const SUPPORTED_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java']);
 const SUPPORTED_STRATEGIES = new Set<RetrievalStrategy>(['structural', 'hybrid', 'vector', 'text', 'graph']);
-
-const SKIP_DIRS = new Set([
-  '.git',
-  '.hg',
-  '.next',
-  '.svn',
-  '.turbo',
-  '.venv',
-  '__pycache__',
-  'build',
-  'coverage',
-  'dist',
-  'node_modules',
-  'out',
-  'target',
-  'vendor',
-  'venv',
-]);
 
 export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
@@ -189,32 +171,7 @@ export function loadProfileDataset(datasetPath: string): BenchmarkDataset {
 }
 
 export function walkProfileCorpus(dir: string, includeTests: boolean): string[] {
-  const results: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    const fullPath = join(dir, entry);
-    const stat = lstatSync(fullPath);
-    if (stat.isSymbolicLink()) continue;
-    if (stat.isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) results.push(...walkProfileCorpus(fullPath, includeTests));
-      continue;
-    }
-
-    if (
-      SUPPORTED_EXTENSIONS.has(extname(entry).toLowerCase())
-      && (includeTests || !isTestPath(fullPath))
-    ) {
-      results.push(fullPath);
-    }
-  }
-  return results.sort();
-}
-
-function isTestPath(filePath: string): boolean {
-  const normalized = filePath.split(/[\\/]+/).join('/');
-  return /(^|\/)(__tests__|tests?|spec|fixtures|mocks?)(\/|$)/i.test(normalized)
-    || /\.(test|spec)\.[cm]?[jt]sx?$/i.test(normalized)
-    || /test_.*\.py$/i.test(normalized)
-    || /_test\.go$/i.test(normalized);
+  return walkBenchmarkSourceFiles(dir, { includeTests });
 }
 
 function summarize(values: number[]): { min: number; p50: number; p95: number; max: number; mean: number } {
@@ -279,7 +236,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   const ingestStart = performance.now();
   for (const filePath of files) {
     const content = readFileSync(filePath, 'utf-8');
-    await pipeline.ingest('file', content, undefined, relative(projectRoot, filePath), undefined);
+    await pipeline.ingest('file', content, undefined, projectRelativePath(projectRoot, filePath), undefined);
   }
   const ingestMs = performance.now() - ingestStart;
 

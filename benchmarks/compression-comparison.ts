@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 interface BenchmarkTask {
@@ -110,24 +111,16 @@ async function main(options: CompressionCliOptions) {
   );
 
   // Ingest source files
-  const { readdirSync, readFileSync: readFile, statSync } = await import('node:fs');
   function walkDir(dir: string): string[] {
-    const results: string[] = [];
-    for (const entry of readdirSync(dir)) {
-      const fullPath = join(dir, entry);
-      const stat = statSync(fullPath);
-      if (stat.isDirectory()) {
-        if (!['node_modules', '.git', 'dist'].includes(entry)) results.push(...walkDir(fullPath));
-      } else if (entry.endsWith('.ts')) results.push(fullPath);
-    }
-    return results.sort();
+    return walkBenchmarkSourceFiles(dir, { extensions: ['.ts'] });
   }
 
+  const projectRoot = join(benchDir, '..');
   const srcDir = join(benchDir, '..', 'src');
   const files = walkDir(srcDir);
   for (const filePath of files) {
-    const content = readFile(filePath, 'utf-8');
-    const relativePath = filePath.replace(/.*\/spacefolding\//, '');
+    const content = readFileSync(filePath, 'utf-8');
+    const relativePath = projectRelativePath(projectRoot, filePath);
     await pipeline.ingest('file', content, undefined, relativePath, undefined);
   }
   console.log(`Ingested ${storage.getAllChunks().length} chunks\n`);
