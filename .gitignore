@@ -10,3 +10,4 @@ data/
 ralph-*.log
 /benchmarks/heldout*.json
 /benchmarks/*heldout*.json
+/NEXT_CONVERSATION_PLAN.md
