@@ -110,6 +110,14 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Error Handling**: Re-swept retrieval fallback paths for discarded errors and silent failures. Fixed structural lookup failures so structural retrieval degrades to available vector/text or deterministic lexical results with an explicit warning reason instead of failing the whole retrieval.
+  - Added `tests/retriever-ranking.test.ts` coverage for reliable-embedding structural fallback to vector/text sources and deterministic structural fallback to lexical results when structural lookup throws.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 300 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.890205`, MRR `0.933333`, precision@10 `0.205000`, average results `22.70`.
+  - Latest structural deltas: R@10 `+0.187500`, NDCG@10 `+0.300656`, MRR `+0.358333`.
+  - Latest E2E focused averages: recall `1.000000`, precision `0.412937`, tokens `10948.7`; all tasks stayed below full codebase tokens `41495`.
+- 2026-05-25: Review phase.
   - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 retrieval behavior against the current query planning, retriever, selection policy, budget fill, and orchestrator wiring. Verified required plan fields, structural/vector/FTS source selection rules, graph traversal staying disabled by default, source score reporting, focused thresholds/per-path caps, split-parent exclusion, dropped/omitted diagnostics, and hard budget enforcement.
   - No spec-compliance defects found in this fresh sweep.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 298 tests.

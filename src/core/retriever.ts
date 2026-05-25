@@ -1,4 +1,12 @@
-import type { CodeReference, CodeSymbol, ContextChunk, EmbeddingProvider, RerankerProvider, StructuralQuery } from '../types/index.js';
+import type {
+  CodeReference,
+  CodeSymbol,
+  ContextChunk,
+  EmbeddingProvider,
+  RerankerProvider,
+  StructuralQuery,
+  StructuralSearchResult,
+} from '../types/index.js';
 import type { SQLiteRepository } from '../storage/repository.js';
 import type { RetrievalStrategy } from './query-planner.js';
 import { parseStructuralQuery } from './query-planner.js';
@@ -95,29 +103,34 @@ export class HybridRetriever {
 
     // Structural symbol/path/reference search
     if (useStructural) {
-      const structuralResults = this.storage.searchByStructure(structuralQuery, Math.max(topK, 50));
-      addSource(
-        fused,
-        'structural',
-        structuralResults.map((result) => ({
-          chunkId: result.chunkId,
-          score: result.structuralScore,
-          reasons: result.reasons,
-        })),
-        weights.structural
-      );
-      addSource(
-        fused,
-        'dependency',
-        structuralResults
-          .filter((result) => result.dependencyBoost > 0)
-          .map((result) => ({
+      try {
+        const structuralResults = this.storage.searchByStructure(structuralQuery, Math.max(topK, 50));
+        addSource(
+          fused,
+          'structural',
+          structuralResults.map((result) => ({
             chunkId: result.chunkId,
-            score: result.dependencyBoost,
-            reasons: result.reasons.filter((reason) => reason.includes('reference')),
+            score: result.structuralScore,
+            reasons: result.reasons,
           })),
-        weights.dependency
-      );
+          weights.structural
+        );
+        addSource(
+          fused,
+          'dependency',
+          structuralResults
+            .filter((result) => result.dependencyBoost > 0)
+            .map((result) => ({
+              chunkId: result.chunkId,
+              score: result.dependencyBoost,
+              reasons: result.reasons.filter((reason) => reason.includes('reference')),
+            })),
+          weights.dependency
+        );
+      } catch (err) {
+        if (!useVector && !useFts) throw err;
+        retrievalWarnings.push(`structural retrieval unavailable: ${errorMessage(err)}`);
+      }
     }
 
     // Vector search
@@ -295,6 +308,7 @@ export class HybridRetriever {
 
   private retrieveDeterministicStructural(query: string, topK: number): RetrievalResult[] {
     const structuralQuery = parseStructuralQuery(query);
+    const retrievalWarnings: string[] = [];
     const lowercaseExactCue = /\b(find|where|locate|show|contains|defined|grep)\b/i.test(query);
     const strongIdentifiers = new Set(
       structuralQuery.identifiers
@@ -307,13 +321,26 @@ export class HybridRetriever {
         )
         .map((identifier) => identifier.toLowerCase().replace(/[^a-z0-9_$]/g, ''))
     );
-    const lexicalResults = typeof this.storage.searchByLexical === 'function'
-      ? this.storage.searchByLexical(query, Math.max(topK, 50))
-      : this.storage.searchByText(query, Math.max(topK, 50));
-    const structuralResults = this.storage.searchByStructure(structuralQuery, Math.max(topK, 50));
+    let lexicalResults: { chunkId: string; score: number }[] = [];
+    try {
+      lexicalResults = typeof this.storage.searchByLexical === 'function'
+        ? this.storage.searchByLexical(query, Math.max(topK, 50))
+        : this.storage.searchByText(query, Math.max(topK, 50));
+    } catch (err) {
+      pushUniqueWarning(retrievalWarnings, `text retrieval unavailable: ${errorMessage(err)}`);
+    }
+
+    let structuralResults: StructuralSearchResult[] = [];
+    try {
+      structuralResults = this.storage.searchByStructure(structuralQuery, Math.max(topK, 50));
+    } catch (err) {
+      pushUniqueWarning(retrievalWarnings, `structural retrieval unavailable: ${errorMessage(err)}`);
+    }
     const sparseTerms = buildSparseStructuralTerms(query, structuralQuery);
     const pathIntentTerms = buildPathIntentTerms(sparseTerms);
     const candidates = new Map<string, FusedCandidate>();
+    let codeSymbolLookupFailed = false;
+    let codeReferenceLookupFailed = false;
 
     for (const result of lexicalResults) {
       const lexicalScore = scaleDeterministicLexicalScore(result.score);
@@ -359,11 +386,19 @@ export class HybridRetriever {
     if (sparseTerms.length > 0 || structuralQuery.tokens.length > 0 || structuralQuery.identifierParts.length > 0) {
       for (const chunk of this.storage.getAllChunks()) {
         if (chunk.metadata?.split) continue;
+        const symbols = codeSymbolLookupFailed ? [] : safeCodeSymbols(this.storage, chunk.id, retrievalWarnings);
+        if (symbols.length === 0 && retrievalWarnings.some((warning) => warning.startsWith('code symbol lookup unavailable'))) {
+          codeSymbolLookupFailed = true;
+        }
+        const references = codeReferenceLookupFailed ? [] : safeCodeReferences(this.storage, chunk.id, retrievalWarnings);
+        if (references.length === 0 && retrievalWarnings.some((warning) => warning.startsWith('code reference lookup unavailable'))) {
+          codeReferenceLookupFailed = true;
+        }
         const sparseScore = sparseTerms.length > 0 ? scoreSparseStructuralFields(
           chunk,
           sparseTerms,
-          this.storage.getCodeSymbols(chunk.id),
-          this.storage.getCodeReferences(chunk.id)
+          symbols,
+          references
         ) : { score: 0, reasons: [] };
         const pathIntent = scorePathIntent(chunk, structuralQuery, pathIntentTerms);
         const combinedScore = sparseScore.score + pathIntent.score;
@@ -403,6 +438,7 @@ export class HybridRetriever {
           sourceScores,
           reasons: [
             ...data.reasons,
+            ...retrievalWarnings,
             `scores structural=${sourceScores.structural.toFixed(3)} vector=${sourceScores.vector.toFixed(3)} fts=${sourceScores.fts.toFixed(3)} dependency=${sourceScores.dependency.toFixed(3)} graph=${sourceScores.graph.toFixed(3)} final=${sourceScores.final.toFixed(3)}`,
           ],
         };
@@ -412,6 +448,36 @@ export class HybridRetriever {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function pushUniqueWarning(warnings: string[], warning: string): void {
+  if (!warnings.includes(warning)) warnings.push(warning);
+}
+
+function safeCodeSymbols(
+  storage: SQLiteRepository,
+  chunkId: string,
+  warnings: string[]
+): CodeSymbol[] {
+  try {
+    return storage.getCodeSymbols(chunkId);
+  } catch (err) {
+    pushUniqueWarning(warnings, `code symbol lookup unavailable: ${errorMessage(err)}`);
+    return [];
+  }
+}
+
+function safeCodeReferences(
+  storage: SQLiteRepository,
+  chunkId: string,
+  warnings: string[]
+): CodeReference[] {
+  try {
+    return storage.getCodeReferences(chunkId);
+  } catch (err) {
+    pushUniqueWarning(warnings, `code reference lookup unavailable: ${errorMessage(err)}`);
+    return [];
+  }
 }
 
 interface SourceResult {

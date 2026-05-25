@@ -255,6 +255,61 @@ describe('HybridRetriever structural ranking', () => {
     expect(scoreBreakdown!).toMatch(/final=\d+\.\d{3}/);
   });
 
+  it('falls back to vector and text sources when structural lookup fails', async () => {
+    const chunks = [
+      makeChunk('vector-match', 'src/auth/session.ts', 900),
+      makeChunk('text-match', 'src/auth/login.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      searchByStructure: () => {
+        throw new Error('code structure index unavailable');
+      },
+      searchByVector: () => [{ chunkId: 'vector-match', score: 0.95 }],
+      searchByText: () => [{ chunkId: 'text-match', score: 4 }],
+      searchByLexical: () => [{ chunkId: 'text-match', score: 3 }],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('authentication login flow', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    expect(results.map((result) => result.chunkId)).toEqual(['vector-match', 'text-match']);
+    expect(results[0].sourceScores?.structural).toBe(0);
+    expect(results[0].reasons).toContain(
+      'structural retrieval unavailable: code structure index unavailable'
+    );
+  });
+
+  it('keeps deterministic structural retrieval usable when structural lookup fails', async () => {
+    const chunks = [
+      makeChunk('lexical-match', 'src/auth/login.ts', 900),
+      makeChunk('unrelated', 'src/cache/store.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {
+        'lexical-match': 12,
+      }, {}),
+      searchByStructure: () => {
+        throw new Error('code structure index unavailable');
+      },
+    };
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve('authentication login flow', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    expect(results[0].chunkId).toBe('lexical-match');
+    expect(results[0].sourceScores?.fts).toBeGreaterThan(0);
+    expect(results[0].reasons).toContain(
+      'structural retrieval unavailable: code structure index unavailable'
+    );
+  });
+
   it('keeps repository candidates inside focused budget for batch delete implementation tasks', async () => {
     const chunks = [
       makeChunk('mcp-a', 'src/mcp/server.ts', 2_521),
