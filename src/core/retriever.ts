@@ -318,7 +318,7 @@ export class HybridRetriever {
         const deps = this.storage.getDependencies(id);
         for (const dep of deps) {
           const other = dep.fromId === id ? dep.toId : dep.fromId;
-          if (!visited.has(other) && visited.size + nextFrontier.length < maxChunks) {
+          if (!visited.has(other) && results.length + nextFrontier.length < maxChunks) {
             nextFrontier.push(other);
             visited.add(other);
             results.push({ chunkId: other, score: 1 / (hop + 1) });

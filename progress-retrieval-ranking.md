@@ -110,6 +110,15 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Test Coverage**: Re-swept query planner, retriever, focused selection policy, and budget tests against `IMPLEMENTATION.md` section 7 and the design retrieval/selection invariants. Query planner, selection policy, and budget invariants were already directly covered; retriever graph coverage still lacked the pure `strategy: 'graph'` path.
+  - Fixed the graph-only traversal edge case exposed by the new test: `multiHopExpand()` now caps returned graph expansions instead of counting seed chunks against `topK`, so graph strategy can return dependency results when recent seed count is larger than the requested result count.
+  - Added `tests/retriever-ranking.test.ts` coverage for pure graph strategy traversal from recent chunks with positive graph source scores and final-score reporting.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 337 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.890205`, MRR `0.933333`, precision@10 `0.205000`, average results `22.60`.
+  - Latest structural deltas: R@10 `+0.170833`, NDCG@10 `+0.293116`, MRR `+0.358333`.
+  - Latest E2E focused averages: recall `0.950000`, precision `0.432619`, tokens `10967.4`; all tasks stayed below full codebase tokens `42125`.
+- 2026-05-25: Review phase.
   - **Error Handling**: Re-swept retrieval fallback paths for discarded errors and source failures. Fixed hybrid/structural retrieval so full-text/lexical lookup failures degrade to available structural/vector results with explicit warning reasons, while text-only failures still throw. Fixed explicit hybrid graph expansion so dependency-graph failures preserve already-fused results with an explicit graph warning; graph-only remains loud.
   - Added `tests/retriever-ranking.test.ts` coverage for hybrid text-source fallback to vector results, text-only failure propagation, and hybrid graph-expansion fallback.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 336 tests.

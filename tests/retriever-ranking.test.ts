@@ -379,6 +379,45 @@ describe('HybridRetriever structural ranking', () => {
     expect(graphResult?.reasons).toContain('dependency graph traversal');
   });
 
+  it('uses graph traversal for graph strategy from recent chunks', async () => {
+    const chunks = Array.from({ length: 12 }, (_, index) =>
+      makeChunk(`chunk-${index}`, `src/module-${index}.ts`, 900)
+    );
+    const getDependencies = vi.fn((chunkId: string) => chunkId === 'chunk-11'
+      ? [
+          {
+            id: 'dep-graph',
+            fromId: 'chunk-11',
+            toId: 'chunk-0',
+            type: 'imports',
+            strength: 1,
+            metadata: {},
+          },
+        ]
+      : []);
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      getDependencies,
+      searchByVector: () => [],
+      searchByText: () => [],
+      searchByLexical: () => [],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('dependency graph', {
+      strategy: 'graph',
+      maxHops: 1,
+      topK: 5,
+    });
+
+    expect(getDependencies).toHaveBeenCalledWith('chunk-11');
+    expect(results.map((result) => result.chunkId)).toEqual(['chunk-0']);
+    expect(results[0].sources).toEqual(['graph']);
+    expect(results[0].sourceScores?.graph).toBeGreaterThan(0);
+    expect(results[0].sourceScores?.final).toBe(results[0].score);
+    expect(results[0].reasons).toContain('dependency graph traversal');
+  });
+
   it('falls back to vector and text sources when structural lookup fails', async () => {
     const chunks = [
       makeChunk('vector-match', 'src/auth/session.ts', 900),
