@@ -20,9 +20,9 @@ export interface RetrievalSelectionResult {
 }
 
 const FOCUSED_TARGETS: Record<RetrievalComplexity, number> = {
-  narrow: 8_000,
-  moderate: 17_000,
-  broad: 24_000,
+  narrow: 6_000,
+  moderate: 13_000,
+  broad: 18_000,
 };
 
 const BROAD_TARGETS: Record<RetrievalComplexity, number> = {

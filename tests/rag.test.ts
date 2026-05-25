@@ -282,9 +282,9 @@ describe('RetrievalSelectionPolicy', () => {
       requestedTopK: 10,
     });
 
-    expect(narrow.targetBudget).toBe(8_000);
-    expect(moderate.targetBudget).toBe(17_000);
-    expect(broad.targetBudget).toBe(24_000);
+    expect(narrow.targetBudget).toBe(6_000);
+    expect(moderate.targetBudget).toBe(13_000);
+    expect(broad.targetBudget).toBe(18_000);
     expect(moderate.mode).toBe('focused');
     expect(moderate.maxChunksPerPath).toBe(2);
   });
@@ -332,7 +332,7 @@ describe('RetrievalSelectionPolicy', () => {
       { chunkId: 'c', score: 0.8, sources: ['structural'], reasons: [] },
     ] as RetrievalResult[];
 
-    expect(policy.targetBudget).toBe(8_000);
+    expect(policy.targetBudget).toBe(6_000);
     expect(budgetForSelectedCandidates(selected, chunks, policy)).toBe(18_000);
   });
 });
