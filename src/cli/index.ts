@@ -20,7 +20,7 @@ import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
 import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { formatSourceScoreBreakdown } from '../core/retriever.js';
 import type { EmbeddingProvider, RetrievalMode, RetrievalStrategy } from '../types/index.js';
@@ -331,23 +331,32 @@ export function buildCLI(): Command {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
 
-      warnIfOutsideWorkspace(inputPath);
+      try {
+        warnIfOutsideWorkspace(inputPath);
 
-      const stat = statSync(inputPath);
-      if (stat.isDirectory()) {
-        const files = walkDir(inputPath);
-        for (const filePath of files) {
-          const content = readFileSync(filePath, 'utf-8');
-          const chunk = await pipeline.ingest('file', content, opts.type, filePath);
-          const splitInfo = chunk.metadata?.childCount ? ` (split into ${chunk.metadata.childCount} chunks)` : '';
-          console.log(chalk.green('✓'), chunk.id.slice(0, 8), filePath, splitInfo);
+        const stat = lstatSync(inputPath);
+        if (stat.isSymbolicLink()) {
+          console.log(chalk.yellow(`Skipped symlink ${inputPath}`));
+          return;
         }
-        console.log(chalk.blue(`Ingested ${files.length} files`));
-      } else {
-        const content = readFileSync(inputPath, 'utf-8');
-        const chunk = await pipeline.ingest(opts.source, content, opts.type, inputPath);
-        const splitInfo = chunk.metadata?.childCount ? ` (split into ${chunk.metadata.childCount} chunks)` : '';
-        console.log(chalk.green('✓'), chunk.id.slice(0, 8), inputPath, splitInfo);
+
+        if (stat.isDirectory()) {
+          const files = walkDir(inputPath);
+          for (const filePath of files) {
+            const content = readFileSync(filePath, 'utf-8');
+            const chunk = await pipeline.ingest('file', content, opts.type, filePath);
+            const splitInfo = chunk.metadata?.childCount ? ` (split into ${chunk.metadata.childCount} chunks)` : '';
+            console.log(chalk.green('✓'), chunk.id.slice(0, 8), filePath, splitInfo);
+          }
+          console.log(chalk.blue(`Ingested ${files.length} files`));
+        } else {
+          const content = readFileSync(inputPath, 'utf-8');
+          const chunk = await pipeline.ingest(opts.source, content, opts.type, inputPath);
+          const splitInfo = chunk.metadata?.childCount ? ` (split into ${chunk.metadata.childCount} chunks)` : '';
+          console.log(chalk.green('✓'), chunk.id.slice(0, 8), inputPath, splitInfo);
+        }
+      } finally {
+        pipeline.close();
       }
     });
 
@@ -712,7 +721,8 @@ function walkDir(dir: string): string[] {
   const entries = readdirSync(dir);
   for (const entry of entries) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const stat = lstatSync(fullPath);
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       if (entry !== 'node_modules' && entry !== '.git' && entry !== 'dist') {
         results.push(...walkDir(fullPath));

@@ -14,7 +14,7 @@ import { DeterministicEmbeddingProvider } from '../src/providers/deterministic-e
 import { DeterministicCompressionProvider } from '../src/providers/deterministic-compression.js';
 import { SimpleDependencyAnalyzer } from '../src/providers/dependency-analyzer.js';
 import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../src/types/index.js';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -254,6 +254,49 @@ describe('CLI interface', () => {
         process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
       }
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ingest command skips symlinked directories instead of following external trees', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spacefolding-cli-ingest-'));
+    const dbDir = mkdtempSync(join(tmpdir(), 'spacefolding-cli-ingest-db-'));
+    const external = mkdtempSync(join(tmpdir(), 'spacefolding-cli-private-'));
+    const dbPath = join(dbDir, 'spacefolding.db');
+    const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
+    process.env.EMBEDDING_PROVIDER = 'deterministic';
+
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'index.ts'), 'export const publicValue = true;');
+    writeFileSync(join(external, 'private.ts'), 'export const privateValue = true;');
+    symlinkSync(external, join(dir, 'src', 'linked-private'), 'dir');
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const cli = buildCLI();
+      cli.exitOverride();
+      await cli.parseAsync(['node', 'spacefolding', '--db', dbPath, 'ingest', dir]);
+
+      const storage = createRepository(dbPath);
+      try {
+        const chunks = storage.getAllChunks();
+        expect(chunks.map((chunk) => chunk.path)).toContain(join(dir, 'src', 'index.ts'));
+        expect(JSON.stringify(chunks)).toContain('publicValue');
+        expect(JSON.stringify(chunks)).not.toContain('privateValue');
+        expect(JSON.stringify(chunks)).not.toContain('linked-private');
+      } finally {
+        storage.close();
+      }
+    } finally {
+      log.mockRestore();
+      if (originalEmbeddingProvider === undefined) {
+        delete process.env.EMBEDDING_PROVIDER;
+      } else {
+        process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
+      }
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(dbDir, { recursive: true, force: true });
+      rmSync(external, { recursive: true, force: true });
     }
   });
 });

@@ -64,6 +64,9 @@
 - Code Consistency review: aligned `topK` terminology across CLI help, MCP
   schema text, integration docs, and interface assertions so it is described as
   pre-selection retrieval candidates rather than returned chunks.
+- Security And Data Integrity review: CLI generic directory ingest now skips
+  symlinked input paths and linked directory entries instead of following them
+  into external trees; added CLI regression coverage for the protected path.
 
 ## Completed Work Items
 
@@ -295,3 +298,16 @@
   compression summaries remain reachable from user surfaces or benchmarks. No
   integration wiring defect required code changes. Verified
   `npm run build && npm run lint && npm test` passed with 352 tests.
+- Security And Data Integrity: performed a fresh sweep of web HTML/JSON
+  serialization, MCP/CLI JSON output, ingest path handling, benchmark
+  generated-output paths, ignored artifacts, tracked files, and current repo
+  status against `DESIGN.md` constraints and `IMPLEMENTATION.md` error-handling
+  requirements. Fixed CLI generic `ingest` so it uses `lstatSync`, skips
+  symlinked input paths and linked directory entries, and closes the pipeline
+  after the command; added interface coverage proving a symlinked external tree
+  is not ingested. Confirmed `git status --short` shows no generated benchmark
+  JSON or DB artifacts, and ignored DB/log artifacts are covered by
+  `.gitignore`; left unrelated untracked `NEXT_CONVERSATION_PLAN.md` untouched.
+  Verified targeted `npx vitest run tests/interface.test.ts --testNamePattern
+  "ingest command skips symlinked directories"` and
+  `npm run build && npm run lint && npm test` passed with 353 tests.
