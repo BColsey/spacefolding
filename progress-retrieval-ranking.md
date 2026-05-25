@@ -110,6 +110,11 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 and the design retrieval/selection invariants from scratch. Checked query plan fields, adaptive strategy/topK/budget planning, structural/vector/FTS source usage, deterministic-vector damping, graph traversal default-off behavior, source score/reason reporting, focused/broad/exhaustive target budgets, split-parent candidate exclusion, dropped/omitted diagnostics, and hard budget enforcement through `PipelineOrchestrator.retrieve()`.
+  - No spec-compliance defects found in this fresh sweep.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 333 tests.
+  - Acceptance benchmarks not run because no retrieval ranking, selection, or budget behavior changed.
+- 2026-05-25: Review phase.
   - **Code Consistency**: Re-swept retrieval score reasons, source score names, and retrieval option handling. Fixed reranker final-score consistency so reranked candidates now return `score` and `sourceScores.final` matching the rerank-adjusted order, include explicit reranker reasons, and share one source-score breakdown formatter between retriever output and CLI display.
   - Added `tests/retriever-ranking.test.ts` coverage proving reranked ordering, returned `score`, `sourceScores.final`, and the `scores ... final=` reason agree.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 303 tests.
