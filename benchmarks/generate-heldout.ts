@@ -9,7 +9,7 @@
  *   npx tsx benchmarks/generate-heldout.ts --corpus /path/to/repo --output /tmp/repo-dataset.json --limit 60
  */
 
-import { lstatSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -258,7 +258,8 @@ function walkDir(dir: string, includeTests: boolean): string[] {
   const files: string[] = [];
   for (const entry of entries) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const stat = lstatSync(fullPath);
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       if (shouldSkipDirectory(entry, includeTests)) continue;
       files.push(...walkDir(fullPath, includeTests));

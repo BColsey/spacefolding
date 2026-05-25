@@ -14,7 +14,7 @@
  * returned context size (tokensReturned, chunksReturned), and memory.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
@@ -126,13 +126,14 @@ function parsePositiveInt(value: string, name: string): number {
   return parsed;
 }
 
-function walkDir(dir: string, includeTests: boolean): string[] {
+export function walkProfileCorpus(dir: string, includeTests: boolean): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(dir)) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const stat = lstatSync(fullPath);
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
-      if (!SKIP_DIRS.has(entry)) results.push(...walkDir(fullPath, includeTests));
+      if (!SKIP_DIRS.has(entry)) results.push(...walkProfileCorpus(fullPath, includeTests));
       continue;
     }
 
@@ -212,7 +213,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
     embeddingProvider
   );
 
-  const files = walkDir(options.corpus, options.includeTests);
+  const files = walkProfileCorpus(options.corpus, options.includeTests);
   const fileBytes = files.reduce((sum, filePath) => sum + statSync(filePath).size, 0);
   log(`Profiling ${files.length} files from ${options.corpus}`);
 

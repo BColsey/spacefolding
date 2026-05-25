@@ -159,4 +159,38 @@ describe('held-out benchmark dataset generator', () => {
     expect(JSON.stringify(dataset)).not.toContain('BuildOnlySymbol');
     expect(JSON.stringify(dataset)).not.toContain('TestOnlySymbol');
   });
+
+  it('does not follow corpus symlinks into external source trees', () => {
+    const corpus = mkdtempSync(join(tmpdir(), 'spacefolding-heldout-corpus-'));
+    const external = mkdtempSync(join(tmpdir(), 'spacefolding-heldout-private-'));
+    const output = join(tmpdir(), `spacefolding-heldout-symlink-test-${process.pid}.json`);
+    generatedPaths.push(corpus, external, output);
+
+    const keptPath = join(corpus, 'src', 'kept.ts');
+    mkdirSync(join(corpus, 'src'), { recursive: true });
+    writeFileSync(keptPath, 'export function KeptHeldoutSymbol() { return true; }\n');
+    writeFileSync(join(external, 'private.ts'), 'export function PrivateHeldoutSymbol() { return true; }\n');
+    symlinkSync(external, join(corpus, 'src', 'linked-private'), 'dir');
+
+    const options = parseArgs([
+      '--corpus',
+      corpus,
+      '--output',
+      output,
+      '--limit',
+      '10',
+      '--seed',
+      'skip-symlinks',
+    ]);
+
+    const summary = writeHeldoutDataset(options);
+    const dataset = JSON.parse(readFileSync(output, 'utf-8')) as HeldoutDataset;
+    const relevantPaths = dataset.tasks.flatMap((task) => task.relevant_files);
+
+    expect(summary.tasks).toBe(1);
+    expect(relevantPaths).toEqual([relative(process.cwd(), keptPath).split(sep).join('/')]);
+    expect(JSON.stringify(dataset)).toContain('KeptHeldoutSymbol');
+    expect(JSON.stringify(dataset)).not.toContain('PrivateHeldoutSymbol');
+    expect(JSON.stringify(dataset)).not.toContain('linked-private');
+  });
 });

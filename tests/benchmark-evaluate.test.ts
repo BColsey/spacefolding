@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -79,6 +79,24 @@ describe('retrieval benchmark report', () => {
       expect(files).toEqual(['.env.example', 'src/index.ts']);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not follow corpus symlinks outside the benchmark tree', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'spacefolding-evaluate-corpus-'));
+    const external = mkdtempSync(join(tmpdir(), 'spacefolding-evaluate-private-'));
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'index.ts'), 'export const ok = true;');
+    writeFileSync(join(external, 'private.ts'), 'export const secret = true;');
+    symlinkSync(external, join(tempDir, 'src', 'linked-private'), 'dir');
+
+    try {
+      const files = walkDir(tempDir, true).map((file) => relative(tempDir, file));
+
+      expect(files).toEqual(['src/index.ts']);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(external, { recursive: true, force: true });
     }
   });
 

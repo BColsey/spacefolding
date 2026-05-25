@@ -17,7 +17,6 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
@@ -221,7 +220,8 @@ function walkDir(dir: string): string[] {
   if (!existsSync(dir)) return results;
   for (const entry of readdirSync(dir)) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const stat = lstatSync(fullPath);
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       if (!SKIP_DIRS.has(entry)) results.push(...walkDir(fullPath));
     } else if (SOURCE_EXTENSIONS.has(extname(entry))) {

@@ -9,7 +9,7 @@
  *   npx tsx benchmarks/evaluate.ts --strategy vector
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
@@ -713,7 +713,8 @@ export function walkDir(dir: string, includeTests: boolean): string[] {
   const entries = readdirSync(dir);
   for (const entry of entries) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const stat = lstatSync(fullPath);
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       if (!SKIP_DIRS.has(entry)) results.push(...walkDir(fullPath, includeTests));
     } else {

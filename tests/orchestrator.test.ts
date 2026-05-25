@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
@@ -138,6 +138,29 @@ describe('PipelineOrchestrator', () => {
     expect(result.codeFiles).toBe(1);
     expect(chunk?.language).toBe('typescript');
     expect(storage.getCodeSymbols(chunk!.id).map((symbol) => symbol.name)).toContain('runApp');
+
+    pipeline.close();
+  });
+
+  it('does not follow project symlinks into external source trees', async () => {
+    const dir = createProjectDir({
+      'src/app.ts': 'export function runApp() { return true; }',
+    });
+    dbCounter += 1;
+    const external = join(tmpdir(), `spacefolding-orchestrator-private-${Date.now()}-${dbCounter}`);
+    projectDirs.push(external);
+    mkdirSync(external, { recursive: true });
+    writeFileSync(join(external, 'private.ts'), 'export function PrivateProjectSymbol() { return true; }');
+    symlinkSync(external, join(dir, 'src', 'linked-private'), 'dir');
+    const { pipeline, storage } = createTestPipeline();
+
+    const result = await pipeline.ingestProject(dir, { includeDocs: false });
+    const chunks = pipeline.getAllChunks();
+
+    expect(result.codeFiles).toBe(1);
+    expect(chunks.map((chunk) => chunk.path)).toEqual(['src/app.ts']);
+    expect(storage.getAllCodeSymbols().map((symbol) => symbol.name)).toEqual(['runApp']);
+    expect(JSON.stringify(chunks)).not.toContain('PrivateProjectSymbol');
 
     pipeline.close();
   });

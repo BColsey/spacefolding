@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, extname, join, relative } from 'node:path';
 import type {
   ChunkType,
@@ -987,7 +987,8 @@ function walkDir(dir: string): string[] {
   const entries = readdirSync(dir);
   for (const entry of entries) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const stat = lstatSync(fullPath);
+    if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
       if (entry !== 'node_modules' && entry !== '.git' && entry !== 'dist' && entry !== '.next' && entry !== '.cache') {
         results.push(...walkDir(fullPath));
@@ -1018,7 +1019,8 @@ function walkProjectFiles(
   const results: string[] = [];
   for (const entry of readdirSync(dir)) {
     const fullPath = join(dir, entry);
-    const stat = statSync(fullPath);
+    const stat = lstatSync(fullPath);
+    if (stat.isSymbolicLink()) continue;
 
     if (stat.isDirectory()) {
       if (PROJECT_SKIP_DIRS.has(entry)) continue;
