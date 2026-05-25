@@ -39,6 +39,9 @@
 - Integration Wiring review: MCP `iterative_retrieve` now defers strategy
   selection to the pipeline by default, so it uses structural retrieval when
   code symbols are indexed just like `retrieve_context`.
+- Security And Data Integrity review: verified generated DB/held-out/env
+  artifacts are ignored, no generated benchmark JSON is in repo status, and web
+  dynamic HTML uses escaping or `textContent`.
 
 ## Completed Work Items
 
@@ -143,3 +146,11 @@
   `retrieve_context`. Tightened `rounds` validation and schema description.
   Verified `npx vitest run tests/interface.test.ts` passed with 21 tests and
   `npm run build && npm run lint && npm test` passed with 289 tests.
+- Security And Data Integrity: reviewed web JSON/HTML output, CLI JSON output,
+  MCP JSON responses, held-out/profiler output paths, ignored artifacts, and
+  tracked files. Verified `.gitignore` covers `data/`, SQLite DB/WAL/SHM files,
+  `.env`, and generated held-out JSON; `git ls-files` only reports
+  `.env.example` for env files; `git status --short` shows no generated
+  benchmark JSON or DB artifacts. No security/data-integrity defect required
+  code changes. Verified `npm run build && npm run lint && npm test` passed
+  with 289 tests.
