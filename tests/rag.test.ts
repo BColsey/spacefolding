@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { reciprocalRankFusion, HybridRetriever } from '../src/core/retriever.js';
+import { HybridRetriever } from '../src/core/retriever.js';
 import type { RetrievalResult } from '../src/core/retriever.js';
 import { detectIntent, expandQuery, planQuery, estimateComplexity, getAdaptiveStrategy } from '../src/core/query-planner.js';
 import { fillBudget, compressOmitted } from '../src/core/budget.js';
@@ -114,34 +114,6 @@ describe('QueryPlanner', () => {
     const plan = planQuery('explain the overall architecture and how all the various modules interact');
     expect(plan.complexity).toBe('broad');
     expect(plan.tokenBudgetRatio).toBeGreaterThan(0.35);
-  });
-});
-
-describe('ReciprocalRankFusion', () => {
-  it('fuses multiple ranked lists', () => {
-    const set1 = [
-      { chunkId: 'a', score: 0.9 },
-      { chunkId: 'b', score: 0.8 },
-      { chunkId: 'c', score: 0.7 },
-    ];
-    const set2 = [
-      { chunkId: 'b', score: 0.95 },
-      { chunkId: 'c', score: 0.85 },
-      { chunkId: 'd', score: 0.75 },
-    ];
-
-    const fused = reciprocalRankFusion([set1, set2], ['vector', 'fts']);
-
-    // 'b' appears in both lists, should rank highest
-    const sorted = [...fused.entries()].sort((a, b) => b[1].fusedScore - a[1].fusedScore);
-    expect(sorted[0][0]).toBe('b');
-    expect(sorted[0][1].sources.has('vector')).toBe(true);
-    expect(sorted[0][1].sources.has('fts')).toBe(true);
-  });
-
-  it('handles empty result sets', () => {
-    const fused = reciprocalRankFusion([], []);
-    expect(fused.size).toBe(0);
   });
 });
 

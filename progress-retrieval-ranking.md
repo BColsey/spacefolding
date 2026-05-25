@@ -110,6 +110,10 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Dead Code**: Re-swept retrieval fusion helpers, graph expansion branches, reranker wiring, and retrieval option paths for unused or unwired retrieval components. Removed the exported rank-only `reciprocalRankFusion()` helper and its tests because the live retriever now uses score-weighted source fusion via `addSource()` and source score reporting.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 336 tests.
+  - Acceptance benchmarks not run because retrieval ranking, selection, and budget behavior were unchanged; this iteration only removed an unused rank-only helper.
+- 2026-05-25: Review phase.
   - **Code Consistency**: Re-swept retrieval option handling across CLI, MCP, web, and orchestrator paths. Fixed the web `/api/retrieve` endpoint so it now validates and passes through `strategy`, `topK`, `returnLimit`, and `maxHops`, matching CLI/MCP retrieval controls while preserving focused/default behavior.
   - Added `tests/interface.test.ts` coverage for web retrieval option passthrough and invalid `strategy`, `topK`, `returnLimit`, and `maxHops` diagnostics.
   - Quality gate: `npm run build`, `npm run lint`, and `npm test` passed; 28 files, 338 tests.

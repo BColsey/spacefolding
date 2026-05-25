@@ -41,8 +41,6 @@ export interface RetrievalOptions {
   mode?: RetrievalMode;
 }
 
-const RRF_K = 60; // Reciprocal Rank Fusion constant
-
 const SOURCE_SCORE_FIELDS: Array<keyof RetrievalSourceScores> = [
   'structural',
   'vector',
@@ -56,33 +54,6 @@ export function formatSourceScoreBreakdown(sourceScores: RetrievalSourceScores):
   return `scores ${SOURCE_SCORE_FIELDS
     .map((field) => `${field}=${sourceScores[field].toFixed(3)}`)
     .join(' ')}`;
-}
-
-/** Merge multiple ranked lists using Reciprocal Rank Fusion */
-export function reciprocalRankFusion(
-  resultSets: { chunkId: string; score: number }[][],
-  sources: string[]
-): Map<string, { fusedScore: number; sources: Set<string> }> {
-  const scores = new Map<string, { fusedScore: number; sources: Set<string> }>();
-
-  for (let i = 0; i < resultSets.length; i++) {
-    const results = resultSets[i];
-    const source = sources[i] ?? 'unknown';
-
-    for (let rank = 0; rank < results.length; rank++) {
-      const { chunkId } = results[rank];
-      const rrfScore = 1 / (RRF_K + rank + 1);
-      const existing = scores.get(chunkId);
-      if (existing) {
-        existing.fusedScore += rrfScore;
-        existing.sources.add(source);
-      } else {
-        scores.set(chunkId, { fusedScore: rrfScore, sources: new Set([source]) });
-      }
-    }
-  }
-
-  return scores;
 }
 
 /** Maximum candidates to send to the reranker (avoids unnecessary work) */
