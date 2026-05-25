@@ -255,6 +255,80 @@ describe('HybridRetriever structural ranking', () => {
     expect(scoreBreakdown!).toMatch(/final=\d+\.\d{3}/);
   });
 
+  it('keeps graph traversal disabled for hybrid retrieval by default', async () => {
+    const chunks = [
+      makeChunk('seed', 'src/core/retriever.ts', 900),
+      makeChunk('neighbor', 'src/core/budget.ts', 900),
+    ];
+    const getDependencies = vi.fn(() => [
+      {
+        id: 'dep-1',
+        fromId: 'seed',
+        toId: 'neighbor',
+        type: 'imports',
+        strength: 1,
+        metadata: {},
+      },
+    ]);
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      getDependencies,
+      searchByVector: () => [{ chunkId: 'seed', score: 0.9 }],
+      searchByText: () => [{ chunkId: 'seed', score: 4 }],
+      searchByLexical: () => [],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('retrieve budget dependencies', {
+      strategy: 'hybrid',
+      topK: 10,
+    });
+
+    expect(getDependencies).not.toHaveBeenCalled();
+    expect(results.map((result) => result.chunkId)).toEqual(['seed']);
+    expect(results[0].sources).not.toContain('graph');
+    expect(results[0].sourceScores?.graph).toBe(0);
+  });
+
+  it('uses graph traversal for hybrid retrieval when maxHops is explicit', async () => {
+    const chunks = [
+      makeChunk('seed', 'src/core/retriever.ts', 900),
+      makeChunk('neighbor', 'src/core/budget.ts', 900),
+    ];
+    const getDependencies = vi.fn((chunkId: string) => chunkId === 'seed'
+      ? [
+          {
+            id: 'dep-1',
+            fromId: 'seed',
+            toId: 'neighbor',
+            type: 'imports',
+            strength: 1,
+            metadata: {},
+          },
+        ]
+      : []);
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      getDependencies,
+      searchByVector: () => [{ chunkId: 'seed', score: 0.9 }],
+      searchByText: () => [{ chunkId: 'seed', score: 4 }],
+      searchByLexical: () => [],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('retrieve budget dependencies', {
+      strategy: 'hybrid',
+      maxHops: 1,
+      topK: 10,
+    });
+    const graphResult = results.find((result) => result.chunkId === 'neighbor');
+
+    expect(getDependencies).toHaveBeenCalledWith('seed');
+    expect(graphResult?.sources).toContain('graph');
+    expect(graphResult?.sourceScores?.graph).toBeGreaterThan(0);
+    expect(graphResult?.reasons).toContain('dependency graph traversal');
+  });
+
   it('falls back to vector and text sources when structural lookup fails', async () => {
     const chunks = [
       makeChunk('vector-match', 'src/auth/session.ts', 900),

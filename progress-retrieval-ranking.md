@@ -110,6 +110,12 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Test Coverage**: Re-swept query planner, retriever, focused selection policy, and budget tests against the retrieval behavior and selection/budget invariants in `IMPLEMENTATION.md` section 7 and `DESIGN.md`.
+  - Fixed a retriever coverage gap for graph traversal behavior: hybrid retrieval now has tests proving dependency graph traversal stays disabled by default and only contributes graph-sourced results when `maxHops` is explicitly requested.
+  - Added `tests/retriever-ranking.test.ts` coverage for default-off graph traversal and explicit hybrid graph expansion with a positive graph source score.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 302 tests.
+  - Acceptance benchmarks not run because retrieval ranking, selection, and budget behavior were unchanged; this iteration only added coverage.
+- 2026-05-25: Review phase.
   - **Error Handling**: Re-swept retrieval fallback paths for discarded errors and silent failures. Fixed structural lookup failures so structural retrieval degrades to available vector/text or deterministic lexical results with an explicit warning reason instead of failing the whole retrieval.
   - Added `tests/retriever-ranking.test.ts` coverage for reliable-embedding structural fallback to vector/text sources and deterministic structural fallback to lexical results when structural lookup throws.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 25 files, 300 tests.
