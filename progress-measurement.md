@@ -95,6 +95,9 @@
 - Error-handling smoke tests should include both checker JSON failures and
   benchmark process failures, because acceptance diagnostics and script startup
   diagnostics have different output paths.
+- Dead-code reviews should compare result snapshot docs against freshly
+  generated `/tmp` benchmark JSON, because stale metric tables are dead
+  diagnostic surface even when checker code is fully wired.
 
 ## Known Issues
 
@@ -561,4 +564,14 @@
   Smoke-tested `npx tsx benchmarks/ablation.ts --dataset` and
   `npx tsx benchmarks/compression-comparison.ts --dataset /tmp/tasks.json`;
   both exited nonzero with direct parser messages. No generated benchmark JSON
+  appeared in repo status.
+- Dead Code: reviewed unused benchmark fields, stale result docs, and unwired
+  checker branches against `DESIGN.md` benchmark design and
+  `IMPLEMENTATION.md` section 10. The targeted benchmark TypeScript unused
+  check passed. Fresh `/tmp` retrieval and E2E JSON showed
+  `benchmarks/RESULTS.md` and `benchmarks/E2E-RESULTS.md` were stale, so those
+  result snapshots were refreshed from the generated acceptance inputs. Verified
+  `npm run build && npm run lint && npm test`, `npx tsc -p
+  benchmarks/tsconfig.json --noEmit --noUnusedLocals --noUnusedParameters`, and
+  the documented acceptance checker command passed. No generated benchmark JSON
   appeared in repo status.
