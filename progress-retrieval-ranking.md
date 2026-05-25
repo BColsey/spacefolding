@@ -110,6 +110,12 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Security And Data Integrity**: Re-swept SQLite query construction and retrieval storage lifecycle paths, including `SQLiteRepository` filters, FTS query building, structural lookup, vector-index SQL, schema migrations, export/import, and CLI database-path wiring.
+  - Verified user-controlled values flow through placeholders or sanitized FTS MATCH input; dynamic SQL fragments are limited to fixed clause assembly, constants, and numeric vector dimensions.
+  - No security/data-integrity defects found in this fresh sweep.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 338 tests.
+  - Acceptance benchmarks not run because no retrieval ranking, selection, or budget behavior changed.
+- 2026-05-25: Review phase.
   - **Integration Wiring**: Re-swept `PipelineOrchestrator.retrieve()` against implemented retrieval components and found explicit graph strategy was not enough to exercise dependency graph traversal unless callers also provided `maxHops`.
   - Fixed graph wiring so `strategy: 'graph'` defaults to one traversal hop while hybrid graph traversal remains disabled unless `maxHops` is explicitly requested. CLI no longer forces `maxHops: 0` when omitted, and CLI/MCP descriptions now match the graph default.
   - Added retriever and orchestrator coverage proving graph strategy traverses by default, plus CLI parsing coverage proving omitted `--max-hops` stays unset.
