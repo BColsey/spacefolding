@@ -59,3 +59,5 @@
   - Verification: `npm run build && npm run lint && npm test`
   - Benchmarks: `npm run build`; `npx tsx benchmarks/evaluate.ts --strategy all --json > /tmp/spacefolding-eval.json`; `npx tsx benchmarks/e2e-benchmark.ts --strategy structural --json > /tmp/spacefolding-e2e.json`
   - Benchmark summary: structural recall@10 0.983, nDCG@10 0.890, MRR 0.933; structural e2e average recall 1.000 and average precision 0.416.
+- 2026-05-25: Review category 2, Error Handling. Checked structural extraction fallback behavior, ingest-time best-effort indexing, storage failure propagation, and file read failures. Fixed directory and project ingestion so unreadable files are counted as skipped while chunk storage/database failures are no longer swallowed as skipped files, and added regression coverage for both paths.
+  - Verification: `npx vitest run tests/orchestrator.test.ts`; `npm run build && npm run lint && npm test`

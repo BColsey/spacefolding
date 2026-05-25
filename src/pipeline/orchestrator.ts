@@ -450,14 +450,15 @@ export class PipelineOrchestrator {
     let skipped = 0;
 
     for (const filePath of files) {
-      try {
-        const content = readFileSync(filePath, 'utf-8');
-        const chunk = await this.ingest('file', content, type, filePath);
-        chunks.push(chunk.id);
-        this.enforceMaxChunks();
-      } catch {
+      const content = readTextFileForIngest(filePath);
+      if (content === null) {
         skipped++;
+        continue;
       }
+
+      const chunk = await this.ingest('file', content, type, filePath);
+      chunks.push(chunk.id);
+      this.enforceMaxChunks();
     }
 
     return { files: files.length, chunks, skipped };
@@ -483,46 +484,46 @@ export class PipelineOrchestrator {
       const relativePath = normalizePath(relative(dirPath, filePath));
       const contextKind = getProjectContextKind(relativePath, resolvedOptions);
       const isCode = isCodePath(relativePath);
+      const content = readTextFileForIngest(filePath);
 
-      try {
-        const content = readFileSync(filePath, 'utf-8');
+      if (content === null) {
+        skipped++;
+        continue;
+      }
 
-        if (contextKind === 'agent-instruction') {
-          projectContextFiles++;
-          for (const section of segmentAgentInstructions(content)) {
-            const chunk = await this.ingest('file', section.text, section.type, relativePath);
-            this.annotateChunkTree(chunk, {
-              projectContext: true,
-              projectContextKind: contextKind,
-              instructionCategory: section.category,
-              projectRoot: dirPath,
-            });
-            chunks.push(chunk.id);
-          }
-          continue;
-        }
-
-        const chunk = await this.ingest(
-          'file',
-          content,
-          contextKind ? 'reference' : undefined,
-          relativePath
-        );
-        if (contextKind) {
-          projectContextFiles++;
+      if (contextKind === 'agent-instruction') {
+        projectContextFiles++;
+        for (const section of segmentAgentInstructions(content)) {
+          const chunk = await this.ingest('file', section.text, section.type, relativePath);
           this.annotateChunkTree(chunk, {
             projectContext: true,
             projectContextKind: contextKind,
+            instructionCategory: section.category,
             projectRoot: dirPath,
           });
-        } else if (isCode) {
-          codeFiles++;
+          chunks.push(chunk.id);
         }
-        chunks.push(chunk.id);
-        this.enforceMaxChunks();
-      } catch {
-        skipped++;
+        continue;
       }
+
+      const chunk = await this.ingest(
+        'file',
+        content,
+        contextKind ? 'reference' : undefined,
+        relativePath
+      );
+      if (contextKind) {
+        projectContextFiles++;
+        this.annotateChunkTree(chunk, {
+          projectContext: true,
+          projectContextKind: contextKind,
+          projectRoot: dirPath,
+        });
+      } else if (isCode) {
+        codeFiles++;
+      }
+      chunks.push(chunk.id);
+      this.enforceMaxChunks();
     }
 
     return { files: files.length, chunks, skipped, codeFiles, projectContextFiles };
@@ -993,6 +994,14 @@ function walkDir(dir: string): string[] {
     }
   }
   return results;
+}
+
+function readTextFileForIngest(filePath: string): string | null {
+  try {
+    return readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
 }
 
 function walkProjectFiles(

@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmodSync, existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
@@ -140,6 +140,45 @@ describe('PipelineOrchestrator', () => {
     expect(storage.getCodeSymbols(chunk!.id).map((symbol) => symbol.name)).toContain('runApp');
 
     pipeline.close();
+  });
+
+  it('counts unreadable project files as skipped', async () => {
+    const dir = createProjectDir({
+      'src/unreadable.ts': 'export function hidden() { return true; }',
+    });
+    const unreadablePath = join(dir, 'src/unreadable.ts');
+    const { pipeline } = createTestPipeline();
+
+    chmodSync(unreadablePath, 0o000);
+    try {
+      const result = await pipeline.ingestProject(dir, { includeDocs: false });
+
+      expect(result.files).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.chunks).toEqual([]);
+      expect(result.codeFiles).toBe(0);
+    } finally {
+      chmodSync(unreadablePath, 0o600);
+      pipeline.close();
+    }
+  });
+
+  it('does not treat storage failures during project ingest as skipped files', async () => {
+    const dir = createProjectDir({
+      'src/app.ts': 'export function runApp() { return true; }',
+    });
+    const { pipeline, storage } = createTestPipeline();
+    const storeError = new Error('database write failed');
+    const storeSpy = vi.spyOn(storage, 'storeChunk').mockImplementation(() => {
+      throw storeError;
+    });
+
+    try {
+      await expect(pipeline.ingestProject(dir, { includeDocs: false })).rejects.toThrow(storeError);
+    } finally {
+      storeSpy.mockRestore();
+      pipeline.close();
+    }
   });
 
   it('clears stale structure for unsupported files on deduplicated ingest', async () => {
