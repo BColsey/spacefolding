@@ -434,6 +434,83 @@ describe('HybridRetriever structural ranking', () => {
     );
   });
 
+  it('falls back to vector results when hybrid text sources fail', async () => {
+    const chunks = [
+      makeChunk('vector-match', 'src/auth/session.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      searchByVector: () => [{ chunkId: 'vector-match', score: 0.95 }],
+      searchByText: () => {
+        throw new Error('fts table unavailable');
+      },
+      searchByLexical: () => {
+        throw new Error('lexical scan unavailable');
+      },
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('authentication login flow', {
+      strategy: 'hybrid',
+      topK: 5,
+    });
+
+    expect(results[0].chunkId).toBe('vector-match');
+    expect(results[0].sources).toEqual(['vector']);
+    expect(results[0].sourceScores?.fts).toBe(0);
+    expect(results[0].reasons).toContain('full-text retrieval unavailable: fts table unavailable');
+    expect(results[0].reasons).toContain('lexical retrieval unavailable: lexical scan unavailable');
+  });
+
+  it('throws text retrieval errors when text is the only requested source', async () => {
+    const chunks = [
+      makeChunk('text-match', 'src/auth/login.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      searchByText: () => {
+        throw new Error('fts table unavailable');
+      },
+      searchByLexical: () => {
+        throw new Error('lexical scan unavailable');
+      },
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    await expect(retriever.retrieve('authentication login flow', {
+      strategy: 'text',
+      topK: 5,
+    })).rejects.toThrow('fts table unavailable');
+  });
+
+  it('keeps hybrid retrieval results when supplemental graph expansion fails', async () => {
+    const chunks = [
+      makeChunk('seed', 'src/core/retriever.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      getDependencies: () => {
+        throw new Error('dependency table unavailable');
+      },
+      searchByVector: () => [{ chunkId: 'seed', score: 0.9 }],
+      searchByText: () => [{ chunkId: 'seed', score: 4 }],
+      searchByLexical: () => [],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('retrieve budget dependencies', {
+      strategy: 'hybrid',
+      maxHops: 1,
+      topK: 10,
+    });
+
+    expect(results.map((result) => result.chunkId)).toEqual(['seed']);
+    expect(results[0].sourceScores?.graph).toBe(0);
+    expect(results[0].reasons).toContain(
+      'graph retrieval unavailable: dependency table unavailable'
+    );
+  });
+
   it('keeps repository candidates inside focused budget for batch delete implementation tasks', async () => {
     const chunks = [
       makeChunk('mcp-a', 'src/mcp/server.ts', 2_521),

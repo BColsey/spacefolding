@@ -110,6 +110,14 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Error Handling**: Re-swept retrieval fallback paths for discarded errors and source failures. Fixed hybrid/structural retrieval so full-text/lexical lookup failures degrade to available structural/vector results with explicit warning reasons, while text-only failures still throw. Fixed explicit hybrid graph expansion so dependency-graph failures preserve already-fused results with an explicit graph warning; graph-only remains loud.
+  - Added `tests/retriever-ranking.test.ts` coverage for hybrid text-source fallback to vector results, text-only failure propagation, and hybrid graph-expansion fallback.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 336 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.890205`, MRR `0.933333`, precision@10 `0.205000`, average results `22.60`.
+  - Latest structural deltas: R@10 `+0.170833`, NDCG@10 `+0.293116`, MRR `+0.358333`.
+  - Latest E2E focused averages: recall `0.950000`, precision `0.432619`, tokens `10967.2`; all tasks stayed below full codebase tokens `42125`.
+- 2026-05-25: Review phase.
   - **Spec Compliance**: Re-swept `IMPLEMENTATION.md` section 7 and the design retrieval/selection invariants from scratch. Checked query plan fields, adaptive strategy/topK/budget planning, structural/vector/FTS source usage, deterministic-vector damping, graph traversal default-off behavior, source score/reason reporting, focused/broad/exhaustive target budgets, split-parent candidate exclusion, dropped/omitted diagnostics, and hard budget enforcement through `PipelineOrchestrator.retrieve()`.
   - No spec-compliance defects found in this fresh sweep.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 333 tests.

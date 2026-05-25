@@ -171,19 +171,14 @@ export class HybridRetriever {
 
     // Full-text search
     if (useFts) {
-      const lexicalResults = typeof this.storage.searchByLexical === 'function'
-        ? this.storage.searchByLexical(query, Math.max(topK, 50))
-        : [];
-      const ftsResults = strategy === 'structural' && !this.vectorReliable
-        ? lexicalResults
-        : mergeRawResults([
-            this.storage.searchByText(query, Math.max(topK, 50)),
-            lexicalResults,
-          ]);
+      const textResults = searchTextSources(this.storage, query, Math.max(topK, 50), retrievalWarnings);
+      if (textResults.failures > 0 && textResults.successes === 0 && !useStructural && !useVector) {
+        throw textResults.firstError ?? new Error('text retrieval unavailable');
+      }
       addSource(
         fused,
         'fts',
-        ftsResults.map((result) => ({ ...result, reasons: ['keyword match (FTS5/BM25)'] })),
+        textResults.results.map((result) => ({ ...result, reasons: ['keyword match (FTS5/BM25)'] })),
         weights.fts
       );
     }
@@ -194,13 +189,18 @@ export class HybridRetriever {
         .sort((a, b) => b[1].fusedScore - a[1].fusedScore)
         .slice(0, 10)
         .map(([chunkId]) => chunkId);
-      const expanded = this.multiHopExpand(seedIds, maxHops, topK);
-      addSource(
-        fused,
-        'graph',
-        expanded.map((result) => ({ ...result, reasons: ['dependency graph traversal'] })),
-        weights.graph
-      );
+      try {
+        const expanded = this.multiHopExpand(seedIds, maxHops, topK);
+        addSource(
+          fused,
+          'graph',
+          expanded.map((result) => ({ ...result, reasons: ['dependency graph traversal'] })),
+          weights.graph
+        );
+      } catch (err) {
+        if (strategy === 'graph') throw err;
+        retrievalWarnings.push(`graph retrieval unavailable: ${errorMessage(err)}`);
+      }
     }
 
     // Pure graph strategy without seeds — use all chunks
@@ -508,6 +508,46 @@ function safeCodeReferences(
     pushUniqueWarning(warnings, `code reference lookup unavailable: ${errorMessage(err)}`);
     return [];
   }
+}
+
+function searchTextSources(
+  storage: SQLiteRepository,
+  query: string,
+  topK: number,
+  warnings: string[]
+): {
+  results: { chunkId: string; score: number }[];
+  successes: number;
+  failures: number;
+  firstError?: unknown;
+} {
+  const resultSets: Array<{ chunkId: string; score: number }[]> = [];
+  let successes = 0;
+  let failures = 0;
+  let firstError: unknown;
+
+  const run = (source: 'full-text' | 'lexical', search: () => { chunkId: string; score: number }[]) => {
+    try {
+      resultSets.push(search());
+      successes++;
+    } catch (err) {
+      failures++;
+      firstError ??= err;
+      pushUniqueWarning(warnings, `${source} retrieval unavailable: ${errorMessage(err)}`);
+    }
+  };
+
+  run('full-text', () => storage.searchByText(query, topK));
+  if (typeof storage.searchByLexical === 'function') {
+    run('lexical', () => storage.searchByLexical(query, topK));
+  }
+
+  return {
+    results: mergeRawResults(resultSets),
+    successes,
+    failures,
+    firstError,
+  };
 }
 
 interface SourceResult {
