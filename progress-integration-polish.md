@@ -31,6 +31,9 @@
   `/api/retrieve` has explicit invalid budget coverage.
 - Test Coverage review: interface tests now cover CLI invalid mode/strategy
   parsing through the shared parser and web handler 405/404 error branches.
+- Code Consistency review: CLI retrieval output now resolves diagnostics for
+  compressed chunks the same way MCP and web do, and score output includes the
+  graph component alongside structural/vector/FTS/dependency/final.
 
 ## Completed Work Items
 
@@ -117,3 +120,8 @@
   through `parseRetrieveCommandOptions()` and web request-handler 405/404
   branches. Verified `npx vitest run tests/interface.test.ts` passed with 20
   tests and `npm run build && npm run lint && npm test` passed with 288 tests.
+- Code Consistency: reviewed naming and retrieval diagnostic output across MCP,
+  CLI, and web. Fixed CLI retrieval output so compressed chunk ids are mapped
+  back to original retrieval diagnostics like MCP/web, and added the missing
+  `graph` score component to the CLI score breakdown. Verified
+  `npm run build && npm run lint && npm test` passed with 288 tests.

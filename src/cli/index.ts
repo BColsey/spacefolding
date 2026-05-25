@@ -475,10 +475,18 @@ export function buildCLI(): Command {
       ));
       console.log();
 
+      const retrievalByChunk = new Map(result.retrieval.map((retrieval) => [retrieval.chunkId, retrieval]));
       for (const chunk of result.chunks) {
         const tier = result.tiers.get(chunk.id) ?? 'warm';
-        const tierColor = tier === 'hot' ? chalk.red : tier === 'warm' ? chalk.yellow : chalk.blue;
-        const retrieval = result.retrieval.find((r) => r.chunkId === chunk.id);
+        const tierColor =
+          tier === 'hot'
+            ? chalk.red
+            : tier === 'warm'
+              ? chalk.yellow
+              : tier === 'compressed'
+                ? chalk.magenta
+                : chalk.blue;
+        const retrieval = retrievalByChunk.get(chunk.id.split('__compressed')[0]);
         console.log(
           tierColor(`[${tier.toUpperCase()}]`),
           chunk.id.slice(0, 8),
@@ -488,7 +496,7 @@ export function buildCLI(): Command {
         );
         if (retrieval?.sourceScores) {
           console.log(chalk.gray(
-            `  scores structural=${retrieval.sourceScores.structural.toFixed(3)} vector=${retrieval.sourceScores.vector.toFixed(3)} fts=${retrieval.sourceScores.fts.toFixed(3)} dependency=${retrieval.sourceScores.dependency.toFixed(3)} final=${retrieval.sourceScores.final.toFixed(3)}`
+            `  scores structural=${retrieval.sourceScores.structural.toFixed(3)} vector=${retrieval.sourceScores.vector.toFixed(3)} fts=${retrieval.sourceScores.fts.toFixed(3)} dependency=${retrieval.sourceScores.dependency.toFixed(3)} graph=${retrieval.sourceScores.graph.toFixed(3)} final=${retrieval.sourceScores.final.toFixed(3)}`
           ));
         }
         const preview = chunk.text.slice(0, 120).replace(/\n/g, ' ');
