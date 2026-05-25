@@ -34,6 +34,8 @@
 - Code Consistency review: CLI retrieval output now resolves diagnostics for
   compressed chunks the same way MCP and web do, and score output includes the
   graph component alongside structural/vector/FTS/dependency/final.
+- Dead Code review: removed unused web inspector client state fields for raw
+  score and retrieval results; rendering now keeps only chunks and tier state.
 
 ## Completed Work Items
 
@@ -125,3 +127,8 @@
   back to original retrieval diagnostics like MCP/web, and added the missing
   `graph` score component to the CLI score breakdown. Verified
   `npm run build && npm run lint && npm test` passed with 288 tests.
+- Dead Code: reviewed integration-owned surfaces for unused exports, unwired
+  retrieval controls, dead client state, and ignored placeholder fields. Removed
+  unused web inspector `state.result` and `state.retrievalResult` fields and
+  their assignments; no exposed CLI/MCP/web retrieval option was found unwired.
+  Verified `npm run build && npm run lint && npm test` passed with 288 tests.

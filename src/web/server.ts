@@ -32,7 +32,7 @@ body{font:14px system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}he
   </section>
 </main>
 <script>
-const state={chunks:[],tiers:{},result:null,retrievalResult:null};
+const state={chunks:[],tiers:{}};
 const trim=(text,size=120)=>text&&text.length>size?text.slice(0,size-1)+'…':text||'';
 const escapeHtml=text=>String(text).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const tierOf=id=>state.tiers[id]||'';
@@ -59,7 +59,7 @@ async function score(){
   const task=document.getElementById('task').value.trim();
   if(!task)return;
   const result=await fetch('/api/score?task='+encodeURIComponent(task)).then(r=>r.json());
-  state.result=result; state.tiers={};
+  state.tiers={};
   for(const id of result.hot)state.tiers[id]='hot';
   for(const id of result.warm)state.tiers[id]='warm';
   for(const id of result.cold)state.tiers[id]='cold';
@@ -72,7 +72,6 @@ async function retrieve(){
   const mode=document.getElementById('retrieve-mode').value;
   const result=await fetch('/api/retrieve?query='+encodeURIComponent(query)+'&mode='+mode).then(r=>r.json());
   if(result.error){document.getElementById('retrieval').textContent='Error: '+result.error;return;}
-  state.retrievalResult=result;
   const lines=[];
   lines.push('Intent: '+(result.plan?.intent||'?')+' | Strategy: '+(result.plan?.strategy||'?')+' | Mode: '+(result.selectionPolicy?.mode||mode));
   lines.push('Tokens: '+result.totalTokens+' / '+result.targetBudget+' target ('+result.budget+' hard cap)');
