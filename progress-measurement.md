@@ -101,6 +101,9 @@
 - Benchmark scratch SQLite databases should use a shared `/tmp` temp-artifact
   helper and remove `-wal`/`-shm` sidecars, because ignored repo-local DB files
   still pollute the worktree and can hide artifact-location drift.
+- Benchmark scripts must ignore production `DB_PATH` for scratch databases; the
+  E2E benchmark uses the `/tmp` temp-artifact helper so a caller's shell
+  environment cannot delete or reuse an application database.
 - Git ignore rules should include all loop housekeeping artifacts, including
   `coverage/`, so local quality-gate output cannot accidentally become commit
   surface.
@@ -596,3 +599,19 @@
   retrieval, E2E, and acceptance-checker commands with JSON under `/tmp`, and
   smoke-tested fixture profiler JSON under `/tmp`; no generated benchmark JSON
   appeared in repo status.
+- Security And Data Integrity: reviewed held-out generation, generated task
+  generation, profiler output, benchmark scratch DB paths, ignored artifacts,
+  and tracked benchmark/env/data files against `DESIGN.md` benchmark design and
+  `IMPLEMENTATION.md` sections 10 and 12. Fixed `benchmarks/e2e-benchmark.ts`
+  so it no longer honors production `DB_PATH` for its scratch SQLite database;
+  the benchmark now always uses the shared `/tmp` temp-artifact helper and
+  removes its own sidecars. Added `tests/benchmark-e2e-db-path.test.ts` to lock
+  that behavior. Verified `npx vitest run
+  tests/benchmark-e2e-db-path.test.ts` and `npm run build && npm run lint &&
+  npm test` passed. Smoke-tested the E2E CLI with `DB_PATH` set to a sentinel
+  database and confirmed the sentinel stayed intact while JSON was written to
+  `/tmp/spacefolding-e2e-dbpath-security-review.json`. Smoke-tested fixture
+  held-out and generated-task output under `/tmp`, verified `/var/tmp` outputs
+  fail with direct messages, confirmed no generated/private benchmark artifacts
+  are tracked, and confirmed no generated benchmark JSON appeared in repo
+  status.

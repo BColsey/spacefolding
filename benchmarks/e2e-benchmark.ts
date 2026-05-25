@@ -16,13 +16,13 @@
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, extname, relative } from 'node:path';
+import { join, dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { benchmarkSqlitePath, removeSqliteArtifacts } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────────
 
-interface E2ETask {
+export interface E2ETask {
   id: string;
   name: string;
   description: string;
@@ -32,7 +32,7 @@ interface E2ETask {
   expectedChanges: string;
 }
 
-interface BaselineResult {
+export interface BaselineResult {
   filesNeeded: number;
   /** Sum of tokens across all expected files (entire file contents) */
   totalTokensAllFiles: number;
@@ -42,7 +42,7 @@ interface BaselineResult {
   totalFilesCodebase: number;
 }
 
-interface SpacefoldResult {
+export interface SpacefoldResult {
   filesFound: string[];
   filesMissed: string[];
   recall: number;
@@ -61,7 +61,7 @@ interface SpacefoldResult {
   returnedMoreThanCodebase: boolean;
 }
 
-interface TaskComparison {
+export interface TaskComparison {
   task: E2ETask;
   baseline: BaselineResult;
   spacefold: SpacefoldResult;
@@ -71,10 +71,60 @@ interface TaskComparison {
   savingsVsCodebase: number;
 }
 
-interface CliOptions {
-  strategy: 'structural' | 'hybrid' | 'vector' | 'text' | 'graph';
+const SUPPORTED_STRATEGIES = ['structural', 'hybrid', 'vector', 'text', 'graph'] as const;
+type E2EStrategy = typeof SUPPORTED_STRATEGIES[number];
+
+export interface CliOptions {
+  strategy: E2EStrategy;
   json: boolean;
   dataset?: string;
+}
+
+interface SelectedVsCurrentDeltas {
+  /** Positive means selected retrieval returned fewer tokens than current hybrid. */
+  averageTokens: number;
+  /** Positive means selected retrieval found more expected files than current hybrid. */
+  averageRecall: number;
+  /** Positive means selected retrieval returned a higher ratio of expected files than current hybrid. */
+  averagePrecision: number;
+}
+
+interface E2ESummary {
+  averageRecall: number;
+  averagePrecision: number;
+  totalFilesHit: number;
+  totalFilesNeeded: number;
+  totalTokens: number;
+  averageTokens: number;
+  totalCodebaseTokens: number;
+  averageTokensVsCurrent: number;
+  averageRecallVsCurrent: number;
+  averagePrecisionVsCurrent: number;
+  selectedVsCurrentDeltas: SelectedVsCurrentDeltas;
+  currentVsStructuralDeltas: SelectedVsCurrentDeltas | null;
+  tasksReturningMoreThanCodebase: string[];
+}
+
+interface E2ESuccessGate {
+  focusedRetrievalPasses: boolean;
+  averageRecall: number;
+  averagePrecision: number;
+  averageTokens: number;
+  recallThreshold: number;
+  precisionThreshold: number;
+  averageTokensCeiling: number;
+  tasksReturningMoreThanCodebase: string[];
+}
+
+export interface E2EReport {
+  strategy: CliOptions['strategy'];
+  summary: E2ESummary;
+  comparisons: TaskComparison[];
+  successGate: E2ESuccessGate;
+}
+
+export function resolveBenchmarkDbPath(): string {
+  return benchmarkSqlitePath('e2e-benchmark');
 }
 
 // ── Test Tasks ───────────────────────────────────────────────────
@@ -221,7 +271,7 @@ function walkDir(dir: string): string[] {
       results.push(fullPath);
     }
   }
-  return results;
+  return results.sort();
 }
 
 /** Estimate tokens for a string (rough: words * 1.3) */
@@ -234,16 +284,129 @@ function fmtSavings(v: number): string {
   return v >= 0 ? `${v.toFixed(0)}% saved` : `+${Math.abs(v).toFixed(0)}% more`;
 }
 
-function parseArgs(argv: string[]): CliOptions {
+function readOptionValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireStringField(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string {
+  const value = task[field];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(
+      `E2E dataset task ${index + 1} field ${field} must be a non-empty string: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+function optionalStringField(task: Record<string, unknown>, field: string): string | undefined {
+  const value = task[field];
+  if (value === undefined) return undefined;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function requireStringArrayField(
+  task: Record<string, unknown>,
+  field: string,
+  index: number,
+  datasetPath: string
+): string[] {
+  const value = task[field];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+    throw new Error(
+      `E2E dataset task ${index + 1} field ${field} must be an array of strings: ${datasetPath}`
+    );
+  }
+  return value;
+}
+
+export function parseE2EDatasetTasks(data: unknown, datasetPath: string): E2ETask[] {
+  if (!isRecord(data) || !Array.isArray(data.tasks)) {
+    throw new Error(`E2E dataset must contain a tasks array: ${datasetPath}`);
+  }
+  if (data.tasks.length === 0) {
+    throw new Error(`E2E dataset has no tasks: ${datasetPath}`);
+  }
+
+  return data.tasks.map((task, index) => {
+    if (!isRecord(task)) {
+      throw new Error(`E2E dataset task ${index + 1} must be an object: ${datasetPath}`);
+    }
+
+    const id = requireStringField(task, 'id', index, datasetPath);
+    const intent = requireStringField(task, 'intent', index, datasetPath);
+    const taskText = optionalStringField(task, 'task');
+    const description = optionalStringField(task, 'description');
+    const text = taskText || description;
+    if (!text) {
+      throw new Error(
+        `E2E dataset task ${index + 1} field task or description must be a non-empty string: ${datasetPath}`
+      );
+    }
+
+    return {
+      id,
+      name: `${intent}: ${text.slice(0, 40)}`,
+      description: text,
+      expectedFiles: requireStringArrayField(task, 'relevant_files', index, datasetPath),
+      expectedChanges: `Complete the ${intent} task described above.`,
+    };
+  });
+}
+
+export function loadE2EDatasetTasks(datasetPath: string): E2ETask[] {
+  let raw: string;
+  try {
+    raw = readFileSync(datasetPath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Unable to read E2E dataset JSON at ${datasetPath}: ${errorMessage(error)}`);
+  }
+
+  try {
+    return parseE2EDatasetTasks(JSON.parse(raw) as unknown, datasetPath);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(`Malformed E2E dataset JSON at ${datasetPath}: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+function parseStrategy(value: string): E2EStrategy {
+  if (!SUPPORTED_STRATEGIES.includes(value as E2EStrategy)) {
+    throw new Error(`--strategy must be one of: ${SUPPORTED_STRATEGIES.join(', ')}`);
+  }
+  return value as E2EStrategy;
+}
+
+export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = { strategy: 'structural', json: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--strategy' && argv[i + 1]) {
-      options.strategy = argv[++i] as CliOptions['strategy'];
+    if (arg === '--strategy') {
+      options.strategy = parseStrategy(readOptionValue(argv, i++, arg));
     } else if (arg === '--json') {
       options.json = true;
-    } else if (arg === '--dataset' && argv[i + 1]) {
-      options.dataset = argv[++i];
+    } else if (arg === '--dataset') {
+      options.dataset = readOptionValue(argv, i++, arg);
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
     }
   }
   return options;
@@ -268,6 +431,96 @@ function createRng(seedText: string): () => number {
   };
 }
 
+const FOCUSED_RECALL_THRESHOLD = 0.95;
+const FOCUSED_PRECISION_THRESHOLD = 0.35;
+const FOCUSED_AVERAGE_TOKENS_CEILING = 13_000;
+
+export function buildE2EReport(input: {
+  strategy: CliOptions['strategy'];
+  comparisons: TaskComparison[];
+}): E2EReport {
+  if (input.comparisons.length === 0) {
+    throw new Error('Cannot build E2E benchmark report for an empty comparison set');
+  }
+
+  const totalFilesHit = input.comparisons.reduce(
+    (sum, c) => sum + c.spacefold.filesFound.length,
+    0
+  );
+  const totalFilesNeeded = input.comparisons.reduce(
+    (sum, c) => sum + c.baseline.filesNeeded,
+    0
+  );
+  const totalTokens = input.comparisons.reduce(
+    (sum, c) => sum + c.spacefold.tokensUsed,
+    0
+  );
+  const averageRecall =
+    input.comparisons.reduce((sum, c) => sum + c.spacefold.recall, 0) /
+    input.comparisons.length;
+  const averagePrecision =
+    input.comparisons.reduce((sum, c) => sum + c.spacefold.precision, 0) /
+    input.comparisons.length;
+  const averageTokens = totalTokens / input.comparisons.length;
+  const totalCodebaseTokens = input.comparisons[0].baseline.totalTokensCodebase;
+  const averageTokensVsCurrent =
+    input.comparisons.reduce((sum, c) => sum + c.spacefold.tokensVsCurrent, 0) /
+    input.comparisons.length;
+  const averageRecallVsCurrent =
+    input.comparisons.reduce((sum, c) => sum + c.spacefold.recallVsCurrent, 0) /
+    input.comparisons.length;
+  const averagePrecisionVsCurrent =
+    input.comparisons.reduce((sum, c) => sum + c.spacefold.precisionVsCurrent, 0) /
+    input.comparisons.length;
+  const tasksReturningMoreThanCodebase = input.comparisons
+    .filter((c) => c.spacefold.returnedMoreThanCodebase)
+    .map((c) => c.task.id);
+  const selectedVsCurrentDeltas = {
+    averageTokens: averageTokensVsCurrent,
+    averageRecall: averageRecallVsCurrent,
+    averagePrecision: averagePrecisionVsCurrent,
+  };
+
+  return {
+    strategy: input.strategy,
+    summary: {
+      averageRecall,
+      averagePrecision,
+      totalFilesHit,
+      totalFilesNeeded,
+      totalTokens,
+      averageTokens,
+      totalCodebaseTokens,
+      averageTokensVsCurrent,
+      averageRecallVsCurrent,
+      averagePrecisionVsCurrent,
+      selectedVsCurrentDeltas,
+      currentVsStructuralDeltas:
+        input.strategy === 'structural' ? selectedVsCurrentDeltas : null,
+      tasksReturningMoreThanCodebase,
+    },
+    comparisons: input.comparisons,
+    successGate: {
+      focusedRetrievalPasses:
+        averageRecall >= FOCUSED_RECALL_THRESHOLD &&
+        averagePrecision >= FOCUSED_PRECISION_THRESHOLD &&
+        averageTokens <= FOCUSED_AVERAGE_TOKENS_CEILING &&
+        averageTokens < totalCodebaseTokens &&
+        averageTokensVsCurrent > 0 &&
+        averageRecallVsCurrent > 0 &&
+        averagePrecisionVsCurrent > 0 &&
+        tasksReturningMoreThanCodebase.length === 0,
+      averageRecall,
+      averagePrecision,
+      averageTokens,
+      recallThreshold: FOCUSED_RECALL_THRESHOLD,
+      precisionThreshold: FOCUSED_PRECISION_THRESHOLD,
+      averageTokensCeiling: FOCUSED_AVERAGE_TOKENS_CEILING,
+      tasksReturningMoreThanCodebase,
+    },
+  };
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 async function runE2EBenchmark(options: CliOptions) {
@@ -283,15 +536,7 @@ async function runE2EBenchmark(options: CliOptions) {
     const datasetPath = options.dataset.startsWith('/')
       ? options.dataset
       : join(projectRoot, options.dataset);
-    const datasetRaw: { tasks: Array<{ id: string; task: string; description?: string; intent: string; relevant_files: string[] }> } =
-      JSON.parse(readFileSync(datasetPath, 'utf-8'));
-    tasks = datasetRaw.tasks.map((t, idx) => ({
-      id: t.id,
-      name: t.intent + ': ' + (t.task || t.description || '').slice(0, 40),
-      description: t.task || t.description || '',
-      expectedFiles: t.relevant_files,
-      expectedChanges: `Complete the ${t.intent} task described above.`,
-    }));
+    tasks = loadE2EDatasetTasks(datasetPath);
   }
 
   log(`\n${'='.repeat(78)}`);
@@ -326,7 +571,7 @@ async function runE2EBenchmark(options: CliOptions) {
 
   // Support EMBEDDING_PROVIDER=local for real ONNX embeddings
   const embeddingProviderEnv = process.env.EMBEDDING_PROVIDER ?? 'deterministic';
-  const dbPath = process.env.DB_PATH ?? benchmarkSqlitePath('e2e-benchmark');
+  const dbPath = resolveBenchmarkDbPath();
   removeSqliteArtifacts(dbPath);
 
   let embeddingProvider;
@@ -373,16 +618,6 @@ async function runE2EBenchmark(options: CliOptions) {
   const allChunks = storage.getAllChunks();
   log(`Ingested ${allChunks.length} chunks\n`);
 
-  // Build path -> chunks lookup for precision measurement
-  const chunksByPath = new Map<string, typeof allChunks>();
-  for (const chunk of allChunks) {
-    if (chunk.path) {
-      const list = chunksByPath.get(chunk.path) ?? [];
-      list.push(chunk);
-      chunksByPath.set(chunk.path, list);
-    }
-  }
-
   // Compute total codebase tokens for baseline comparison
   const totalCodebaseTokens = [...fileContents.values()].reduce(
     (sum, content) => sum + estimateTokens(content),
@@ -408,12 +643,10 @@ async function runE2EBenchmark(options: CliOptions) {
     // ── Baseline: read all expected files ──────────────────────────
 
     let baselineTotalTokens = 0;
-    let filesFound = 0;
     for (const expectedPath of task.expectedFiles) {
       const content = fileContents.get(expectedPath);
       if (content) {
         baselineTotalTokens += estimateTokens(content);
-        filesFound++;
       }
     }
 
@@ -772,47 +1005,37 @@ async function runE2EBenchmark(options: CliOptions) {
   // ── Cleanup ─────────────────────────────────────────────────────
 
   pipeline.close();
-  // Only auto-delete the default db path; custom paths are the caller's responsibility
-  if (!process.env.DB_PATH) {
-    removeSqliteArtifacts(dbPath);
-  }
+  removeSqliteArtifacts(dbPath);
 
-  const avgTokensVsCurrent = comparisons.reduce((sum, c) => sum + c.spacefold.tokensVsCurrent, 0) / comparisons.length;
-  const avgRecallVsCurrent = comparisons.reduce((sum, c) => sum + c.spacefold.recallVsCurrent, 0) / comparisons.length;
-  const avgPrecisionVsCurrent = comparisons.reduce((sum, c) => sum + c.spacefold.precisionVsCurrent, 0) / comparisons.length;
-  const tasksReturningMoreThanCodebase = comparisons.filter((c) => c.spacefold.returnedMoreThanCodebase).map((c) => c.task.id);
+  const report = buildE2EReport({
+    strategy: options.strategy,
+    comparisons,
+  });
 
   if (options.json) {
-    process.stdout.write(JSON.stringify({
-      strategy: options.strategy,
-      summary: {
-        averageRecall: avgRecall,
-        averagePrecision: avgPrecision,
-        totalFilesHit,
-        totalFilesNeeded,
-        totalTokens: totalSfTokens,
-        averageTokens: totalSfTokens / comparisons.length,
-        totalCodebaseTokens,
-        averageTokensVsCurrent: avgTokensVsCurrent,
-        averageRecallVsCurrent: avgRecallVsCurrent,
-        averagePrecisionVsCurrent: avgPrecisionVsCurrent,
-        tasksReturningMoreThanCodebase,
-      },
-      comparisons,
-    }, null, 2) + '\n');
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } else {
     log(`\n${'='.repeat(78)}`);
     log(`  E2E BENCHMARK COMPLETE`);
-    log(`  Avg token delta vs current hybrid: ${avgTokensVsCurrent >= 0 ? `${avgTokensVsCurrent.toFixed(0)} fewer` : `${Math.abs(avgTokensVsCurrent).toFixed(0)} more`} tokens`);
-    log(`  Avg recall delta vs current hybrid: ${avgRecallVsCurrent.toFixed(3)}`);
-    log(`  Avg precision delta vs current hybrid: ${avgPrecisionVsCurrent.toFixed(3)}`);
-    log(`  Tasks over full-codebase token count: ${tasksReturningMoreThanCodebase.join(', ') || 'none'}`);
+    log(`  Focused retrieval success gate: ${report.successGate.focusedRetrievalPasses ? 'PASS' : 'FAIL'} ` +
+      `(recall>=${report.successGate.recallThreshold}, precision>=${report.successGate.precisionThreshold}, avg tokens<=${report.successGate.averageTokensCeiling})`);
+    log(`  Avg token delta vs current hybrid: ${report.summary.averageTokensVsCurrent >= 0 ? `${report.summary.averageTokensVsCurrent.toFixed(0)} fewer` : `${Math.abs(report.summary.averageTokensVsCurrent).toFixed(0)} more`} tokens`);
+    log(`  Avg recall delta vs current hybrid: ${report.summary.averageRecallVsCurrent.toFixed(3)}`);
+    log(`  Avg precision delta vs current hybrid: ${report.summary.averagePrecisionVsCurrent.toFixed(3)}`);
+    log(`  Tasks over full-codebase token count: ${report.summary.tasksReturningMoreThanCodebase.join(', ') || 'none'}`);
     log(`${'='.repeat(78)}\n`);
   }
 }
 
-const e2eOptions = parseArgs(process.argv.slice(2));
-runE2EBenchmark(e2eOptions).catch((err) => {
-  console.error('E2E benchmark failed:', err);
-  process.exit(1);
-});
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) {
+  const e2eOptions = parseArgs(process.argv.slice(2));
+  runE2EBenchmark(e2eOptions).catch((err) => {
+    console.error('E2E benchmark failed:', err);
+    process.exit(1);
+  });
+}
