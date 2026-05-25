@@ -1,8 +1,10 @@
 import * as http from 'node:http';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import type { RetrievalMode, RetrievalResult } from '../core/retriever.js';
+import type { RetrievalStrategy } from '../types/index.js';
 
 const WEB_RETRIEVAL_MODES: readonly RetrievalMode[] = ['focused', 'broad', 'exhaustive'];
+const WEB_RETRIEVAL_STRATEGIES: readonly RetrievalStrategy[] = ['structural', 'hybrid', 'vector', 'text', 'graph'];
 
 const PAGE = String.raw`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -139,14 +141,26 @@ function parseRetrievalMode(value: string | null): { mode?: RetrievalMode; error
   return { error: `mode must be one of: ${WEB_RETRIEVAL_MODES.join(', ')}` };
 }
 
-function parsePositiveIntegerParam(value: string | null, name: string): { value?: number; error?: string } {
+function parseRetrievalStrategy(value: string | null): { strategy?: RetrievalStrategy; error?: string } {
+  if (value === null || value === '') return {};
+  if (WEB_RETRIEVAL_STRATEGIES.includes(value as RetrievalStrategy)) {
+    return { strategy: value as RetrievalStrategy };
+  }
+  return { error: `strategy must be one of: ${WEB_RETRIEVAL_STRATEGIES.join(', ')}` };
+}
+
+function parseIntegerParam(
+  value: string | null,
+  name: string,
+  options: { allowZero?: boolean } = {}
+): { value?: number; error?: string } {
   if (value === null || value === '') return {};
   if (!/^\d+$/.test(value)) {
-    return { error: `${name} must be a positive integer` };
+    return { error: `${name} must be a ${options.allowZero ? 'non-negative' : 'positive'} integer` };
   }
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    return { error: `${name} must be a positive integer` };
+  if (!Number.isSafeInteger(parsed) || (!options.allowZero && parsed <= 0)) {
+    return { error: `${name} must be a ${options.allowZero ? 'non-negative' : 'positive'} integer` };
   }
   return { value: parsed };
 }
@@ -211,14 +225,38 @@ export function createWebRequestHandler(pipeline: PipelineOrchestrator) {
           sendJson(res, 400, { error: mode.error });
           return;
         }
-        const maxTokens = parsePositiveIntegerParam(url.searchParams.get('maxTokens'), 'maxTokens');
+        const strategy = parseRetrievalStrategy(url.searchParams.get('strategy'));
+        if (strategy.error) {
+          sendJson(res, 400, { error: strategy.error });
+          return;
+        }
+        const maxTokens = parseIntegerParam(url.searchParams.get('maxTokens'), 'maxTokens');
         if (maxTokens.error) {
           sendJson(res, 400, { error: maxTokens.error });
           return;
         }
+        const topK = parseIntegerParam(url.searchParams.get('topK'), 'topK');
+        if (topK.error) {
+          sendJson(res, 400, { error: topK.error });
+          return;
+        }
+        const returnLimit = parseIntegerParam(url.searchParams.get('returnLimit'), 'returnLimit');
+        if (returnLimit.error) {
+          sendJson(res, 400, { error: returnLimit.error });
+          return;
+        }
+        const maxHops = parseIntegerParam(url.searchParams.get('maxHops'), 'maxHops', { allowZero: true });
+        if (maxHops.error) {
+          sendJson(res, 400, { error: maxHops.error });
+          return;
+        }
 
         const result = await pipeline.retrieve(query, maxTokens.value, {
+          strategy: strategy.strategy,
           mode: mode.mode,
+          topK: topK.value,
+          returnLimit: returnLimit.value,
+          maxHops: maxHops.value,
         });
         const retrievalByChunk = retrievalDiagnosticsByChunkId(result.retrieval);
         sendJson(res, 200, {

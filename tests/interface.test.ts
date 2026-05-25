@@ -399,6 +399,39 @@ describe('Web inspector interface', () => {
     expect(Array.isArray(result.compressedSummaries)).toBe(true);
   });
 
+  it('passes retrieval strategy and candidate controls from retrieve endpoint', async () => {
+    const retrieve = vi.fn().mockResolvedValue({
+      chunks: [],
+      tiers: new Map<string, string>(),
+      totalTokens: 0,
+      budget: 6000,
+      hardBudget: 6000,
+      targetBudget: 6000,
+      utilization: 0,
+      omitted: [],
+      dropped: [],
+      compressed: [],
+      plan: { intent: 'code_search', strategy: 'text' },
+      retrieval: [],
+      selectionPolicy: { mode: 'broad' },
+    });
+    const pipeline = { retrieve } as unknown as PipelineOrchestrator;
+
+    const response = await requestWeb(
+      pipeline,
+      '/api/retrieve?query=find%20auth&strategy=text&mode=broad&maxTokens=6000&topK=9&returnLimit=4&maxHops=2'
+    );
+
+    expect(response.status).toBe(200);
+    expect(retrieve).toHaveBeenCalledWith('find auth', 6000, {
+      strategy: 'text',
+      mode: 'broad',
+      topK: 9,
+      returnLimit: 4,
+      maxHops: 2,
+    });
+  });
+
   it('renders empty repository state and rejects invalid retrieve mode', async () => {
     const { pipeline } = createWebFixture();
 
@@ -408,6 +441,14 @@ describe('Web inspector interface', () => {
     const invalidModeBody = invalidMode.json<{ error: string }>();
     const invalidBudget = await requestWeb(pipeline, '/api/retrieve?query=test&maxTokens=5abc');
     const invalidBudgetBody = invalidBudget.json<{ error: string }>();
+    const invalidStrategy = await requestWeb(pipeline, '/api/retrieve?query=test&strategy=keyword');
+    const invalidStrategyBody = invalidStrategy.json<{ error: string }>();
+    const invalidTopK = await requestWeb(pipeline, '/api/retrieve?query=test&topK=1.5');
+    const invalidTopKBody = invalidTopK.json<{ error: string }>();
+    const invalidReturnLimit = await requestWeb(pipeline, '/api/retrieve?query=test&returnLimit=0');
+    const invalidReturnLimitBody = invalidReturnLimit.json<{ error: string }>();
+    const invalidMaxHops = await requestWeb(pipeline, '/api/retrieve?query=test&maxHops=-1');
+    const invalidMaxHopsBody = invalidMaxHops.json<{ error: string }>();
 
     expect(page.body).toContain('id="empty-msg"');
     expect(page.body).toContain('No chunks ingested.');
@@ -416,6 +457,14 @@ describe('Web inspector interface', () => {
     expect(invalidModeBody.error).toContain('mode must be one of');
     expect(invalidBudget.status).toBe(400);
     expect(invalidBudgetBody.error).toContain('maxTokens must be a positive integer');
+    expect(invalidStrategy.status).toBe(400);
+    expect(invalidStrategyBody.error).toContain('strategy must be one of');
+    expect(invalidTopK.status).toBe(400);
+    expect(invalidTopKBody.error).toContain('topK must be a positive integer');
+    expect(invalidReturnLimit.status).toBe(400);
+    expect(invalidReturnLimitBody.error).toContain('returnLimit must be a positive integer');
+    expect(invalidMaxHops.status).toBe(400);
+    expect(invalidMaxHopsBody.error).toContain('maxHops must be a non-negative integer');
   });
 
   it('escapes client-rendered chunk table values before inserting HTML', async () => {

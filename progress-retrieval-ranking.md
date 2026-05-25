@@ -110,6 +110,11 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Code Consistency**: Re-swept retrieval option handling across CLI, MCP, web, and orchestrator paths. Fixed the web `/api/retrieve` endpoint so it now validates and passes through `strategy`, `topK`, `returnLimit`, and `maxHops`, matching CLI/MCP retrieval controls while preserving focused/default behavior.
+  - Added `tests/interface.test.ts` coverage for web retrieval option passthrough and invalid `strategy`, `topK`, `returnLimit`, and `maxHops` diagnostics.
+  - Quality gate: `npm run build`, `npm run lint`, and `npm test` passed; 28 files, 338 tests.
+  - Acceptance benchmarks not run because default retrieval ranking, selection, and budget behavior were unchanged; this iteration only fixed web interface option handling.
+- 2026-05-25: Review phase.
   - **Test Coverage**: Re-swept query planner, retriever, focused selection policy, and budget tests against `IMPLEMENTATION.md` section 7 and the design retrieval/selection invariants. Query planner, selection policy, and budget invariants were already directly covered; retriever graph coverage still lacked the pure `strategy: 'graph'` path.
   - Fixed the graph-only traversal edge case exposed by the new test: `multiHopExpand()` now caps returned graph expansions instead of counting seed chunks against `topK`, so graph strategy can return dependency results when recent seed count is larger than the requested result count.
   - Added `tests/retriever-ranking.test.ts` coverage for pure graph strategy traversal from recent chunks with positive graph source scores and final-score reporting.
