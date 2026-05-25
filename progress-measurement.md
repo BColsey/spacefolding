@@ -639,3 +639,17 @@
   nonzero and named the failing path or dataset condition. No error-handling
   defect required code changes, and no generated benchmark JSON appeared in
   repo status.
+- Test Coverage: reviewed benchmark helper functions and checker branches
+  against `DESIGN.md` benchmark design and `IMPLEMENTATION.md` sections 9 and
+  10. Confirmed coverage for acceptance report formatting and JSON shape,
+  missing-section diagnostics, retrieval per-strategy gates, E2E focused-gate
+  and full-codebase token diagnostics, held-out/generated-task `/tmp` output
+  guards, profiler and secondary benchmark parsers, malformed dataset loaders,
+  and scratch SQLite artifact helpers. Verified `npx vitest run
+  tests/benchmark-acceptance.test.ts tests/benchmark-evaluate.test.ts
+  tests/benchmark-e2e.test.ts tests/benchmark-heldout.test.ts
+  tests/benchmark-profile.test.ts tests/benchmark-generate-tasks.test.ts
+  tests/benchmark-secondary-cli.test.ts tests/benchmark-e2e-db-path.test.ts`
+  and `npm run build && npm run lint && npm test` passed. No test-coverage
+  defect required code changes, and no generated benchmark JSON appeared in
+  repo status.
