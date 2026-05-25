@@ -3,7 +3,11 @@ import { existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRepository } from '../src/storage/repository.js';
-import { extractStructureFallback, normalizeIdentifier } from '../src/providers/structural-indexer.js';
+import {
+  StructuralIndexer,
+  extractStructureFallback,
+  normalizeIdentifier,
+} from '../src/providers/structural-indexer.js';
 import { parseStructuralQuery } from '../src/core/query-planner.js';
 import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
 import { ContextScorer } from '../src/core/scorer.js';
@@ -173,6 +177,17 @@ describe('structural extraction fallback', () => {
     expect(() => extractStructureFallback('export function ( {', 'typescript')).not.toThrow();
     expect(extractStructureFallback('export function ( {', 'typescript').symbols).toEqual([]);
     expect(extractStructureFallback('export function authenticate() {}', 'markdown').symbols).toEqual([]);
+  });
+
+  it('degrades unsupported languages through the StructuralIndexer without throwing', async () => {
+    const indexer = new StructuralIndexer({ disableSubprocess: true });
+
+    await expect(indexer.extract('export function authenticate() {}', 'markdown', 'docs/auth.md'))
+      .resolves.toEqual({
+        symbols: [],
+        references: [],
+        backend: 'regex-fallback',
+      });
   });
 });
 

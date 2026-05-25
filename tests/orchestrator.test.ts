@@ -240,6 +240,33 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
+  it('reports unchanged file re-ingest without duplicating chunks or structure', async () => {
+    const { pipeline, storage } = createTestPipeline();
+    const path = 'src/unchanged.ts';
+    const content = 'export function unchangedService() { return true; }';
+
+    const first = await pipeline.ingest('file', content, 'code', path);
+    const result = await pipeline.reingestFile(path, content, 'code');
+    const chunksForPath = pipeline.getAllChunks().filter((chunk) => chunk.path === path);
+    const symbolsForPath = storage.getAllCodeSymbols()
+      .filter((symbol) => symbol.path === path)
+      .map((symbol) => symbol.name);
+
+    expect(result).toMatchObject({
+      path,
+      changed: false,
+      chunks: [first.id],
+      reusedChunks: 1,
+      createdChunks: 0,
+      deletedChunks: 0,
+      totalChunks: 1,
+    });
+    expect(chunksForPath.map((chunk) => chunk.id)).toEqual([first.id]);
+    expect(symbolsForPath).toEqual(['unchangedService']);
+
+    pipeline.close();
+  });
+
   it('removes stale split children from storage, embeddings, dependencies, FTS, and code structure', async () => {
     const { pipeline, storage } = createTestPipeline({
       maxTokens: 80,

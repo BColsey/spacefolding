@@ -84,4 +84,30 @@ describe('SQLiteRepository vector index', () => {
     expect(results.map((result) => result.chunkId)).toEqual(['a']);
     repo.close();
   });
+
+  it('removes a chunk from the active vector index when stored text changes', () => {
+    const repo = createRepository(testDbPath());
+    storeTestChunk(repo, 'a');
+    storeTestChunk(repo, 'b');
+    repo.storeEmbedding('a', [1, 0, 0], 'test-3d');
+    repo.storeEmbedding('b', [0, 1, 0], 'test-3d');
+    repo.initVectorIndex(3);
+
+    repo.storeChunk({
+      id: 'b',
+      source: 'test',
+      type: 'fact',
+      text: 'chunk b changed',
+      timestamp: Date.now(),
+      tokensEstimate: 3,
+      childrenIds: [],
+      metadata: {},
+    });
+    const results = repo.searchByVector([0, 1, 0], 10);
+
+    expect(repo.getEmbedding('b')).toBeNull();
+    expect(results.map((result) => result.chunkId)).not.toContain('b');
+    expect(results.map((result) => result.chunkId)).toEqual(['a']);
+    repo.close();
+  });
 });

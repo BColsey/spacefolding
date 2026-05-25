@@ -84,6 +84,38 @@ describe('ContextChunker', () => {
     }
   });
 
+  it('splits inside an oversized TypeScript declaration only after preserving the declaration boundary', () => {
+    const codeConfig = { ...DEFAULT_CHUNKING_CONFIG, maxTokens: 50, overlapTokens: 0 };
+    const oversizedRows = Array.from({ length: 48 }, (_, index) => `    'oversized-${index}',`);
+    const code = [
+      'import { helper } from "./helper";',
+      '',
+      'export function oversizedBoundary() {',
+      '  return [',
+      ...oversizedRows,
+      '  ].map(helper).join(" ");',
+      '}',
+    ].join('\n');
+
+    const result = maybeSplit(code, estimator.estimate(code), codeConfig, estimator, {
+      source: 'file',
+      path: 'src/oversized-boundary.ts',
+      language: 'typescript',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.parent.metadata.strategy).toBe('code');
+    expect(result!.children.length).toBeGreaterThan(1);
+    expect(result!.children[0].text).toContain('export function oversizedBoundary');
+    for (const child of result!.children) {
+      expect(child.text.startsWith('import { helper }')).toBe(true);
+      expect(child.path).toBe('src/oversized-boundary.ts');
+      expect(child.language).toBe('typescript');
+      expect(child.parentId).toBe(result!.parent.id);
+      expect(child.tokensEstimate).toBeLessThanOrEqual(codeConfig.maxTokens);
+    }
+  });
+
   it('uses markdown strategy for .md files', () => {
     const md = [
       '# Main Title',
