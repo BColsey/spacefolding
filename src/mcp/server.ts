@@ -220,7 +220,7 @@ export const TOOL_DEFINITIONS = [
         },
         maxHops: {
           type: 'number',
-          description: 'Max dependency graph traversal hops (default: 0; graph traversal is disabled unless requested)',
+          description: 'Max dependency graph traversal hops (default: 1 for graph strategy, 0 otherwise; graph traversal is disabled unless requested)',
         },
       },
       required: ['query'],

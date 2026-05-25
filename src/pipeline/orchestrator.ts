@@ -763,13 +763,14 @@ export class PipelineOrchestrator {
   }> {
     const planned = planQuery(query);
     const effectiveStrategy = options?.strategy ?? (this.storage.hasCodeStructure() ? 'structural' : planned.strategy);
-    const plan = { ...planned, strategy: effectiveStrategy };
+    const effectiveMaxHops = options?.maxHops ?? (effectiveStrategy === 'graph' ? 1 : planned.maxHops);
+    const plan = { ...planned, strategy: effectiveStrategy, maxHops: effectiveMaxHops };
     const hardBudget = maxTokens ?? Math.floor(200_000 * plan.tokenBudgetRatio);
     const requestedTopK = options?.topK ?? plan.recommendedTopK;
     const retrieval = await this.retriever.retrieve(query, {
       ...options,
       topK: requestedTopK,
-      maxHops: options?.maxHops ?? plan.maxHops,
+      maxHops: plan.maxHops,
       strategy: effectiveStrategy,
     });
 

@@ -379,7 +379,7 @@ describe('HybridRetriever structural ranking', () => {
     expect(graphResult?.reasons).toContain('dependency graph traversal');
   });
 
-  it('uses graph traversal for graph strategy from recent chunks', async () => {
+  it('uses graph traversal for graph strategy from recent chunks by default', async () => {
     const chunks = Array.from({ length: 12 }, (_, index) =>
       makeChunk(`chunk-${index}`, `src/module-${index}.ts`, 900)
     );
@@ -406,7 +406,6 @@ describe('HybridRetriever structural ranking', () => {
 
     const results = await retriever.retrieve('dependency graph', {
       strategy: 'graph',
-      maxHops: 1,
       topK: 5,
     });
 

@@ -73,7 +73,8 @@ export class HybridRetriever {
   }
 
   async retrieve(query: string, options: RetrievalOptions = {}): Promise<RetrievalResult[]> {
-    const { topK = 50, maxHops = 0, strategy = 'hybrid' } = options;
+    const { topK = 50, strategy = 'hybrid' } = options;
+    const maxHops = options.maxHops ?? (strategy === 'graph' ? 1 : 0);
     const fused = new Map<string, FusedCandidate>();
     const structuralQuery = parseStructuralQuery(query);
     const useStructural = strategy === 'structural';

@@ -110,6 +110,15 @@ Highest severity first. Resolve before starting new work items.
 ## Review Log
 
 - 2026-05-25: Review phase.
+  - **Integration Wiring**: Re-swept `PipelineOrchestrator.retrieve()` against implemented retrieval components and found explicit graph strategy was not enough to exercise dependency graph traversal unless callers also provided `maxHops`.
+  - Fixed graph wiring so `strategy: 'graph'` defaults to one traversal hop while hybrid graph traversal remains disabled unless `maxHops` is explicitly requested. CLI no longer forces `maxHops: 0` when omitted, and CLI/MCP descriptions now match the graph default.
+  - Added retriever and orchestrator coverage proving graph strategy traverses by default, plus CLI parsing coverage proving omitted `--max-hops` stays unset.
+  - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 338 tests.
+  - Acceptance gate passed using `/tmp/spacefolding-eval.json` and `/tmp/spacefolding-e2e.json`.
+  - Latest structural averages: R@10 `0.983333`, NDCG@10 `0.890205`, MRR `0.933333`, precision@10 `0.205000`, average results `22.60`.
+  - Latest structural deltas: R@10 `+0.170833`, NDCG@10 `+0.293116`, MRR `+0.358333`.
+  - Latest E2E focused averages: recall `0.950000`, precision `0.430238`, tokens `10899.3`; all tasks stayed below full codebase tokens `42201`.
+- 2026-05-25: Review phase.
   - **Dead Code**: Re-swept retrieval fusion helpers, graph expansion branches, reranker wiring, and retrieval option paths for unused or unwired retrieval components. Removed the exported rank-only `reciprocalRankFusion()` helper and its tests because the live retriever now uses score-weighted source fusion via `addSource()` and source score reporting.
   - Quality gate: `npm run build && npm run lint && npm test` passed; 28 files, 336 tests.
   - Acceptance benchmarks not run because retrieval ranking, selection, and budget behavior were unchanged; this iteration only removed an unused rank-only helper.

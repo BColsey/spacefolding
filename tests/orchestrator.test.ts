@@ -529,6 +529,43 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
+  it('wires explicit graph strategy through retrieval without requiring maxHops', async () => {
+    const { pipeline } = createTestPipeline();
+
+    for (let index = 0; index < 12; index++) {
+      await pipeline.ingest(
+        `graph-${index}`,
+        `graph retrieval candidate ${index}`,
+        'reference'
+      );
+    }
+
+    const allChunks = pipeline.getAllChunks();
+    const target = allChunks[0];
+    const seed = allChunks[allChunks.length - 1];
+    pipeline.addDependencies([{
+      fromId: seed.id,
+      toId: target.id,
+      type: 'references',
+      weight: 1,
+    }]);
+
+    const result = await pipeline.retrieve('dependency graph', 10_000, {
+      strategy: 'graph',
+      mode: 'focused',
+      topK: 5,
+    });
+    const graphResult = result.retrieval.find((retrieval) => retrieval.chunkId === target.id);
+
+    expect(result.plan.strategy).toBe('graph');
+    expect(result.plan.maxHops).toBe(1);
+    expect(graphResult?.sources).toContain('graph');
+    expect(graphResult?.sourceScores?.graph).toBeGreaterThan(0);
+    expect(result.chunks.map((chunk) => chunk.id)).toContain(target.id);
+
+    pipeline.close();
+  });
+
   it('keeps policy target budget separate from expanded effective budget', async () => {
     const { pipeline } = createTestPipeline({
       maxTokens: 30_000,

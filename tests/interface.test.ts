@@ -115,14 +115,14 @@ describe('CLI interface', () => {
     expect(modeOpt?.description).toContain('exhaustive');
   });
 
-  it('retrieve command max-hops option describes the disabled graph default', () => {
+  it('retrieve command max-hops option describes graph strategy defaulting', () => {
     const cli = buildCLI();
     const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
     const maxHopsOpt = retrieve?.options.find((option) => option.long === '--max-hops');
 
-    expect(maxHopsOpt?.defaultValue).toBe('0');
-    expect(maxHopsOpt?.description).toContain('default: 0');
-    expect(maxHopsOpt?.description).toContain('disabled');
+    expect(maxHopsOpt?.defaultValue).toBeUndefined();
+    expect(maxHopsOpt?.description).toContain('default: 1 for graph strategy');
+    expect(maxHopsOpt?.description).toContain('0 otherwise');
   });
 
   it('retrieve command defaults to focused mode', () => {
@@ -154,6 +154,15 @@ describe('CLI interface', () => {
       returnLimit: 8,
       maxHops: 0,
     });
+  });
+
+  it('leaves max-hops unset when the retrieve command does not specify it', () => {
+    const parsed = parseRetrieveCommandOptions({
+      query: 'find auth',
+    });
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.options?.maxHops).toBeUndefined();
   });
 
   it('rejects malformed retrieve numeric options before running retrieval', () => {
@@ -243,7 +252,8 @@ describe('MCP interface', () => {
     expect(props.maxTokens?.description).toBeTruthy();
     expect(props.topK?.description).toBeTruthy();
     expect(props.returnLimit?.description).toBeTruthy();
-    expect(props.maxHops?.description).toContain('default: 0');
+    expect(props.maxHops?.description).toContain('default: 1 for graph strategy');
+    expect(props.maxHops?.description).toContain('0 otherwise');
     expect(props.maxHops?.description).toContain('disabled');
   });
 

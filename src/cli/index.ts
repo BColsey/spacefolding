@@ -95,7 +95,7 @@ export function parseRetrieveCommandOptions(opts: Record<string, unknown>): {
   const returnLimit = parseIntegerOption(opts.returnLimit, '--return-limit');
   if (returnLimit.error) return { error: returnLimit.error };
 
-  const maxHops = parseIntegerOption(opts.maxHops ?? '0', '--max-hops', { allowZero: true });
+  const maxHops = parseIntegerOption(opts.maxHops, '--max-hops', { allowZero: true });
   if (maxHops.error) return { error: maxHops.error };
 
   return {
@@ -449,7 +449,7 @@ export function buildCLI(): Command {
     .option('--mode <type>', 'Selection mode: focused, broad, exhaustive', 'focused')
     .option('--top-k <number>', 'Max results to return (default: adaptive)')
     .option('--return-limit <number>', 'Max scored candidates to consider before token budgeting')
-    .option('--max-hops <number>', 'Max graph traversal hops (default: 0; graph traversal disabled)', '0')
+    .option('--max-hops <number>', 'Max graph traversal hops (default: 1 for graph strategy, 0 otherwise)')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const parsed = parseRetrieveCommandOptions(opts);
