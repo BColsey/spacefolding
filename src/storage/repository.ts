@@ -366,14 +366,46 @@ export class SQLiteRepository implements StorageProvider {
 
   searchByStructure(query: StructuralQuery, topK: number = 50): StructuralSearchResult[] {
     const scores = new Map<string, StructuralSearchResult>();
-    const normalizedIdentifiers = new Set(query.normalizedIdentifiers);
     const identifierParts = new Set(query.identifierParts);
+    const exactIdentifiers = new Set(
+      query.identifiers
+        .map((identifier) => normalizeSearchTerm(identifier))
+        .filter((identifier) => identifier.length > 2)
+    );
     const pathTokens = new Set(query.pathTokens);
     const queryPathParts = new Set([
       ...query.identifierParts,
       ...query.tokens.map((token) => normalizeSearchTerm(token)).filter((token) => token.length > 2),
     ]);
     const quotedTerms = new Set(query.quotedTerms.map((term) => normalizeSearchTerm(term)));
+    for (const term of quotedTerms) {
+      if (term.length > 2) exactIdentifiers.add(term);
+    }
+
+    const lowercaseExactCue = /\b(find|where|locate|show|contains|defined|grep|which\s+file)\b/i.test(query.raw);
+    const strongExactIdentifiers = new Set(
+      query.identifiers
+        .filter((identifier) =>
+          /[a-z0-9][A-Z]/.test(identifier) ||
+          identifier.includes('_') ||
+          /^[A-Z]{2,}$/.test(identifier) ||
+          /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(identifier) ||
+          (lowercaseExactCue && /^[a-z][a-z0-9_$]{5,}$/.test(identifier))
+        )
+        .map((identifier) => normalizeSearchTerm(identifier))
+        .filter((identifier) => identifier.length > 2)
+    );
+    for (const identifier of exactIdentifiers) {
+      if (lowercaseExactCue && /^[a-z][a-z0-9_$]{5,}$/.test(identifier)) {
+        strongExactIdentifiers.add(identifier);
+      }
+    }
+    const partialIdentifierTerms = new Set(
+      [
+        ...query.identifierParts.map((part) => normalizeSearchTerm(part)),
+        ...exactIdentifiers,
+      ].filter((part) => part.length > 2)
+    );
 
     const addScore = (
       chunkId: string,
@@ -414,10 +446,12 @@ export class SQLiteRepository implements StorageProvider {
           addScore(row.id, 3.2, 0, `path exact match: ${fragment}`);
         } else if (lowerPathStem === lowerFragment || lowerPathStem.endsWith(`/${lowerFragment}`)) {
           addScore(row.id, 2.6, 0, `path stem exact match: ${fragment}`);
+        } else if (basenameStem === lowerFragment || basename === lowerFragment) {
+          addScore(row.id, 2.4, 0, `filename exact match: ${fragment}`);
+        } else if (basename.includes(lowerFragment)) {
+          addScore(row.id, 1.8, 0, `filename match: ${fragment}`);
         } else if (lowerPath.includes(lowerFragment)) {
           addScore(row.id, 1.1, 0, `path fragment match: ${fragment}`);
-        } else if (basename.includes(lowerFragment) || basenameStem === lowerFragment) {
-          addScore(row.id, 1.8, 0, `filename match: ${fragment}`);
         }
       }
 
@@ -450,7 +484,12 @@ export class SQLiteRepository implements StorageProvider {
       .all() as CodeSymbolRow[];
     for (const row of symbolRows) {
       const normalizedName = row.normalizedName;
-      if (normalizedIdentifiers.has(normalizedName) || quotedTerms.has(normalizedName)) {
+      if (strongExactIdentifiers.has(normalizedName)) {
+        const contractBoost = row.kind === 'interface' || row.kind === 'type' ? 0.8 : 0.3;
+        addScore(row.chunkId, (row.isExported ? 5.6 : 5.2) + contractBoost, 0, `symbol strong exact match: ${row.name}`);
+        continue;
+      }
+      if (exactIdentifiers.has(normalizedName) || quotedTerms.has(normalizedName)) {
         const contractBoost = row.kind === 'interface' || row.kind === 'type' ? 0.4 : 0;
         addScore(row.chunkId, (row.isExported ? 3.4 : 3.1) + contractBoost, 0, `symbol exact match: ${row.name}`);
         continue;
@@ -469,9 +508,10 @@ export class SQLiteRepository implements StorageProvider {
         );
       }
 
-      for (const identifier of normalizedIdentifiers) {
-        if (identifier.length > 2 && normalizedName.includes(identifier)) {
-          addScore(row.chunkId, 0.45, 0, `symbol partial match: ${row.name}`);
+      for (const identifier of partialIdentifierTerms) {
+        if (identifier.length > 4 && normalizedName.includes(identifier)) {
+          const partialScore = strongExactIdentifiers.has(identifier) ? 0.75 : 0.4;
+          addScore(row.chunkId, partialScore, 0, `symbol partial match: ${row.name}`);
         }
       }
     }
@@ -481,12 +521,20 @@ export class SQLiteRepository implements StorageProvider {
       .all() as CodeReferenceRow[];
     for (const row of referenceRows) {
       const target = row.normalizedTarget;
-      for (const identifier of normalizedIdentifiers) {
+      for (const identifier of exactIdentifiers) {
         if (identifier.length <= 2) continue;
         if (target === identifier) {
-          addScore(row.chunkId, 0.7, 0.08, `direct reference exact match: ${row.target}`);
-        } else if (target.includes(identifier)) {
-          addScore(row.chunkId, 0.28, 0.04, `direct reference partial match: ${row.target}`);
+          if (strongExactIdentifiers.has(identifier)) {
+            addScore(row.chunkId, 1.4, 0.1, `direct reference strong exact match: ${row.target}`);
+          } else {
+            addScore(row.chunkId, 0.7, 0.08, `direct reference exact match: ${row.target}`);
+          }
+        } else if (identifier.length > 4 && target.includes(identifier)) {
+          if (strongExactIdentifiers.has(identifier)) {
+            addScore(row.chunkId, 0.5, 0.05, `direct reference strong partial match: ${row.target}`);
+          } else {
+            addScore(row.chunkId, 0.22, 0.03, `direct reference partial match: ${row.target}`);
+          }
         }
       }
       for (const part of identifierParts) {

@@ -332,11 +332,17 @@ describe('structural index repository', () => {
 
     const symbolResults = repo.searchByStructure(parseStructuralQuery('SQLiteRepository'), 5);
     expect(symbolResults[0].chunkId).toBe('repository');
-    expect(symbolResults[0].reasons).toContain('symbol exact match: SQLiteRepository');
+    expect(symbolResults[0].reasons.some((reason) =>
+      reason === 'symbol exact match: SQLiteRepository'
+      || reason === 'symbol strong exact match: SQLiteRepository'
+    )).toBe(true);
 
     const referenceResults = repo.searchByStructure(parseStructuralQuery('RepositoryContract'), 5);
     expect(referenceResults[0].chunkId).toBe('consumer');
-    expect(referenceResults[0].reasons).toContain('direct reference exact match: RepositoryContract');
+    expect(referenceResults[0].reasons.some((reason) =>
+      reason === 'direct reference exact match: RepositoryContract'
+      || reason === 'direct reference strong exact match: RepositoryContract'
+    )).toBe(true);
     expect(referenceResults[0].dependencyBoost).toBeGreaterThan(0);
     repo.close();
   });
@@ -377,6 +383,48 @@ describe('structural retrieval integration', () => {
 
     expect(result.chunks[0].path).toBe('src/auth/login.ts');
     expect(result.retrieval[0].sources).toContain('structural');
+    pipeline.close();
+  });
+
+  it('ranks exact local declarations for contains-file lookup queries', async () => {
+    const pipeline = createTestPipeline();
+    await pipeline.ingest(
+      'file',
+      [
+        'function parseAtom(block: string) {',
+        "  const title = (extractTag(block, 'title') ?? '').trim();",
+        '  return { title };',
+        '}',
+      ].join('\n'),
+      'code',
+      'src/connectors/arxiv.ts',
+      'typescript'
+    );
+    await pipeline.ingest(
+      'file',
+      [
+        'export interface Task {',
+        '  title: string;',
+        '}',
+        'export function render(task: Task) {',
+        '  return `${task.title} ${task.title}`;',
+        '}',
+      ].join('\n'),
+      'code',
+      'src/supervisor/tasks.ts',
+      'typescript'
+    );
+
+    const result = await pipeline.retrieve('which file contains title', 10_000, {
+      strategy: 'structural',
+      mode: 'exhaustive',
+      topK: 5,
+    });
+
+    expect(result.chunks[0].path).toBe('src/connectors/arxiv.ts');
+    expect(result.retrieval[0].reasons).toEqual(expect.arrayContaining([
+      expect.stringContaining('sparse exact identifier declaration: title'),
+    ]));
     pipeline.close();
   });
 });

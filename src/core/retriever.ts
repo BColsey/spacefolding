@@ -77,6 +77,7 @@ export class HybridRetriever {
     const maxHops = options.maxHops ?? (strategy === 'graph' ? 1 : 0);
     const fused = new Map<string, FusedCandidate>();
     const structuralQuery = parseStructuralQuery(query);
+    const strongIdentifiers = buildStrongIdentifierSet(query, structuralQuery);
     const useStructural = strategy === 'structural';
     const useVector = strategy === 'hybrid' || strategy === 'vector' || strategy === 'structural';
     const useFts = strategy === 'hybrid' || strategy === 'text' || strategy === 'structural';
@@ -116,6 +117,7 @@ export class HybridRetriever {
             })),
           weights.dependency
         );
+        applyStrongIdentifierStructuralBoost(fused, structuralResults, strongIdentifiers);
       } catch (err) {
         if (!useVector && !useFts) throw err;
         retrievalWarnings.push(`structural retrieval unavailable: ${errorMessage(err)}`);
@@ -307,18 +309,7 @@ export class HybridRetriever {
   private retrieveDeterministicStructural(query: string, topK: number): RetrievalResult[] {
     const structuralQuery = parseStructuralQuery(query);
     const retrievalWarnings: string[] = [];
-    const lowercaseExactCue = /\b(find|where|locate|show|contains|defined|grep)\b/i.test(query);
-    const strongIdentifiers = new Set(
-      structuralQuery.identifiers
-        .filter((identifier) =>
-          /[a-z0-9][A-Z]/.test(identifier) ||
-          identifier.includes('_') ||
-          /^[A-Z]{2,}$/.test(identifier) ||
-          /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(identifier) ||
-          (lowercaseExactCue && /^[a-z][a-z0-9_$]{4,}$/.test(identifier))
-        )
-        .map((identifier) => identifier.toLowerCase().replace(/[^a-z0-9_$]/g, ''))
-    );
+    const strongIdentifiers = buildStrongIdentifierSet(query, structuralQuery);
     let lexicalResults: { chunkId: string; score: number }[] = [];
     try {
       lexicalResults = typeof this.storage.searchByLexical === 'function'
@@ -352,15 +343,13 @@ export class HybridRetriever {
     }
 
     for (const result of structuralResults) {
-      const exactSymbol = result.reasons.some((reason) => {
-        if (!reason.startsWith('symbol exact match: ')) return false;
-        const symbolName = reason.slice('symbol exact match: '.length).toLowerCase().replace(/[^a-z0-9_$]/g, '');
-        return strongIdentifiers.has(symbolName);
-      });
+      const exactIdentifier = result.reasons.some((reason) =>
+        isExactIdentifierSeedReason(reason, strongIdentifiers)
+      );
       const exactPath = structuralQuery.pathFragments.length > 0 && result.reasons.some((reason) =>
         reason.startsWith('path exact match')
       );
-      const boost = exactSymbol
+      const boost = exactIdentifier
         ? 12 + result.structuralScore
         : exactPath
           ? 10 + result.structuralScore
@@ -392,11 +381,12 @@ export class HybridRetriever {
         if (references.length === 0 && retrievalWarnings.some((warning) => warning.startsWith('code reference lookup unavailable'))) {
           codeReferenceLookupFailed = true;
         }
-        const sparseScore = sparseTerms.length > 0 ? scoreSparseStructuralFields(
+        const sparseScore = (sparseTerms.length > 0 || strongIdentifiers.size > 0) ? scoreSparseStructuralFields(
           chunk,
           sparseTerms,
           symbols,
-          references
+          references,
+          strongIdentifiers
         ) : { score: 0, reasons: [] };
         const pathIntent = scorePathIntent(chunk, structuralQuery, pathIntentTerms);
         const combinedScore = sparseScore.score + pathIntent.score;
@@ -535,6 +525,114 @@ interface FusedCandidate {
   sourceScores: Partial<Record<RetrievalSource, number>>;
   reasons: string[];
   rerankReasons?: string[];
+}
+
+const STRONG_IDENTIFIER_STOP_WORDS = new Set([
+  'contain',
+  'contains',
+  'defined',
+  'definition',
+  'file',
+  'files',
+  'find',
+  'grep',
+  'locate',
+  'show',
+  'where',
+  'which',
+]);
+
+function buildStrongIdentifierSet(query: string, structuralQuery: StructuralQuery): Set<string> {
+  const lowercaseExactCue = /\b(find|where|locate|show|contains|defined|grep|which\s+file)\b/i.test(query);
+  return new Set(
+    structuralQuery.identifiers
+      .filter((identifier) => !STRONG_IDENTIFIER_STOP_WORDS.has(identifier.toLowerCase()))
+      .filter((identifier) =>
+        /[a-z0-9][A-Z]/.test(identifier) ||
+        identifier.includes('_') ||
+        /^[A-Z]{2,}$/.test(identifier) ||
+        /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(identifier) ||
+        (lowercaseExactCue && /^[a-z][a-z0-9_$]{4,}$/.test(identifier)) ||
+        (lowercaseExactCue && /[A-Z]/.test(identifier) && /^[A-Za-z][A-Za-z0-9_$]{4,}$/.test(identifier))
+      )
+      .map((identifier) => normalizeStrongIdentifier(identifier))
+      .filter((identifier) => identifier.length > 0)
+  );
+}
+
+function applyStrongIdentifierStructuralBoost(
+  fused: Map<string, FusedCandidate>,
+  structuralResults: StructuralSearchResult[],
+  strongIdentifiers: Set<string>
+): void {
+  if (strongIdentifiers.size === 0 || structuralResults.length === 0) return;
+
+  for (const result of structuralResults) {
+    const symbolMatches = new Set<string>();
+    const referenceMatches = new Set<string>();
+    for (const reason of result.reasons) {
+      const symbol = extractReasonValueFromPrefixes(reason, [
+        'symbol exact match: ',
+        'symbol strong exact match: ',
+      ]);
+      if (symbol && strongIdentifiers.has(normalizeStrongIdentifier(symbol))) {
+        symbolMatches.add(symbol);
+      }
+      const reference = extractReasonValueFromPrefixes(reason, [
+        'direct reference exact match: ',
+        'direct reference strong exact match: ',
+      ]);
+      if (reference && strongIdentifiers.has(normalizeStrongIdentifier(reference))) {
+        referenceMatches.add(reference);
+      }
+    }
+
+    const candidate = fused.get(result.chunkId);
+    if (!candidate) continue;
+
+    const symbolBoost = symbolMatches.size > 0 ? 1.25 + Math.min(0.35, symbolMatches.size * 0.1) : 0;
+    const referenceBoost = referenceMatches.size > 0 ? 0.45 : 0;
+    const exactIdentifierBoost = symbolBoost + referenceBoost;
+    if (exactIdentifierBoost <= 0) continue;
+
+    candidate.fusedScore += exactIdentifierBoost;
+    candidate.sources.add('structural');
+    candidate.sourceScores.structural = (candidate.sourceScores.structural ?? 0) + exactIdentifierBoost;
+    if (candidate.reasons.length < 8) {
+      const matched = [
+        ...[...symbolMatches].map((name) => `symbol:${name}`),
+        ...[...referenceMatches].map((name) => `reference:${name}`),
+      ].slice(0, 2);
+      candidate.reasons.push(`exact identifier boost: ${matched.join(', ')}`);
+    }
+  }
+}
+
+function extractReasonValue(reason: string, prefix: string): string | null {
+  if (!reason.startsWith(prefix)) return null;
+  const value = reason.slice(prefix.length).trim();
+  return value.length > 0 ? value : null;
+}
+
+function extractReasonValueFromPrefixes(reason: string, prefixes: string[]): string | null {
+  for (const prefix of prefixes) {
+    const value = extractReasonValue(reason, prefix);
+    if (value) return value;
+  }
+  return null;
+}
+
+function isExactIdentifierSeedReason(reason: string, strongIdentifiers: Set<string>): boolean {
+  if (strongIdentifiers.size === 0) return false;
+  const value = extractReasonValueFromPrefixes(reason, [
+    'symbol exact match: ',
+    'direct reference exact match: ',
+  ]);
+  return value !== null && strongIdentifiers.has(normalizeStrongIdentifier(value));
+}
+
+function normalizeStrongIdentifier(identifier: string): string {
+  return identifier.toLowerCase().replace(/[^a-z0-9_$]/g, '');
 }
 
 function getFusionWeights(strategy: RetrievalStrategy, vectorReliable: boolean): Record<RetrievalSource, number> {
@@ -830,7 +928,8 @@ function scoreSparseStructuralFields(
   chunk: ContextChunk,
   terms: SparseStructuralTerm[],
   symbols: CodeSymbol[],
-  references: CodeReference[]
+  references: CodeReference[],
+  strongIdentifiers: Set<string> = new Set()
 ): { score: number; reasons: string[] } {
   const path = chunk.path ?? '';
   const normalizedPath = normalizeSymbolName(path);
@@ -874,8 +973,92 @@ function scoreSparseStructuralFields(
     if (reasons.length < 5) reasons.push(field.reason);
   }
 
+  const strongSymbolMatches = strongIdentifiers.size > 0
+    ? symbolFields.filter((symbol) => strongIdentifiers.has(symbol.normalized))
+    : [];
+  if (strongSymbolMatches.length > 0) {
+    score += 6 + Math.min(3, strongSymbolMatches.length * 0.75);
+    if (reasons.length < 5) reasons.push(`sparse exact identifier symbol: ${strongSymbolMatches[0].name}`);
+  }
+
+  const strongReferenceMatches = strongIdentifiers.size > 0
+    ? referenceFields.filter((reference) => strongIdentifiers.has(reference.normalized))
+    : [];
+  if (strongReferenceMatches.length > 0) {
+    score += 2.2;
+    if (reasons.length < 5) reasons.push(`sparse exact identifier reference: ${strongReferenceMatches[0].target}`);
+  }
+
+  const strongPathMatch = strongIdentifiers.size > 0
+    && (strongIdentifiers.has(basenameNormalized) || [...basenameParts].some((part) => strongIdentifiers.has(part)));
+  if (strongPathMatch) {
+    score += 1.8;
+    if (reasons.length < 5) reasons.push(`sparse exact identifier path: ${basenameStem}`);
+  }
+
+  const strongTextMatch = scoreStrongIdentifierText(chunk.text, strongIdentifiers);
+  if (strongTextMatch.score > 0) {
+    score += strongTextMatch.score;
+    for (const reason of strongTextMatch.reasons) {
+      if (reasons.length < 5) reasons.push(reason);
+    }
+  }
+
   const hasExactContract = reasons.some((reason) => reason.startsWith('sparse contract exact'));
-  return { score: Math.min(hasExactContract ? 12 : 7, score), reasons };
+  const hasStrongExactIdentifier = strongSymbolMatches.length > 0
+    || strongReferenceMatches.length > 0
+    || strongPathMatch
+    || strongTextMatch.exact;
+  const cap = hasStrongExactIdentifier ? 20 : hasExactContract ? 12 : 7;
+  return { score: Math.min(cap, score), reasons };
+}
+
+function scoreStrongIdentifierText(
+  text: string,
+  strongIdentifiers: Set<string>
+): { score: number; reasons: string[]; exact: boolean } {
+  if (strongIdentifiers.size === 0 || text.length === 0) {
+    return { score: 0, reasons: [], exact: false };
+  }
+
+  let score = 0;
+  let exact = false;
+  const reasons: string[] = [];
+  for (const identifier of strongIdentifiers) {
+    const escaped = escapeRegExp(identifier);
+    const rightBoundary = `(?![A-Za-z0-9_$])`;
+    const identifierBoundary = `(?:^|[^A-Za-z0-9_$])${escaped}${rightBoundary}`;
+    const declarationPattern = new RegExp(
+      `\\b(?:const|let|var)\\s+${escaped}${rightBoundary}\\s*(?::[^=;]+)?=|\\b(?:function|class|interface|type|def)\\s+${escaped}${rightBoundary}`,
+      'i'
+    );
+    const fieldPattern = new RegExp(`${identifierBoundary}\\??\\s*:`, 'im');
+    const occurrencePattern = new RegExp(identifierBoundary, 'gi');
+
+    if (declarationPattern.test(text)) {
+      score += 6.5;
+      exact = true;
+      if (reasons.length < 2) reasons.push(`sparse exact identifier declaration: ${identifier}`);
+    } else if (fieldPattern.test(text)) {
+      score += 2.2;
+      exact = true;
+      if (reasons.length < 2) reasons.push(`sparse exact identifier field: ${identifier}`);
+    }
+
+    const occurrenceCount = [...text.matchAll(occurrencePattern)].length;
+    if (occurrenceCount > 0) {
+      score += Math.min(1.5, occurrenceCount * 0.25);
+      if (!exact && reasons.length < 2) {
+        reasons.push(`sparse exact identifier text: ${identifier}`);
+      }
+    }
+  }
+
+  return { score, reasons, exact };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function scorePathIntent(
