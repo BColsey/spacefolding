@@ -56,6 +56,7 @@ Benchmark result snapshots live under `benchmarks/` because they are point-in-ti
 - [Focused retrieval E2E results](../benchmarks/E2E-RESULTS.md)
 - [Acceptance gate](../benchmarks/ACCEPTANCE.md)
 - [Held-out datasets](../benchmarks/HELDOUT.md)
+- [Large repository held-out snapshot](../benchmarks/LARGE-REPO-HELDOUT.md)
 - [Model comparison](../benchmarks/MODEL-COMPARISON.md)
 - [Ablation study](../benchmarks/ABLATION.md)
 - [GPU ablation](../benchmarks/ABLATION-GPU.md)
