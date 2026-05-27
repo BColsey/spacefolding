@@ -1,23 +1,25 @@
-# Claude Code Integration Guide
+---
+title: Claude Code Integration
+description: How to configure Spacefolding as an MCP server for Claude Code.
+last_updated: 2026-05-27
+review_schedule: quarterly
+owner: maintainers
+doc_type: howto
+---
 
-Spacefolding is designed as an MCP (Model Context Protocol) server that Claude Code can call as a tool.
+# Claude Code Integration
 
-## What this enables
+Use this guide to connect Claude Code to Spacefolding through the Model Context Protocol.
 
-When connected, Claude Code can:
-- **Ingest** files, diffs, and conversation context (auto-chunks if oversized)
-- **Ingest projects** with source, README/docs, env examples, config, and agent instructions
-- **Score** all context against the current task
-- **Route** into hot (verbatim), warm (compressed), cold (archived)
-- **Retrieve** context using focused RAG (structural, vector, and full-text search)
-- **Compress** warm context using LLM or deterministic providers
-- **Explain** why routing decisions were made
+## Prerequisites
 
-## Setup
+- Spacefolding is built with `npm run build`.
+- The database and model paths are stable.
+- Claude Code can run `node` or `docker` from the configured environment.
 
-### Option 1: Local Node.js
+## Local Node.js Setup
 
-Add to `.claude/settings.json` or `claude_desktop_config.json`:
+Add Spacefolding to `.claude/settings.json`:
 
 ```json
 {
@@ -28,15 +30,29 @@ Add to `.claude/settings.json` or `claude_desktop_config.json`:
       "env": {
         "DB_PATH": "/path/to/spacefolding/data/spacefolding.db",
         "MODEL_PATH": "/path/to/spacefolding/data/models",
-        "EMBEDDING_MODEL": "Xenova/all-MiniLM-L6-v2",
-        "WEB_PORT": "8080"
+        "EMBEDDING_PROVIDER": "local",
+        "EMBEDDING_MODEL": "Xenova/bge-small-en-v1.5"
       }
     }
   }
 }
 ```
 
-### Option 2: Docker
+Before using the tool, download the local model:
+
+```bash
+node dist/main.js download-model
+```
+
+## Docker Setup
+
+Start the container:
+
+```bash
+docker compose up --build
+```
+
+Configure Claude Code to execute the server inside the running container:
 
 ```json
 {
@@ -44,50 +60,50 @@ Add to `.claude/settings.json` or `claude_desktop_config.json`:
     "spacefolding": {
       "command": "docker",
       "args": [
-        "compose", "-f", "/path/to/spacefolding/docker-compose.yml",
-        "exec", "-T", "spacefolding", "node", "dist/main.js", "serve"
+        "compose",
+        "-f",
+        "/path/to/spacefolding/docker-compose.yml",
+        "exec",
+        "-T",
+        "spacefolding",
+        "node",
+        "dist/main.js",
+        "serve"
       ]
     }
   }
 }
 ```
 
-### First-time setup
-
-Download the embedding model before first use:
+Download the local model inside the container:
 
 ```bash
-# Local:
-node dist/main.js download-model
-
-# Docker:
-docker compose run --rm spacefolding node dist/main.js download-model
+docker compose exec spacefolding node dist/main.js download-model
 ```
 
-## Tool Reference
+## Recommended Agent Workflow
 
-### `ingest_context`
-
-Add context to the store.
-
-```json
-{
-  "source": "conversation",
-  "text": "Must use JWT for all endpoints",
-  "type": "constraint"
-}
+```mermaid
+sequenceDiagram
+  participant Claude
+  participant Spacefolding
+  Claude->>Spacefolding: ingest_project(path)
+  Claude->>Spacefolding: ingest_context(user request)
+  Claude->>Spacefolding: score_context(task)
+  Spacefolding-->>Claude: hot, warm, cold
+  Claude->>Spacefolding: retrieve_context(query, mode=focused)
+  Spacefolding-->>Claude: selected chunks
 ```
 
-**Parameters:**
-- `source` (required) — Where this came from: `conversation`, `file`, `diff`, `log`, `summary`
-- `text` (required) — The content
-- `type` — Override the auto-detected type
-- `path` — File path if from a file
-- `language` — Programming language if code
+1. Use `ingest_project` at the start of work on a repository.
+2. Use `ingest_context` for the user request, important constraints, logs, and diffs.
+3. Use `score_context` when the agent needs tiered hot/warm/cold context.
+4. Use `retrieve_context` for focused task context during implementation.
+5. Use `explain_routing` when a routing result looks surprising.
 
-### `ingest_project`
+## First Tool Calls
 
-Ingest a project using source files plus high-value project context. This is the preferred first step for a codebase because it keeps README/docs, `.env.example`, config files, and agent instruction files retrievable alongside source code while skipping tests and benchmarks by default.
+Ingest a project:
 
 ```json
 {
@@ -98,167 +114,47 @@ Ingest a project using source files plus high-value project context. This is the
 }
 ```
 
-**Parameters:**
-- `path` (required) — Absolute project directory path
-- `includeDocs` — Include README files and `docs/**/*.md` (default: `true`)
-- `includeTests` — Include test/spec files and test directories (default: `false`)
-- `includeBenchmarks` — Include benchmark directories (default: `false`)
-
-Agent instruction files such as `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, and `.cursor/rules/**` are split by markdown heading and classified as `constraint` or `instruction` chunks.
-
-### `score_context`
-
-Score all chunks against a task and get routing.
+Retrieve context:
 
 ```json
 {
-  "task": { "text": "Fix the auth bug in login.ts" },
-  "chunkIds": ["optional-filter-to-specific-ids"],
+  "query": "how does routing decide hot warm and cold tiers",
+  "mode": "focused",
+  "strategy": "structural",
   "maxTokens": 50000
 }
 ```
 
-**Returns:** `{ hot: [], warm: [], cold: [], scores: {}, reasons: {} }`
-
-### `compress_context`
-
-Compress specific chunks into a summary.
+Explain routing:
 
 ```json
 {
-  "task": { "text": "Fix auth bug" },
-  "chunkIds": ["chunk-id-1", "chunk-id-2"]
+  "task": { "text": "fix retrieval budget overflow" }
 }
 ```
 
-**Returns:** `{ summary: "...", retainedFacts: [], retainedConstraints: [], sourceChunkIds: [] }`
+## Optional Web UI
 
-### `get_relevant_memory`
+Expose the web UI while serving MCP:
 
-Search cold/warm storage for relevant context.
-
-```json
-{
-  "task": { "text": "How does JWT validation work?" },
-  "filters": { "type": "code", "path": "src/auth" }
-}
+```bash
+WEB_PORT=8080 WEB_HOST=127.0.0.1 node dist/main.js serve
 ```
 
-**Returns:** `{ chunks: [], explanations: [] }`
+Open `http://127.0.0.1:8080` to inspect chunks and routing state.
 
-### `update_context_graph`
+## Troubleshooting
 
-Add or remove dependency links.
+| Symptom | Check |
+| --- | --- |
+| Claude Code cannot start the server. | Confirm the `args` path points to `dist/main.js` and run `npm run build`. |
+| The model is missing. | Run `node dist/main.js download-model` or the Docker equivalent. |
+| The database is empty. | Call `ingest_project` or run `node dist/main.js ingest-project /path/to/project`. |
+| Docker command fails. | Confirm the container is running with `docker compose ps`. |
+| Web UI is unreachable. | Set `WEB_PORT` and ensure `WEB_HOST=0.0.0.0` when accessing through Docker. |
 
-```json
-{
-  "chunkId": "primary-id",
-  "operation": "add",
-  "dependencies": [
-    { "fromId": "a", "toId": "b", "type": "references", "weight": 0.7 }
-  ]
-}
-```
+## See Also
 
-### `explain_routing`
-
-Show why chunks were routed the way they were.
-
-```json
-{
-  "task": { "text": "Fix auth bug" },
-  "chunkId": "optional-specific-chunk"
-}
-```
-
-### `retrieve_context`
-
-Focused RAG retrieval with token budget control. When code symbols are indexed, it defaults to structural retrieval over paths, symbols, imports/references, and lexical matches. It can also use hybrid, vector, text, or graph strategies.
-
-```json
-{
-  "query": "How does JWT authentication work?",
-  "maxTokens": 50000,
-  "strategy": "structural",
-  "mode": "focused",
-  "topK": 15,
-  "returnLimit": 15,
-  "maxHops": 0
-}
-```
-
-**Parameters:**
-- `query` (required) — What you're looking for
-- `maxTokens` — Max token budget (default: auto based on query intent)
-- `strategy` — `structural`, `hybrid`, `vector`, `text`, or `graph`
-- `mode` — `focused` (default), `broad`, or `exhaustive`
-- `topK` — Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)
-- `returnLimit` — Max scored candidates to consider before budget filling
-- `maxHops` — Max dependency graph hops (default: `1` for `strategy: "graph"`, `0` otherwise; graph traversal is disabled unless requested)
-
-Use `focused` for normal coding-agent prompts. Use `broad` when the task is ambiguous and you want more coverage. Use `exhaustive` for manual inspection or ranking benchmarks where you want the raw breadth up to `maxTokens`.
-
-**Returns:**
-```json
-{
-  "chunks": [{
-    "id": "...",
-    "text": "...",
-    "path": "src/auth/login.ts",
-    "tokensEstimate": 900,
-    "tier": "warm",
-    "retrievalSources": ["structural", "fts"],
-    "retrievalScores": { "structural": 12.5, "fts": 0.4, "final": 12.9 },
-    "retrievalReasons": ["symbol exact match: authenticate"]
-  }],
-  "totalTokens": 14800,
-  "budget": 50000,
-  "hardBudget": 50000,
-  "targetBudget": 13000,
-  "utilization": 0.296,
-  "omittedCount": 3,
-  "compressedCount": 0,
-  "compressedSummaries": [],
-  "selectionPolicy": {
-    "mode": "focused",
-    "targetBudget": 13000,
-    "effectiveBudget": 13000,
-    "selectedCandidates": 9,
-    "droppedCandidates": 3
-  },
-  "plan": { "intent": "explain", "strategy": "structural" }
-}
-```
-
-## Recommended Workflow
-
-```
-1. Before starting a task:
-
-   ingest_project(path=<project root>)
-   ingest_context(source="conversation", text=<user request>, type="instruction")
-   ingest_context(source="conversation", text=<constraints>, type="constraint")
-
-2. Score and route:
-
-   score_context(task={text: "What the user asked"})
-   
-3. Use hot chunks in your prompt, compress warm if needed
-4. During work, retrieve focused context when you need something:
-
-   retrieve_context(query=<task-specific need>, mode="focused")
-```
-
-## Context Types
-
-| Type | When to use | Routing behavior |
-|------|------------|-----------------|
-| `constraint` | Hard requirements, "must do X" | Promoted to hot if score > 0.3 |
-| `instruction` | Action items, "fix X" | Promoted to hot if score > 0.5 |
-| `code` | Source code | Scored by semantic relevance |
-| `diff` | Git diffs | Scored by relevance + recency |
-| `log` | Error logs, output | Boosted if task mentions debugging |
-| `fact` | General information | Normal scoring |
-| `background` | Project context | Demoted if stale |
-| `summary` | Prior summaries | Checked for redundancy |
-| `reference` | Documentation | Normal scoring |
+- [MCP tools reference](./reference/mcp-tools.md)
+- [Configuration reference](./configuration.md)
+- [Quick-start tutorial](./tutorials/quick-start.md)

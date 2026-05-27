@@ -1,47 +1,219 @@
-# Configuration Guide
+---
+title: Configuration Reference
+description: Environment variables, providers, retrieval defaults, routing weights, Docker, and web UI settings for Spacefolding.
+last_updated: 2026-05-27
+review_schedule: quarterly
+owner: maintainers
+doc_type: reference
+---
+
+# Configuration Reference
+
+Spacefolding is configured with environment variables. The default Docker setup reads `.env` and persists data under `./data`.
 
 ## Environment Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `DB_PATH` | `./data/spacefolding.db` | SQLite database path |
-| `MODEL_PATH` | `./data/models` | Local model cache directory |
-| `EMBEDDING_PROVIDER` | `local` | `local` (ONNX), `gpu` (CUDA), or `deterministic` (hash-based) |
-| `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID (for `local` provider) |
-| `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | sentence-transformer model (for `gpu` provider) |
-| `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device: `cuda` or `cpu` |
-| `PYTHON_PATH` | `python3` | Python executable for GPU embedding and LLMLingua subprocesses |
-| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, `llm`, or `llmlingua` |
-| `LLMLINGUA_MODEL` | `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` | Model ID for LLMLingua compression |
-| `LLMLINGUA_RATE` | `0.5` | Target compression rate for LLMLingua |
-| `CHUNK_MAX_TOKENS` | `2000` | Max tokens per sub-chunk when splitting |
-| `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between consecutive chunks |
-| `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, `markdown` |
-| `CHUNK_TREE_SITTER` | unset | Set to `1` to enable tree-sitter-backed code splitting when available |
-| `WEB_PORT` | `0` | Port for web UI (set to `8080` to enable) |
-| `WEB_HOST` | `127.0.0.1` | Bind address for web UI (`0.0.0.0` to expose outside loopback) |
-| `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
-| `PORT` | `3000` | Port for SSE transport |
-| `USE_GPU` | `0` | Set to `1` to enable GPU for embeddings |
-| `MAX_CHUNKS` | `10000` | Max chunk count before auto-eviction of oldest chunks |
-| `NODE_ENV` | `production` | Node environment |
+| --- | --- | --- |
+| `NODE_ENV` | `production` in Docker | Node runtime environment. |
+| `DB_PATH` | `./data/spacefolding.db` | SQLite database path. |
+| `MODEL_PATH` | `./data/models` | Local model cache directory. |
+| `EMBEDDING_PROVIDER` | `local` | `local`, `gpu`, or `deterministic`. |
+| `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID for local embeddings. |
+| `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | Sentence-transformer model for GPU embeddings. |
+| `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device for GPU embeddings. |
+| `PYTHON_PATH` | `python3` | Python executable for GPU embeddings and LLMLingua. |
+| `PYTHON` | `python3` | Python executable for structural-index subprocesses. |
+| `COMPRESSION_PROVIDER` | `deterministic` | `deterministic`, `local`, `llm`, or `llmlingua`. |
+| `COMPRESSION_MODEL` | `Xenova/bge-small-en-v1.5` | Local compression model ID. |
+| `LLM_COMPRESSION_ENDPOINT` | unset | OpenAI-compatible chat completions endpoint. |
+| `LLM_COMPRESSION_API_KEY` | unset | API key for LLM compression. |
+| `LLM_COMPRESSION_MODEL` | unset | Model name for LLM compression. |
+| `LLM_COMPRESSION_MAX_TOKENS` | `500` | Max response tokens for LLM compression. |
+| `LLM_COMPRESSION_HEADERS` | unset | JSON object of extra request headers. |
+| `LLMLINGUA_MODEL` | `microsoft/llmlingua-2-xlm-roberta-large-meetingbank` | LLMLingua model ID. |
+| `LLMLINGUA_RATE` | `0.5` | Target token compression rate. |
+| `CHUNK_MAX_TOKENS` | `2000` | Max tokens per child chunk. |
+| `CHUNK_OVERLAP_TOKENS` | `200` | Overlap between child chunks. |
+| `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, or `markdown`. |
+| `CHUNK_TREE_SITTER` | unset | Set to `1` for tree-sitter-backed code chunking when available. |
+| `SPACEFOLDING_DISABLE_AST_SUBPROCESS` | unset | Set to `1` to disable AST subprocess indexing. |
+| `WEB_PORT` | `0` | Web UI port. `0` disables the web UI. |
+| `WEB_HOST` | `127.0.0.1` | Web UI bind address. Use `0.0.0.0` for Docker exposure. |
+| `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse`. |
+| `PORT` | `3000` | SSE transport port. |
+| `USE_GPU` | `0` | Adds GPU-enabled text to MCP tool descriptions. |
+| `MAX_CHUNKS` | `10000` | Max chunk count before oldest chunks are evicted. |
 
-## GPU Embeddings (CUDA)
+## Embedding Providers
 
-Requires: `pip install sentence-transformers torch`
+### Local Embeddings
+
+Local embeddings are the default. They run in-process with ONNX models and do not require cloud access.
 
 ```bash
-EMBEDDING_PROVIDER=gpu
-GPU_EMBEDDING_MODEL=Alibaba-NLP/gte-modernbert-base  # Best: R@10=0.846, beats keyword
-GPU_EMBEDDING_DEVICE=cuda              # or 'cpu' for fallback
+EMBEDDING_PROVIDER=local
+EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
+node dist/main.js download-model
+node dist/main.js serve
 ```
 
-The GPU provider runs a Python subprocess (`scripts/gpu-embedder.py`) that uses
-PyTorch with CUDA for fast inference. It communicates via JSON-RPC over stdin/stdout.
+Common local models:
+
+| Model | Approximate size | Use |
+| --- | ---: | --- |
+| `Xenova/bge-small-en-v1.5` | 130 MB | Default local model. |
+| `Xenova/all-MiniLM-L6-v2` | 80 MB | Smaller and faster. |
+| `Xenova/gte-small` | 130 MB | General-purpose alternative. |
+
+### GPU Embeddings
+
+GPU embeddings use a Python subprocess and sentence-transformers.
+
+```bash
+pip install sentence-transformers torch
+EMBEDDING_PROVIDER=gpu \
+GPU_EMBEDDING_MODEL=Alibaba-NLP/gte-modernbert-base \
+GPU_EMBEDDING_DEVICE=cuda \
+node dist/main.js serve
+```
+
+The subprocess communicates with the Node process over JSON-RPC on stdin/stdout.
+
+### Deterministic Fallback
+
+```bash
+EMBEDDING_PROVIDER=deterministic
+node dist/main.js serve
+```
+
+This mode uses deterministic hash-based vectors. It is useful for offline bootstrapping, but retrieval quality is much lower than real embeddings.
+
+## Embedding Backfill
+
+Run backfill after switching embedding providers or models:
+
+```bash
+node dist/main.js backfill-embeddings
+EMBEDDING_PROVIDER=local node dist/main.js backfill-embeddings --model Xenova/bge-small-en-v1.5
+```
+
+Embeddings are persisted in `chunk_embeddings`. The vector index is a derived cache that can be rebuilt from stored embeddings.
+
+## Compression Providers
+
+### Deterministic Compression
+
+```bash
+COMPRESSION_PROVIDER=deterministic
+node dist/main.js serve
+```
+
+This is the default. It extracts constraints, facts, and code signatures without model calls.
+
+### Local Compression
+
+```bash
+COMPRESSION_PROVIDER=local
+COMPRESSION_MODEL=Xenova/bge-small-en-v1.5
+node dist/main.js serve
+```
+
+Local compression uses the configured local model when available and falls back to deterministic behavior when needed.
+
+### LLM Compression
+
+Use any OpenAI-compatible chat completions endpoint:
+
+```bash
+COMPRESSION_PROVIDER=llm \
+LLM_COMPRESSION_ENDPOINT=https://api.openai.com/v1/chat/completions \
+LLM_COMPRESSION_API_KEY=sk-... \
+LLM_COMPRESSION_MODEL=gpt-4o-mini \
+node dist/main.js serve
+```
+
+If required LLM settings are missing or the API call fails, Spacefolding falls back to deterministic compression.
+
+### LLMLingua Compression
+
+```bash
+pip install llmlingua
+COMPRESSION_PROVIDER=llmlingua \
+LLMLINGUA_MODEL=microsoft/llmlingua-2-xlm-roberta-large-meetingbank \
+LLMLINGUA_RATE=0.5 \
+node dist/main.js serve
+```
+
+LLMLingua is optional and only needed for token-level compression experiments.
+
+## Retrieval Defaults
+
+`retrieve_context` and CLI `retrieve` use adaptive planning when the caller does not specify a strategy or token budget.
+
+| Setting | Default behavior |
+| --- | --- |
+| Mode | `focused` |
+| Strategies | `structural`, `hybrid`, `vector`, `text`, or `graph` |
+| Focused targets | 6k narrow, 13k moderate, 18k broad |
+| Broad targets | 16k narrow, 28k moderate, 40k broad |
+| Exhaustive target | Caller hard budget |
+| Graph hops | `0` unless `strategy` is `graph` or `maxHops` is provided |
+
+See [retrieval pipeline](./concepts/retrieval-pipeline.md) for the full selection model.
+
+## Chunking
+
+```bash
+CHUNK_MAX_TOKENS=2000
+CHUNK_OVERLAP_TOKENS=200
+CHUNK_STRATEGY=auto
+CHUNK_TREE_SITTER=1
+```
+
+| Strategy | Behavior |
+| --- | --- |
+| `auto` | Detect code, Markdown, or plain text. |
+| `code` | Split at code-oriented boundaries; can use tree-sitter when enabled. |
+| `markdown` | Split at heading boundaries. |
+| `recursive` | Split by paragraph, sentence, then words. |
+
+## Web UI
+
+The web UI starts with the MCP server when `WEB_PORT` is greater than `0`.
+
+```bash
+WEB_PORT=8080 WEB_HOST=127.0.0.1 node dist/main.js serve
+```
+
+Docker exposes the web UI with:
+
+```bash
+WEB_PORT=8080
+WEB_HOST=0.0.0.0
+```
+
+Then open `http://127.0.0.1:8080`.
+
+## MCP Transport
+
+Default stdio transport:
+
+```bash
+TRANSPORT=stdio node dist/main.js serve
+```
+
+SSE transport:
+
+```bash
+TRANSPORT=sse PORT=3000 node dist/main.js serve
+```
+
+Use stdio for Claude Code local tool integration. Use SSE when a client needs HTTP transport.
 
 ## Routing Weights
 
-The scoring engine uses configurable weights to balance factors:
+Routing weights can be tuned through `config.example.json`:
 
 ```json
 {
@@ -61,123 +233,40 @@ The scoring engine uses configurable weights to balance factors:
 }
 ```
 
-### What each weight controls
+| Weight | Meaning |
+| --- | --- |
+| `semantic` | Similarity to the current task. |
+| `constraint` | Priority boost for hard requirements and instructions. |
+| `recency` | Freshness boost with decay. |
+| `redundancy` | Penalty for repeated information. |
+| `dependency` | Boost for chunks linked to important context. |
 
-- **Semantic (0.3)** — How similar is this chunk to the current task? Requires an embedding model for best results.
-- **Constraint (0.25)** — Is this a hard requirement? Constraints and instructions get a significant boost.
-- **Recency (0.2)** — Newer chunks score higher. 7-day linear decay to zero.
-- **Redundancy (0.1)** — If this says the same thing as other chunks, it gets penalized.
-- **Dependency (0.15)** — If a hot chunk depends on this, it gets pulled up.
+The hot tier is capped to prevent runaway promotion.
 
-### Thresholds
+## Docker Compose
 
-- **Hot threshold (0.7)** — Chunks scoring above this go into the prompt verbatim.
-- **Warm threshold (0.4)** — Chunks above this get compressed into summaries.
-
-### Hot tier cap
-
-The hot tier is capped at **60% of total chunks** to prevent runaway promotion. If dependency closure pushes hot past 60%, the lowest-scoring hot chunks are demoted back to warm.
-
-## Provider Configuration
-
-### Embedding Provider
-
-**Local ONNX model (default):**
-```
-EMBEDDING_PROVIDER=local
-EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
-```
-Real sentence embeddings running in-process. Auto-downloads the model on first use (~130MB). BGE-small achieves MTEB retrieval score of 51.68, significantly outperforming the previous default (all-MiniLM-L6-v2 at 42).
-
-**Deterministic fallback:**
-```
-EMBEDDING_PROVIDER=deterministic
-```
-Hash-based pseudo-vectors. No model download needed. Works offline. Near-random accuracy — only use as a last resort.
-
-### Embedding Backfill and Vector Index
-
-Embeddings are persisted in `chunk_embeddings`. Vector search uses a derived cache:
-
-- `sqlite-vec` is used when the native extension can load.
-- An in-memory brute-force cache is used as a fallback.
-- The derived index is rebuilt from persisted embeddings when dimensions change or the index is initialized, so `chunk_embeddings` remains the source of truth.
-
-Backfill embeddings after switching providers/models or after ingesting content without embeddings:
-
-```bash
-node dist/main.js backfill-embeddings
-EMBEDDING_PROVIDER=local node dist/main.js backfill-embeddings --model Xenova/bge-small-en-v1.5
-```
-
-## Retrieval Defaults
-
-Project ingestion and retrieval are configured per MCP/CLI call rather than with environment variables:
-
-- `ingest_project` includes source, README/docs, `.env.example`, common config files, and agent instruction files by default.
-- Tests/specs and benchmark directories are skipped by default; pass `includeTests` or `includeBenchmarks` when that context is relevant.
-- `retrieve_context` defaults to `mode: "focused"`, which targets compact context by query complexity: 6k tokens for narrow tasks, 13k for moderate tasks, and 18k for broad tasks, always bounded by the caller's `maxTokens`.
-- Use `mode: "broad"` for higher recall on ambiguous tasks; broad targets 16k, 28k, or 40k tokens by query complexity.
-- Use `mode: "exhaustive"` for manual inspection and benchmark ranking; exhaustive uses the caller's full hard budget without focused pruning.
-- CLI `retrieve` and MCP `retrieve_context` derive the hard budget from query intent and complexity when `--max-tokens`/`maxTokens` is omitted. Pass the option when you need an explicit hard cap.
-
-### Compression Provider
-
-**Deterministic (default):**
-```
-COMPRESSION_PROVIDER=deterministic
-```
-Rule-based: extracts constraints verbatim, first sentences of facts, code signatures.
-
-**Local enhanced:**
-```
-COMPRESSION_PROVIDER=local
-```
-Smarter extraction with structured sections. Degrades to deterministic if no model is available.
-
-**LLM-powered (API):**
-```
-COMPRESSION_PROVIDER=llm
-LLM_COMPRESSION_ENDPOINT=https://api.openai.com/v1/chat/completions
-LLM_COMPRESSION_API_KEY=sk-...
-LLM_COMPRESSION_MODEL=gpt-4o-mini
-```
-Uses any OpenAI-compatible API to compress warm context with a real LLM. Produces much higher-quality summaries than deterministic or local providers.
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `LLM_COMPRESSION_ENDPOINT` | ✅ | API endpoint URL (any OpenAI-compatible) |
-| `LLM_COMPRESSION_API_KEY` | ✅ | API key |
-| `LLM_COMPRESSION_MODEL` | ✅ | Model name (e.g. `gpt-4o-mini`, `claude-3-haiku-20240307`) |
-| `LLM_COMPRESSION_MAX_TOKENS` | | Max response tokens (default: 500) |
-| `LLM_COMPRESSION_HEADERS` | | JSON string of extra headers |
-
-Works with OpenAI, Anthropic (via proxy), Azure OpenAI, Ollama, LM Studio, or any OpenAI-compatible endpoint. Falls back to deterministic if the API call fails.
-
-**LLMLingua token compression:**
-```
-pip install llmlingua
-COMPRESSION_PROVIDER=llmlingua
-LLMLINGUA_MODEL=microsoft/llmlingua-2-xlm-roberta-large-meetingbank
-LLMLINGUA_RATE=0.5
-```
-Runs `scripts/llmlingua-compressor.py` as a Python JSON-RPC subprocess. This is optional and only needed when you want token-level compression comparisons.
-
-## Docker Compose Configuration
+The included Compose file persists data and model cache under `./data`:
 
 ```yaml
 services:
   spacefolding:
     build: .
     volumes:
-      - ./data:/app/data          # DB + model cache
-      - ./workspace:/workspace:ro # Your codebase
+      - ./data:/app/data
+      - ./workspace:/workspace:ro
     ports:
-      - "3000:3000"               # SSE transport
-      - "8080:8080"               # Web UI
+      - "3000:3000"
+      - "8080:8080"
     environment:
+      - DB_PATH=/app/data/spacefolding.db
+      - MODEL_PATH=/app/data/models
       - EMBEDDING_PROVIDER=local
-      - EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
       - WEB_PORT=8080
       - WEB_HOST=0.0.0.0
 ```
+
+## See Also
+
+- [Quick-start tutorial](./tutorials/quick-start.md)
+- [CLI reference](./reference/cli.md)
+- [Claude Code integration](./integration-guide.md)
