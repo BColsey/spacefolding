@@ -65,6 +65,10 @@ interface WalkResult {
   skipped: number;
 }
 
+interface ProcessContextOptions {
+  chunkIds?: string[];
+}
+
 export class PipelineOrchestrator {
   private retriever: HybridRetriever;
   private embeddingModel: string;
@@ -91,7 +95,8 @@ export class PipelineOrchestrator {
   /** Run the full pipeline: score, route, compress, persist */
   async processContext(
     task: TaskDescription,
-    newChunks?: ContextChunk[]
+    newChunks?: ContextChunk[],
+    options: ProcessContextOptions = {}
   ): Promise<ScoreResult> {
     if (newChunks) {
       await this.storeIncomingChunks(newChunks);
@@ -102,23 +107,34 @@ export class PipelineOrchestrator {
       return { hot: [], warm: [], cold: [], scores: {}, reasons: {} };
     }
 
-    // For large chunk counts, use vector search as a first-pass filter
-    // instead of brute-force scoring everything
+    // For explicit chunkIds scoring, only evaluate the selected chunks.
+    const selectedChunkIds = options.chunkIds;
     let candidateChunks = allChunks;
-    if (allChunks.length > 50) {
-      const retrieval = await this.retriever.retrieve(task.text, {
-        topK: Math.min(allChunks.length, 50),
-        strategy: 'vector',
-        maxHops: 0,
-      });
-      const candidateIds = new Set(retrieval.map(r => r.chunkId));
-      candidateChunks = allChunks.filter(c => candidateIds.has(c.id));
-      // Always include newly ingested chunks
-      if (newChunks) {
-        for (const nc of newChunks) {
-          if (!candidateIds.has(nc.id)) candidateChunks.push(nc);
+    if (selectedChunkIds !== undefined) {
+      const selected = new Set(selectedChunkIds);
+      candidateChunks = allChunks.filter((chunk) => selected.has(chunk.id));
+    } else {
+      // For large chunk counts, use vector search as a first-pass filter
+      // instead of brute-force scoring everything
+      if (allChunks.length > 50) {
+        const retrieval = await this.retriever.retrieve(task.text, {
+          topK: Math.min(allChunks.length, 50),
+          strategy: 'vector',
+          maxHops: 0,
+        });
+        const candidateIds = new Set(retrieval.map((r) => r.chunkId));
+        candidateChunks = allChunks.filter((chunk) => candidateIds.has(chunk.id));
+        // Always include newly ingested chunks
+        if (newChunks) {
+          for (const nc of newChunks) {
+            if (!candidateIds.has(nc.id)) candidateChunks.push(nc);
+          }
         }
       }
+    }
+
+    if (candidateChunks.length === 0) {
+      return { hot: [], warm: [], cold: [], scores: {}, reasons: {} };
     }
 
     const dependencies = this.dependencyAnalyzer.analyze(candidateChunks);

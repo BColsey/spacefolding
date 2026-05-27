@@ -300,12 +300,17 @@ export function createWebRequestHandler(pipeline: PipelineOrchestrator) {
   };
 }
 
-export function startWebServer(options: { port: number; pipeline: PipelineOrchestrator }): http.Server {
+export function startWebServer(options: {
+  port: number;
+  host?: string;
+  pipeline: PipelineOrchestrator;
+}): http.Server {
   const handler = createWebRequestHandler(options.pipeline);
   const server = http.createServer((req, res) => {
     void handler(req, res);
   });
+  const host = options.host ?? '127.0.0.1';
 
-  server.listen(options.port);
+  server.listen(options.port, host);
   return server;
 }

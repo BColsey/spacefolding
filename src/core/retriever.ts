@@ -310,6 +310,7 @@ export class HybridRetriever {
     const structuralQuery = parseStructuralQuery(query);
     const retrievalWarnings: string[] = [];
     const strongIdentifiers = buildStrongIdentifierSet(query, structuralQuery);
+    const strongIdentifierCases = buildStrongIdentifierCaseSet(query, structuralQuery);
     let lexicalResults: { chunkId: string; score: number }[] = [];
     try {
       lexicalResults = typeof this.storage.searchByLexical === 'function'
@@ -386,7 +387,8 @@ export class HybridRetriever {
           sparseTerms,
           symbols,
           references,
-          strongIdentifiers
+          strongIdentifiers,
+          strongIdentifierCases
         ) : { score: 0, reasons: [] };
         const pathIntent = scorePathIntent(chunk, structuralQuery, pathIntentTerms);
         const combinedScore = sparseScore.score + pathIntent.score;
@@ -543,21 +545,37 @@ const STRONG_IDENTIFIER_STOP_WORDS = new Set([
 ]);
 
 function buildStrongIdentifierSet(query: string, structuralQuery: StructuralQuery): Set<string> {
-  const lowercaseExactCue = /\b(find|where|locate|show|contains|defined|grep|which\s+file)\b/i.test(query);
   return new Set(
-    structuralQuery.identifiers
-      .filter((identifier) => !STRONG_IDENTIFIER_STOP_WORDS.has(identifier.toLowerCase()))
-      .filter((identifier) =>
-        /[a-z0-9][A-Z]/.test(identifier) ||
-        identifier.includes('_') ||
-        /^[A-Z]{2,}$/.test(identifier) ||
-        /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(identifier) ||
-        (lowercaseExactCue && /^[a-z][a-z0-9_$]{4,}$/.test(identifier)) ||
-        (lowercaseExactCue && /[A-Z]/.test(identifier) && /^[A-Za-z][A-Za-z0-9_$]{4,}$/.test(identifier))
-      )
+    buildStrongIdentifierCandidates(query, structuralQuery)
       .map((identifier) => normalizeStrongIdentifier(identifier))
       .filter((identifier) => identifier.length > 0)
   );
+}
+
+function buildStrongIdentifierCaseSet(query: string, structuralQuery: StructuralQuery): Set<string> {
+  return new Set(buildStrongIdentifierCandidates(query, structuralQuery));
+}
+
+function buildStrongIdentifierCandidates(query: string, structuralQuery: StructuralQuery): string[] {
+  const lowercaseExactCue = /\b(find|where|locate|show|contains|defined|grep|which\s+file)\b/i.test(query);
+  const explainSymbolCue = /\b(?:what\s+does|what\s+do|explain|describe|implementation|how\s+does|how\s+do)\b/i.test(query);
+  const behaviorSubjectIdentifiers = new Set(
+    [...query.matchAll(/\b([A-Za-z_$][A-Za-z0-9_$]*)\s+(?:is|are)\s+(?:returning|giving|producing)\s+(?:wrong|bad|incorrect|unexpected)\s+values?\b/gi)]
+      .map((match) => match[1])
+  );
+
+  return structuralQuery.identifiers
+    .filter((identifier) => !STRONG_IDENTIFIER_STOP_WORDS.has(identifier.toLowerCase()))
+    .filter((identifier) =>
+      /[a-z0-9][A-Z]/.test(identifier) ||
+      identifier.includes('_') ||
+      /^[A-Z]{2,}$/.test(identifier) ||
+      /^[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*$/.test(identifier) ||
+      (explainSymbolCue && /^[A-Z][A-Za-z0-9_$]{2,}$/.test(identifier)) ||
+      (behaviorSubjectIdentifiers.has(identifier) && /^[a-z][a-z0-9_$]{2,}$/.test(identifier)) ||
+      (lowercaseExactCue && /^[a-z][a-z0-9_$]{4,}$/.test(identifier)) ||
+      (lowercaseExactCue && /[A-Z]/.test(identifier) && /^[A-Za-z][A-Za-z0-9_$]{4,}$/.test(identifier))
+    );
 }
 
 function applyStrongIdentifierStructuralBoost(
@@ -929,7 +947,8 @@ function scoreSparseStructuralFields(
   terms: SparseStructuralTerm[],
   symbols: CodeSymbol[],
   references: CodeReference[],
-  strongIdentifiers: Set<string> = new Set()
+  strongIdentifiers: Set<string> = new Set(),
+  strongIdentifierCases: Set<string> = new Set()
 ): { score: number; reasons: string[] } {
   const path = chunk.path ?? '';
   const normalizedPath = normalizeSymbolName(path);
@@ -979,6 +998,14 @@ function scoreSparseStructuralFields(
   if (strongSymbolMatches.length > 0) {
     score += 6 + Math.min(3, strongSymbolMatches.length * 0.75);
     if (reasons.length < 5) reasons.push(`sparse exact identifier symbol: ${strongSymbolMatches[0].name}`);
+  }
+
+  const strongCaseSymbolMatches = strongIdentifierCases.size > 0
+    ? symbolFields.filter((symbol) => strongIdentifierCases.has(symbol.name))
+    : [];
+  if (strongCaseSymbolMatches.length > 0) {
+    score += 3 + Math.min(2, strongCaseSymbolMatches.length * 0.5);
+    if (reasons.length < 5) reasons.push(`sparse exact identifier case match: ${strongCaseSymbolMatches[0].name}`);
   }
 
   const strongReferenceMatches = strongIdentifiers.size > 0

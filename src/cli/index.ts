@@ -20,8 +20,8 @@ import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
 import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
-import { lstatSync, readFileSync, readdirSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { lstatSync, readFileSync } from 'node:fs';
+import { extname } from 'node:path';
 import { formatSourceScoreBreakdown } from '../core/retriever.js';
 import type { EmbeddingProvider, RetrievalMode, RetrievalStrategy } from '../types/index.js';
 import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
@@ -273,8 +273,9 @@ async function startServe(
   console.error(chalk.blue('Starting Spacefolding MCP server...'));
   const pipeline = createPipeline(dbPath);
   const webPort = parseInt(process.env.WEB_PORT ?? '0', 10);
+  const webHost = process.env.WEB_HOST ?? '127.0.0.1';
   const webServer = Number.isFinite(webPort) && webPort > 0
-    ? startWebServer({ port: webPort, pipeline })
+    ? startWebServer({ port: webPort, host: webHost, pipeline })
     : undefined;
   registerShutdown(pipeline, webServer);
   await startMCPServer(pipeline, { transport, port });
@@ -284,7 +285,13 @@ async function startServe(
     )
   );
   if (webServer) {
-    console.error(chalk.green(`Spacefolding web UI running on http://localhost:${webPort}`));
+    const shouldWarn = webHost === '127.0.0.1' || webHost === 'localhost' || webHost === '::1';
+    console.error(chalk.green(`Spacefolding web UI running on http://${webHost}:${webPort}`));
+    if (shouldWarn) {
+      console.error(
+        chalk.yellow('Web UI is bound to loopback only. Set WEB_HOST=0.0.0.0 to expose it outside localhost.')
+      );
+    }
   }
 }
 
@@ -341,14 +348,12 @@ export function buildCLI(): Command {
         }
 
         if (stat.isDirectory()) {
-          const files = walkDir(inputPath);
-          for (const filePath of files) {
-            const content = readFileSync(filePath, 'utf-8');
-            const chunk = await pipeline.ingest('file', content, opts.type, filePath);
-            const splitInfo = chunk.metadata?.childCount ? ` (split into ${chunk.metadata.childCount} chunks)` : '';
-            console.log(chalk.green('✓'), chunk.id.slice(0, 8), filePath, splitInfo);
-          }
-          console.log(chalk.blue(`Ingested ${files.length} files`));
+          const result = await pipeline.ingestDirectory(inputPath, opts.type);
+          console.log(
+            chalk.blue(
+              `Ingested ${result.files} files (${result.chunks.length} chunks total, ${result.skipped} skipped)`
+            )
+          );
         } else {
           const content = readFileSync(inputPath, 'utf-8');
           const chunk = await pipeline.ingest(opts.source, content, opts.type, inputPath);
@@ -714,25 +719,4 @@ function detectLanguage(filePath: string): string | undefined {
   if (extension === '.go') return 'go';
   if (extension === '.java') return 'java';
   return undefined;
-}
-
-function walkDir(dir: string): string[] {
-  const results: string[] = [];
-  const entries = readdirSync(dir);
-  for (const entry of entries) {
-    const fullPath = join(dir, entry);
-    const stat = lstatSync(fullPath);
-    if (stat.isSymbolicLink()) continue;
-    if (stat.isDirectory()) {
-      if (entry !== 'node_modules' && entry !== '.git' && entry !== 'dist') {
-        results.push(...walkDir(fullPath));
-      }
-    } else {
-      const ext = extname(entry);
-      if (!['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot'].includes(ext)) {
-        results.push(fullPath);
-      }
-    }
-  }
-  return results;
 }

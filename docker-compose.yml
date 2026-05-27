@@ -17,6 +17,7 @@ services:
       - TRANSPORT=stdio
       - PORT=3000
       - WEB_PORT=8080
+      - WEB_HOST=0.0.0.0
       - USE_GPU=0
     env_file:
       - .env

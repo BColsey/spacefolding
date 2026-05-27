@@ -477,6 +477,44 @@ describe('MCP retrieve_context tool calls', () => {
     expect(invalidStrategy.error).toContain('strategy must be one of');
     expect(invalidStrategy.error).toContain('structural');
   });
+
+  it('limits score_context tiers and diagnostics to chunkIds when provided', async () => {
+    const { pipeline } = createWebFixture();
+
+    const requested = await pipeline.ingest(
+      'file',
+      'export function scopedScoringTarget() { return "scope"; }',
+      'code',
+      'src/mcp/score-target.ts',
+      'typescript'
+    );
+    const excluded = await pipeline.ingest(
+      'file',
+      'export function ignoredScoringChunk() { return "ignored"; }',
+      'code',
+      'src/mcp/score-ignore.ts',
+      'typescript'
+    );
+
+    const result = await callMcpTool<{
+      hot: string[];
+      warm: string[];
+      cold: string[];
+      scores: Record<string, number>;
+      reasons: Record<string, string[]>;
+    }>(
+      pipeline,
+      'score_context',
+      { task: { text: 'find scoring-target function' }, chunkIds: [requested.id] }
+    );
+
+    const orderedResult = [...result.hot, ...result.warm, ...result.cold];
+
+    expect(orderedResult).toContain(requested.id);
+    expect(orderedResult).not.toContain(excluded.id);
+    expect(Object.keys(result.scores)).toEqual([requested.id]);
+    expect(Object.keys(result.reasons)).toEqual([requested.id]);
+  });
 });
 
 describe('MCP input validation', () => {

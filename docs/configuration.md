@@ -19,6 +19,7 @@
 | `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, `markdown` |
 | `CHUNK_TREE_SITTER` | unset | Set to `1` to enable tree-sitter-backed code splitting when available |
 | `WEB_PORT` | `0` | Port for web UI (set to `8080` to enable) |
+| `WEB_HOST` | `127.0.0.1` | Bind address for web UI (`0.0.0.0` to expose outside loopback) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | Port for SSE transport |
 | `USE_GPU` | `0` | Set to `1` to enable GPU for embeddings |
@@ -178,4 +179,5 @@ services:
       - EMBEDDING_PROVIDER=local
       - EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
       - WEB_PORT=8080
+      - WEB_HOST=0.0.0.0
 ```

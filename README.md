@@ -149,6 +149,7 @@ Every chunk gets a composite score from:
 ```bash
 git clone https://github.com/BColsey/spacefolding.git
 cd spacefolding
+cp .env.example .env
 docker compose up --build
 ```
 
@@ -463,6 +464,7 @@ All configuration is via environment variables:
 | `CHUNK_STRATEGY` | `auto` | `auto`, `recursive`, `code`, `markdown` |
 | `CHUNK_TREE_SITTER` | unset | Set to `1` to use tree-sitter code chunking when available |
 | `WEB_PORT` | `0` (off) | Port for web UI (e.g. `8080`) |
+| `WEB_HOST` | `127.0.0.1` | Web UI bind address (`0.0.0.0` to expose outside loopback) |
 | `TRANSPORT` | `stdio` | MCP transport: `stdio` or `sse` |
 | `PORT` | `3000` | SSE transport port |
 | `USE_GPU` | `0` | Enable GPU for embeddings |

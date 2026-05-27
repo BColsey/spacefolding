@@ -362,10 +362,14 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
         case 'score_context': {
           const chunkIds = (args!.chunkIds as string[] | undefined)?.slice(0, MAX_CHUNK_IDS);
           const allowedChunkIds = chunkIds ? new Set(chunkIds) : undefined;
-          const result = await pipeline.processContext({
-            ...(args!.task as { text: string; type?: string; priority?: string }),
-            maxTokens: args!.maxTokens as number | undefined,
-          } as { text: string; type?: string; priority?: string; maxTokens?: number });
+          const result = await pipeline.processContext(
+            {
+              ...(args!.task as { text: string; type?: string; priority?: string }),
+              maxTokens: args!.maxTokens as number | undefined,
+            } as { text: string; type?: string; priority?: string; maxTokens?: number },
+            undefined,
+            { chunkIds }
+          );
           if (!allowedChunkIds) {
             return jsonResponse(result);
           }
@@ -374,6 +378,12 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
             hot: result.hot.filter((id) => allowedChunkIds.has(id)),
             warm: result.warm.filter((id) => allowedChunkIds.has(id)),
             cold: result.cold.filter((id) => allowedChunkIds.has(id)),
+            scores: Object.fromEntries(
+              Object.entries(result.scores).filter(([chunkId]) => allowedChunkIds.has(chunkId))
+            ),
+            reasons: Object.fromEntries(
+              Object.entries(result.reasons).filter(([chunkId]) => allowedChunkIds.has(chunkId))
+            ),
           });
         }
 

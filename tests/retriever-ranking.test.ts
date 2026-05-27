@@ -739,4 +739,65 @@ describe('HybridRetriever structural ranking', () => {
       'path intent filename match: router'
     );
   });
+
+  it('treats single capitalized explain terms as exact symbol targets', async () => {
+    const chunks = [
+      makeChunk('platforms', 'src/delia/platforms.py', 800),
+      makeChunk('dependencies', 'src/delia/delialsp/dependencies.py', 1_200),
+    ];
+    const storage = makeStorage(
+      chunks,
+      {
+        platforms: 16,
+        dependencies: 2,
+      },
+      {
+        dependencies: [{ name: 'Platform', kind: 'enum' }],
+      }
+    );
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve('what does Platform do', {
+      strategy: 'structural',
+      topK: 10,
+    });
+    const rankedIds = results.map((result) => result.chunkId);
+
+    expect(rankedIds.indexOf('dependencies')).toBeLessThan(rankedIds.indexOf('platforms'));
+    expect(results.find((result) => result.chunkId === 'dependencies')?.reasons).toContain(
+      'sparse exact identifier case match: Platform'
+    );
+  });
+
+  it('prefers lowercase function symbols over uppercase HTTP handlers for lowercase debug subjects', async () => {
+    const chunks = [
+      makeChunk('client-api', 'factory-ui/client/src/lib/api.ts', 700),
+      makeChunk('incident-route', 'factory-ui/server/src/routes/incidents.ts', 900),
+      makeChunk('db', 'supervisor/src/db.ts', 1_000),
+    ];
+    const storage = makeStorage(
+      chunks,
+      {
+        'incident-route': 18,
+        db: 14,
+        'client-api': 2,
+      },
+      {
+        'client-api': ['patch'],
+        'incident-route': ['PATCH'],
+      }
+    );
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve('patch is returning wrong values', {
+      strategy: 'structural',
+      topK: 10,
+    });
+    const rankedIds = results.map((result) => result.chunkId);
+
+    expect(rankedIds.indexOf('client-api')).toBeLessThan(rankedIds.indexOf('incident-route'));
+    expect(results.find((result) => result.chunkId === 'client-api')?.reasons).toContain(
+      'sparse exact identifier case match: patch'
+    );
+  });
 });
