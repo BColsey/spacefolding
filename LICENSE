@@ -1,21 +1,60 @@
-MIT License
+Spacefolding Personal Use License 1.0
 
 Copyright (c) 2024-2026 Benjamin Colsey
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license applies to versions of Spacefolding that include this license.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Personal, Educational, and Noncommercial Use
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+You may use, copy, modify, and run Spacefolding without paying a license fee
+for:
+
+- personal, hobby, evaluation, and other noncommercial purposes;
+- educational use by students, teachers, instructors, schools, colleges,
+  universities, libraries, academic labs, and other educational institutions;
+- teaching, learning, coursework, classroom use, lab use, academic research,
+  and student projects.
+
+2. Commercial and Business Use
+
+Except for the permitted educational uses above, commercial or business use
+requires a separate paid commercial license from the copyright holder before
+use. Commercial or business use includes, without limitation:
+
+- use by or for a company, partnership, government agency, nonprofit,
+  consultancy, contractor, or other organization, other than permitted
+  educational use by an educational institution;
+- use to provide services, products, hosted offerings, support, consulting, or
+  internal business workflows;
+- use that directly or indirectly produces commercial advantage, revenue, or
+  business value.
+
+To obtain a commercial license, contact the copyright holder through the
+Spacefolding repository.
+
+3. Redistribution
+
+You may share copies or modified copies only for the permitted personal,
+educational, and noncommercial purposes above, and each copy must include this
+license and the copyright notice. You may not sell, sublicense, rent, lease,
+host as a service, or otherwise commercially distribute Spacefolding without a
+paid commercial license.
+
+4. Contributions
+
+Unless a separate written agreement says otherwise, contributions submitted to
+this project are licensed under this same license.
+
+5. Prior Versions
+
+This license does not change rights already granted for earlier versions that
+were published under a different license.
+
+6. No Warranty
+
+SPACEFOLDING IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT. IN NO EVENT WILL
+THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH SPACEFOLDING OR THE USE OF SPACEFOLDING.

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/License-MIT-blueviolet?style=flat-square" alt="MIT license" />
+  <img src="https://img.shields.io/badge/License-Free%20Personal%2FEducation%20%7C%20Paid%20Business-blueviolet?style=flat-square" alt="Free personal and education use, paid business license" />
   <img src="https://img.shields.io/github/issues/BColsey/spacefolding?style=flat-square&color=58a6ff" alt="GitHub issues" />
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker ready" />
   <img src="https://img.shields.io/badge/MCP-compatible-6E40C9?style=flat-square" alt="MCP compatible" />
@@ -18,6 +18,7 @@
   <a href="#quick-start">Quick Start</a> |
   <a href="#how-it-works">How It Works</a> |
   <a href="#core-surfaces">Surfaces</a> |
+  <a href="#large-repository-benchmarks">Benchmarks</a> |
   <a href="#documentation">Docs</a> |
   <a href="#development">Development</a>
 </p>
@@ -142,6 +143,37 @@ flowchart TB
 | Storage | SQLite persistence, FTS5, vector index cache, code symbols, and dependencies |
 | Integration | Docker, CLI, stdio/SSE MCP transport, web inspector, import/export |
 
+## Large Repository Benchmarks
+
+The large-repository snapshot captured on May 27, 2026 showed structural
+retrieval beating keyword search on completed 60-task held-out runs for Django,
+Spring Framework, and Rust. The largest retry, Kibana, originally timed out
+after one hour on a 5-task structural run. With parallel task evaluation and a
+larger benchmark chunk cap, Kibana completed a 20-task structural run in 6:45
+with R@10 `1.000`, NDCG@10 `0.822`, and MRR `0.769`.
+
+```bash
+npx tsx benchmarks/evaluate.ts \
+  --dataset /tmp/spacefolding-heldout-kibana-20.json \
+  --corpus corpora/kibana \
+  --strategy structural \
+  --workers 10 \
+  --max-chunks 1000000 \
+  --json > /tmp/spacefolding-heldout-kibana-20-structural.json
+```
+
+This mode still ingests the corpus once into a temporary SQLite benchmark
+artifact. After ingest, `--workers N` shards benchmark tasks across worker
+threads; each worker opens its own repository connection and evaluates its task
+shard against the shared artifact. `--max-chunks N` raises the benchmark chunk
+limit so large-corpus runs measure retrieval quality instead of repeatedly
+triggering the production eviction cap. On Kibana, the 10-worker retrieval phase
+used ten CPU cores and peaked around 31 GB RSS, so it is intended for capable
+local machines.
+
+See [large repository held-out results](benchmarks/LARGE-REPO-HELDOUT.md) for
+the full tables, commands, and caveats.
+
 ## Documentation
 
 | Reader goal | Document |
@@ -163,10 +195,11 @@ npm run lint
 npm test
 ```
 
-Benchmark commands and acceptance criteria are documented in [run benchmarks](docs/howto/run-benchmarks.md). Current benchmark snapshots live in [benchmarks/RESULTS.md](benchmarks/RESULTS.md) and [benchmarks/E2E-RESULTS.md](benchmarks/E2E-RESULTS.md).
+Benchmark commands and acceptance criteria are documented in [run benchmarks](docs/howto/run-benchmarks.md). Current benchmark snapshots live in [benchmarks/RESULTS.md](benchmarks/RESULTS.md), [benchmarks/E2E-RESULTS.md](benchmarks/E2E-RESULTS.md), and [benchmarks/LARGE-REPO-HELDOUT.md](benchmarks/LARGE-REPO-HELDOUT.md).
 
 ## Contributing, Security, License
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-Spacefolding is released under the [MIT License](LICENSE).
+Spacefolding is free for personal, educational, and noncommercial projects.
+Commercial or business use requires a paid license; see [LICENSE](LICENSE).
