@@ -31,6 +31,7 @@ export const DEFAULT_BENCHMARK_SKIP_DIRS = [
   'benchmarks',
   'build',
   'coverage',
+  'corpora',
   'data',
   'deps',
   'dist',

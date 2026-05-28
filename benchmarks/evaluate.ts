@@ -11,7 +11,8 @@
 
 import { readFileSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import type { RetrievalStrategy } from '../src/types/index.js';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
@@ -92,6 +93,8 @@ export interface CliOptions {
   strategy: string;
   json: boolean;
   includeTests: boolean;
+  workers: number;
+  maxChunks: number | null;
 }
 
 const ALL_STRATEGIES = ['keyword', 'path-match', 'fts', 'vector', 'symbol-only', 'structural'];
@@ -103,6 +106,43 @@ const KNOWN_STRATEGIES = new Set([
   'text',
 ]);
 const SUCCESS_GATE_STRATEGIES = ['keyword', 'structural'];
+
+type BenchmarkChunk = { id: string; text: string; path?: string };
+
+interface BenchmarkSymbolRow {
+  chunkId?: string;
+  path?: string;
+  name: string;
+  normalizedName: string;
+}
+
+interface BenchmarkRuntime {
+  storage: any;
+  pipeline: any;
+  parseStructuralQuery: (query: string) => {
+    normalizedIdentifiers: string[];
+    identifierParts: string[];
+  };
+  allSymbols?: BenchmarkSymbolRow[];
+  close: () => void;
+}
+
+interface IndexedBenchmarkTask {
+  index: number;
+  task: BenchmarkTask;
+}
+
+interface BenchmarkWorkerPayload {
+  workerId: number;
+  dbPath: string;
+  strategy: string;
+  tasks: IndexedBenchmarkTask[];
+}
+
+type BenchmarkWorkerMessage =
+  | { type: 'result'; workerId: number; index: number; result: EvalResult }
+  | { type: 'done'; workerId: number }
+  | { type: 'error'; workerId: number; message: string };
 
 // ── Scoring Functions ────────────────────────────────────────
 
@@ -161,6 +201,17 @@ function readOptionValue(argv: string[], index: number, flag: string): string {
     throw new Error(`${flag} requires a value`);
   }
   return value;
+}
+
+function parsePositiveInteger(value: string, flag: string): number {
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error(`${flag} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function errorMessage(error: unknown): string {
@@ -262,6 +313,8 @@ export function parseArgs(argv: string[], benchDir: string): CliOptions {
     strategy: 'all',
     json: false,
     includeTests: false,
+    workers: 1,
+    maxChunks: null,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -271,6 +324,8 @@ export function parseArgs(argv: string[], benchDir: string): CliOptions {
     else if (arg === '--strategy') options.strategy = readOptionValue(argv, i++, arg);
     else if (arg === '--json') options.json = true;
     else if (arg === '--include-tests') options.includeTests = true;
+    else if (arg === '--workers') options.workers = parsePositiveInteger(readOptionValue(argv, i++, arg), arg);
+    else if (arg === '--max-chunks') options.maxChunks = parsePositiveInteger(readOptionValue(argv, i++, arg), arg);
     else throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -382,7 +437,7 @@ async function spacefoldingRetrieval(
 
 async function symbolOnlyRetrieval(
   task: BenchmarkTask,
-  storage: any,
+  rows: BenchmarkSymbolRow[],
   parseStructuralQuery: (query: string) => {
     normalizedIdentifiers: string[];
     identifierParts: string[];
@@ -391,12 +446,6 @@ async function symbolOnlyRetrieval(
   const query = parseStructuralQuery(task.task);
   const identifiers = new Set(query.normalizedIdentifiers);
   const parts = new Set(query.identifierParts);
-  const rows = storage.getAllCodeSymbols() as Array<{
-    chunkId?: string;
-    path?: string;
-    name: string;
-    normalizedName: string;
-  }>;
   const scored = new Map<string, { path: string; score: number }>();
   for (const symbol of rows) {
     if (!symbol.path) continue;
@@ -485,25 +534,7 @@ export function buildEvaluationReport(input: {
   };
 }
 
-// ── Main Evaluation Runner ──────────────────────────────────
-
-async function runEvaluation(options: CliOptions) {
-  const benchDir = dirname(fileURLToPath(import.meta.url));
-  const dataset = loadBenchmarkDataset(options.dataset);
-  const log = (...args: unknown[]) => {
-    if (!options.json) console.log(...args);
-  };
-
-  log(`\n${'═'.repeat(70)}`);
-  log(`  SPACEFOLDING RETRIEVAL BENCHMARK`);
-  log(`  Tasks: ${dataset.tasks.length} | Strategy: ${options.strategy}`);
-  log(`  Dataset: ${relative(benchDir, options.dataset) || options.dataset}`);
-  log(`  Corpus: ${relative(benchDir, options.corpus) || options.corpus}`);
-  log(`${'═'.repeat(70)}\n`);
-
-  const strategies = resolveStrategies(options.strategy);
-
-  // Load the Spacefolding pipeline with real codebase data
+async function createEvaluationRuntime(dbPath: string): Promise<BenchmarkRuntime> {
   const { createRepository } = await import('../dist/storage/repository.js');
   const { DeterministicTokenEstimator } = await import('../dist/providers/token-estimator.js');
   const { DeterministicEmbeddingProvider } = await import('../dist/providers/deterministic-embedding.js');
@@ -514,10 +545,6 @@ async function runEvaluation(options: CliOptions) {
   const { ContextIngester } = await import('../dist/core/ingester.js');
   const { PipelineOrchestrator } = await import('../dist/pipeline/orchestrator.js');
   const { parseStructuralQuery } = await import('../dist/core/query-planner.js');
-
-  // Create a test pipeline with the Spacefolding codebase ingested
-  const dbArtifact = createBenchmarkSqliteArtifact('benchmark-eval');
-  const dbPath = dbArtifact.path;
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
@@ -531,6 +558,256 @@ async function runEvaluation(options: CliOptions) {
     storage, scorer, router, compressionProvider, dependencyAnalyzer, ingester, embeddingProvider
   );
 
+  return {
+    storage,
+    pipeline,
+    parseStructuralQuery,
+    close: () => pipeline.close(),
+  };
+}
+
+async function evaluateBenchmarkTask(
+  task: BenchmarkTask,
+  strategy: string,
+  runtime: BenchmarkRuntime,
+  allChunks: BenchmarkChunk[]
+): Promise<EvalResult> {
+  const relevantSet = new Set(task.relevant_files);
+  let retrievedPaths: string[];
+
+  switch (strategy) {
+    case 'spacefolding':
+    case 'structural':
+      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'structural');
+      break;
+    case 'hybrid':
+      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'hybrid');
+      break;
+    case 'fts':
+    case 'text':
+      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'text');
+      break;
+    case 'vector':
+      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'vector');
+      break;
+    case 'symbol-only':
+      runtime.allSymbols ??= runtime.storage.getAllCodeSymbols() as BenchmarkSymbolRow[];
+      retrievedPaths = await symbolOnlyRetrieval(task, runtime.allSymbols, runtime.parseStructuralQuery);
+      break;
+    case 'keyword':
+      retrievedPaths = await keywordBaseline(task, allChunks);
+      break;
+    case 'path-match':
+      retrievedPaths = await pathMatchBaseline(task, allChunks);
+      break;
+    case 'random':
+      retrievedPaths = await randomBaseline(task, allChunks);
+      break;
+    default:
+      retrievedPaths = [];
+  }
+
+  const uniquePaths = [...new Set(retrievedPaths)];
+  const metrics = computeMetrics(uniquePaths, relevantSet, task.relevant_files.length);
+  const hits = uniquePaths.filter((p) => relevantSet.has(p));
+  const misses = task.relevant_files.filter((f) => !uniquePaths.includes(f));
+  const hitDetails = hits.map((path) => ({
+    path,
+    rank: uniquePaths.indexOf(path) + 1,
+  }));
+
+  return {
+    taskId: task.id,
+    task: task.task,
+    intent: task.intent,
+    metrics,
+    details: {
+      retrievedPaths: uniquePaths.slice(0, 10),
+      relevantPaths: task.relevant_files,
+      hits,
+      misses,
+      hitDetails,
+      retrievedPathCount: uniquePaths.length,
+    },
+  };
+}
+
+function logTaskResult(result: EvalResult, log: (...args: unknown[]) => void): void {
+  const hitIcon = result.details.hits.length > 0 ? '✓' : '✗';
+  log(
+    `  ${hitIcon} ${result.taskId} [${result.intent.padEnd(12)}] ` +
+    `R@10=${result.metrics.recallAt10.toFixed(2)} P@10=${result.metrics.precisionAt10.toFixed(2)} ` +
+    `NDCG=${result.metrics.ndcgAt10.toFixed(2)} MRR=${result.metrics.mrr.toFixed(2)} ` +
+    `hits=${result.details.hits.length}/${result.details.relevantPaths.length} ` +
+    `miss=${result.details.misses.join(',') || 'none'}`
+  );
+}
+
+async function evaluateTasksSequential(
+  tasks: BenchmarkTask[],
+  strategy: string,
+  runtime: BenchmarkRuntime,
+  allChunks: BenchmarkChunk[],
+  onResult?: (result: EvalResult) => void
+): Promise<EvalResult[]> {
+  const results: EvalResult[] = [];
+  for (const task of tasks) {
+    const result = await evaluateBenchmarkTask(task, strategy, runtime, allChunks);
+    results.push(result);
+    onResult?.(result);
+  }
+  return results;
+}
+
+function splitTaskShards(tasks: BenchmarkTask[], workerCount: number): IndexedBenchmarkTask[][] {
+  const shards: IndexedBenchmarkTask[][] = Array.from({ length: workerCount }, () => []);
+  tasks.forEach((task, index) => {
+    shards[index % workerCount].push({ index, task });
+  });
+  return shards.filter((shard) => shard.length > 0);
+}
+
+async function runWorkerShard(
+  payload: BenchmarkWorkerPayload,
+  onResult?: (index: number, result: EvalResult) => void
+): Promise<void> {
+  const worker = fileURLToPath(import.meta.url).endsWith('.ts')
+    ? new Worker(`
+        const { workerData } = require('node:worker_threads');
+        import('tsx/esm/api').then(({ tsImport }) => tsImport(workerData.entryUrl, {
+          parentURL: workerData.registerBaseUrl,
+        })).catch((error) => {
+          throw error;
+        });
+      `, {
+        eval: true,
+        workerData: {
+          ...payload,
+          entryUrl: import.meta.url,
+          registerBaseUrl: pathToFileURL(`${process.cwd()}/`).href,
+        },
+      })
+    : new Worker(new URL(import.meta.url), {
+      workerData: payload,
+      execArgv: process.execArgv,
+    });
+
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    let settled = false;
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      void worker.terminate();
+      rejectPromise(error);
+    };
+
+    worker.on('message', (message: BenchmarkWorkerMessage) => {
+      if (message.type === 'result') {
+        onResult?.(message.index, message.result);
+      } else if (message.type === 'error') {
+        rejectOnce(new Error(`Benchmark worker ${message.workerId} failed: ${message.message}`));
+      }
+    });
+    worker.on('error', (error) => {
+      rejectOnce(error);
+    });
+    worker.on('exit', (code) => {
+      if (settled) return;
+      settled = true;
+      if (code === 0) resolvePromise();
+      else rejectPromise(new Error(`Benchmark worker ${payload.workerId} exited with code ${code}`));
+    });
+  });
+}
+
+async function evaluateTasksParallel(input: {
+  tasks: BenchmarkTask[];
+  strategy: string;
+  dbPath: string;
+  requestedWorkers: number;
+  log: (...args: unknown[]) => void;
+}): Promise<EvalResult[]> {
+  const workerCount = Math.min(input.requestedWorkers, input.tasks.length);
+  const results = new Array<EvalResult | undefined>(input.tasks.length);
+  const shards = splitTaskShards(input.tasks, workerCount);
+
+  input.log(`  Evaluating ${input.tasks.length} tasks with ${shards.length} workers`);
+
+  await Promise.all(shards.map((tasks, index) => runWorkerShard({
+    workerId: index + 1,
+    dbPath: input.dbPath,
+    strategy: input.strategy,
+    tasks,
+  }, (taskIndex, result) => {
+    results[taskIndex] = result;
+    logTaskResult(result, input.log);
+  })));
+
+  const missing = results.findIndex((result) => result === undefined);
+  if (missing >= 0) {
+    throw new Error(`Benchmark worker result missing for task index ${missing}`);
+  }
+
+  return results as EvalResult[];
+}
+
+async function runBenchmarkWorker(): Promise<void> {
+  if (!parentPort) {
+    throw new Error('Benchmark worker started without a parent port');
+  }
+
+  const payload = workerData as BenchmarkWorkerPayload;
+  const runtime = await createEvaluationRuntime(payload.dbPath);
+  try {
+    const allChunks = runtime.storage.getAllChunks() as BenchmarkChunk[];
+    for (const { index, task } of payload.tasks) {
+      const result = await evaluateBenchmarkTask(task, payload.strategy, runtime, allChunks);
+      parentPort.postMessage({
+        type: 'result',
+        workerId: payload.workerId,
+        index,
+        result,
+      } satisfies BenchmarkWorkerMessage);
+    }
+    parentPort.postMessage({
+      type: 'done',
+      workerId: payload.workerId,
+    } satisfies BenchmarkWorkerMessage);
+  } finally {
+    runtime.close();
+  }
+}
+
+// ── Main Evaluation Runner ──────────────────────────────────
+
+async function runEvaluation(options: CliOptions) {
+  const benchDir = dirname(fileURLToPath(import.meta.url));
+  const dataset = loadBenchmarkDataset(options.dataset);
+  const log = (...args: unknown[]) => {
+    if (!options.json) console.log(...args);
+  };
+
+  log(`\n${'═'.repeat(70)}`);
+  log(`  SPACEFOLDING RETRIEVAL BENCHMARK`);
+  log(`  Tasks: ${dataset.tasks.length} | Strategy: ${options.strategy} | Workers: ${options.workers}`);
+  log(`  Dataset: ${relative(benchDir, options.dataset) || options.dataset}`);
+  log(`  Corpus: ${relative(benchDir, options.corpus) || options.corpus}`);
+  if (options.maxChunks !== null) {
+    log(`  Max chunks: ${options.maxChunks}`);
+  }
+  log(`${'═'.repeat(70)}\n`);
+
+  const strategies = resolveStrategies(options.strategy);
+  const previousMaxChunks = process.env.MAX_CHUNKS;
+  if (options.maxChunks !== null) {
+    process.env.MAX_CHUNKS = String(options.maxChunks);
+  }
+
+  // Create a test pipeline with the Spacefolding codebase ingested
+  const dbArtifact = createBenchmarkSqliteArtifact('benchmark-eval');
+  const dbPath = dbArtifact.path;
+  const runtime = await createEvaluationRuntime(dbPath);
+
   // Ingest the Spacefolding source code
   const projectRoot = join(benchDir, '..');
   const files = walkDir(options.corpus, options.includeTests);
@@ -539,10 +816,10 @@ async function runEvaluation(options: CliOptions) {
   for (const filePath of files) {
     const content = readFileSync(filePath, 'utf-8');
     const relativePath = projectRelativePath(projectRoot, filePath);
-    await pipeline.ingest('file', content, undefined, relativePath, undefined);
+    await runtime.pipeline.ingest('file', content, undefined, relativePath, undefined);
   }
 
-  const allChunks = storage.getAllChunks();
+  const allChunks = runtime.storage.getAllChunks() as BenchmarkChunk[];
   log(`Ingested ${allChunks.length} chunks\n`);
 
   // Run evaluations for each strategy
@@ -553,79 +830,21 @@ async function runEvaluation(options: CliOptions) {
     log(`  Strategy: ${strat.toUpperCase()}`);
     log(`${'─'.repeat(70)}\n`);
 
-    const results: EvalResult[] = [];
-
-    for (const task of dataset.tasks) {
-      const relevantSet = new Set(task.relevant_files);
-      let retrievedPaths: string[];
-
-      switch (strat) {
-        case 'spacefolding':
-        case 'structural':
-          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'structural');
-          break;
-        case 'hybrid':
-          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'hybrid');
-          break;
-        case 'fts':
-        case 'text':
-          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'text');
-          break;
-        case 'vector':
-          retrievedPaths = await spacefoldingRetrieval(task, pipeline, 'vector');
-          break;
-        case 'symbol-only':
-          retrievedPaths = await symbolOnlyRetrieval(task, storage, parseStructuralQuery);
-          break;
-        case 'keyword':
-          retrievedPaths = await keywordBaseline(task, allChunks);
-          break;
-        case 'path-match':
-          retrievedPaths = await pathMatchBaseline(task, allChunks);
-          break;
-        case 'random':
-          retrievedPaths = await randomBaseline(task, allChunks);
-          break;
-        default:
-          retrievedPaths = [];
-      }
-
-      // Deduplicate paths
-      const uniquePaths = [...new Set(retrievedPaths)];
-
-      const metrics = computeMetrics(uniquePaths, relevantSet, task.relevant_files.length);
-      const hits = uniquePaths.filter((p) => relevantSet.has(p));
-      const misses = task.relevant_files.filter((f) => !uniquePaths.includes(f));
-      const hitDetails = hits.map((path) => ({
-        path,
-        rank: uniquePaths.indexOf(path) + 1,
-      }));
-
-      results.push({
-        taskId: task.id,
-        task: task.task,
-        intent: task.intent,
-        metrics,
-        details: {
-          retrievedPaths: uniquePaths.slice(0, 10),
-          relevantPaths: task.relevant_files,
-          hits,
-          misses,
-          hitDetails,
-          retrievedPathCount: uniquePaths.length,
-        },
-      });
-
-      // Print per-task result
-      const hitIcon = hits.length > 0 ? '✓' : '✗';
-      log(
-        `  ${hitIcon} ${task.id} [${task.intent.padEnd(12)}] ` +
-        `R@10=${metrics.recallAt10.toFixed(2)} P@10=${metrics.precisionAt10.toFixed(2)} ` +
-        `NDCG=${metrics.ndcgAt10.toFixed(2)} MRR=${metrics.mrr.toFixed(2)} ` +
-        `hits=${hits.length}/${task.relevant_files.length} ` +
-        `miss=${misses.join(',') || 'none'}`
+    const results = options.workers > 1 && dataset.tasks.length > 1
+      ? await evaluateTasksParallel({
+        tasks: dataset.tasks,
+        strategy: strat,
+        dbPath,
+        requestedWorkers: options.workers,
+        log,
+      })
+      : await evaluateTasksSequential(
+        dataset.tasks,
+        strat,
+        runtime,
+        allChunks,
+        (result) => logTaskResult(result, log)
       );
-    }
 
     // Compute averages
     const avgMetrics = computeAverageMetrics(results);
@@ -659,7 +878,7 @@ async function runEvaluation(options: CliOptions) {
   }
 
   // Cleanup
-  pipeline.close();
+  runtime.close();
   dbArtifact.cleanup();
 
   const report = buildEvaluationReport({
@@ -681,6 +900,11 @@ async function runEvaluation(options: CliOptions) {
     }
     log(`${'═'.repeat(70)}\n`);
   }
+
+  if (options.maxChunks !== null) {
+    if (previousMaxChunks === undefined) delete process.env.MAX_CHUNKS;
+    else process.env.MAX_CHUNKS = previousMaxChunks;
+  }
 }
 
 export function walkDir(dir: string, includeTests: boolean): string[] {
@@ -695,7 +919,16 @@ function isMainModule(): boolean {
     && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 }
 
-if (isMainModule()) {
+if (!isMainThread) {
+  runBenchmarkWorker().catch((err) => {
+    parentPort?.postMessage({
+      type: 'error',
+      workerId: (workerData as Partial<BenchmarkWorkerPayload> | undefined)?.workerId ?? 0,
+      message: errorMessage(err),
+    } satisfies BenchmarkWorkerMessage);
+    process.exit(1);
+  });
+} else if (isMainModule()) {
   const benchDir = dirname(fileURLToPath(import.meta.url));
   try {
     const options = parseArgs(process.argv.slice(2), benchDir);

@@ -1,7 +1,7 @@
 # Large Repository Held-Out Benchmark Snapshot
 
 Captured: 2026-05-27
-Updated: 2026-05-27 after one-hour large-corpus retries
+Updated: 2026-05-27 after parallel Kibana retries
 
 This snapshot records shallow public repository clones used as held-out corpora
 for Spacefolding retrieval testing. Generated datasets and benchmark JSON were
@@ -55,6 +55,20 @@ npx tsx benchmarks/evaluate.ts \
   --json > /tmp/spacefolding-heldout-superset-structural-eval.json
 ```
 
+For very large corpora, use task workers and raise the benchmark chunk cap so
+the run measures retrieval instead of repeatedly exercising production
+eviction:
+
+```sh
+npx tsx benchmarks/evaluate.ts \
+  --dataset /tmp/spacefolding-heldout-kibana-20.json \
+  --corpus corpora/kibana \
+  --strategy structural \
+  --workers 10 \
+  --max-chunks 1000000 \
+  --json > /tmp/spacefolding-heldout-kibana-20-structural-workers10-maxchunks-eval.json
+```
+
 ## Completed Evaluations
 
 Full 60-task all-strategy runs completed for Django, Spring Framework, and
@@ -93,9 +107,11 @@ three runs.
 | TypeScript | 60 tasks | Structural | 0.967 | 0.877 | 0.848 | 17.6 |
 | VS Code | 5 tasks | Structural | 0.800 | 0.726 | 0.700 | 18.6 |
 | Kubernetes | 5 tasks | Structural | 0.400 | 0.400 | 0.400 | 25.2 |
+| Kibana | 5 tasks, workers=5, max chunks 1,000,000 | Structural | 1.000 | 1.000 | 1.000 | 48.0 |
+| Kibana | 20 tasks, workers=10, max chunks 1,000,000 | Structural | 1.000 | 0.822 | 0.769 | 48.0 |
 
 Additional structural-only runs completed for Superset, TypeScript, VS Code,
-and Kubernetes:
+Kubernetes, and Kibana:
 
 | Corpus | Run | Structural R@10 | Structural NDCG@10 | Structural MRR |
 |--------|-----|----------------:|-------------------:|---------------:|
@@ -103,6 +119,8 @@ and Kubernetes:
 | TypeScript | 60 tasks, structural only | 0.967 | 0.877 | 0.848 |
 | VS Code | 5 tasks, structural only | 0.800 | 0.726 | 0.700 |
 | Kubernetes | 5 tasks, structural only | 0.400 | 0.400 | 0.400 |
+| Kibana | 5 tasks, structural only, workers=5 | 1.000 | 1.000 | 1.000 |
+| Kibana | 20 tasks, structural only, workers=10 | 1.000 | 0.822 | 0.769 |
 
 ## Long-Running And Incomplete Evaluations
 
@@ -122,7 +140,8 @@ timeout 10m npx tsx benchmarks/evaluate.ts \
 ```
 
 That ten-minute run timed out with no JSON report, but a later one-hour retry
-completed. Kibana was tested with the same one-hour timeout and did not finish.
+completed. Kibana was tested with the same one-hour timeout and did not finish
+with the original single-task benchmark path.
 
 | Corpus | Dataset | Command scope | Timeout | Elapsed | Exit | Output | R@10 | NDCG@10 | MRR |
 |--------|---------|---------------|---------|---------|-----:|--------|-----:|--------:|----:|
@@ -130,19 +149,40 @@ completed. Kibana was tested with the same one-hour timeout and did not finish.
 | Kubernetes | 5 tasks | Structural | 1h | 28:05 | 0 | JSON report | 0.400 | 0.400 | 0.400 |
 | Kibana | 5 tasks | Structural | 1h | 1:00:00 | 124 | Timed out, empty JSON | n/a | n/a | n/a |
 
+## Parallel Kibana Retry
+
+After adding worker-thread task sharding and `--max-chunks`, Kibana completed
+inside the one-hour timeout. The earlier timeout was not only a retrieval
+problem: ingest also hit the default production `MAX_CHUNKS=10000` eviction
+path, causing repeated full-store scans on this corpus. The benchmark retry set
+`--max-chunks 1000000` so the full corpus could be evaluated without eviction
+dominating runtime.
+
+| Corpus | Dataset | Command scope | Timeout | Elapsed | Exit | Output | R@10 | NDCG@10 | MRR |
+|--------|---------|---------------|---------|---------|-----:|--------|-----:|--------:|----:|
+| Kibana | 5 tasks | Structural, workers=5, max chunks 1,000,000 | 1h | 5:52 | 0 | JSON report | 1.000 | 1.000 | 1.000 |
+| Kibana | 20 tasks | Structural, workers=10, max chunks 1,000,000 | 1h | 6:45 | 0 | JSON report | 1.000 | 0.822 | 0.769 |
+
+The 20-task run used 405.28 seconds wall time, 1,356.43 seconds user CPU, and
+124.14 seconds system CPU. During retrieval, ten worker threads were observed
+near 100% CPU. Peak observed RSS was about 31 GB, so this is appropriate for
+large local machines but should not be the default for small laptops.
+
 ## Findings
 
 - The held-out dataset generator handled all eight cloned repositories across
   Python, Java, Rust, TypeScript, JavaScript, and Go.
 - Structural retrieval remained strong on completed held-out runs, including
   large Java, Rust, mixed Python/TypeScript, and TypeScript corpora.
-- The current benchmark harness is not interactive-friendly for larger corpora:
-  it emits no progress and writes the JSON report only after the whole run
+- The benchmark harness now supports parallel task evaluation through
+  `--workers N`, but JSON mode still writes the report only after the whole run
   finishes.
 - A longer timeout changed the conclusion for VS Code and Kubernetes: both
   completed 5-task structural runs inside one hour, but VS Code took 19:08 and
   Kubernetes took 28:05.
-- Kibana still did not complete a 5-task structural run within one hour.
+- Kibana did not complete the original 5-task structural run within one hour,
+  but completed after using worker-thread task sharding and disabling benchmark
+  eviction with `--max-chunks 1000000`.
 - Corpus source-file count alone does not predict runtime. TypeScript has only
   739 supported source files but 20,713 extracted symbols, and still took
   materially longer than expected.

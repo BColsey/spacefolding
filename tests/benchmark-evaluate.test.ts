@@ -59,17 +59,26 @@ function summary(
 describe('retrieval benchmark report', () => {
   it('defaults the benchmark corpus to project context instead of src only', () => {
     expect(parseArgs([], '/repo/benchmarks').corpus).toBe('/repo');
+    expect(parseArgs([], '/repo/benchmarks').workers).toBe(1);
+    expect(parseArgs([], '/repo/benchmarks').maxChunks).toBeNull();
+  });
+
+  it('accepts explicit benchmark scale controls', () => {
+    expect(parseArgs(['--workers', '10'], '/repo/benchmarks').workers).toBe(10);
+    expect(parseArgs(['--max-chunks', '1000000'], '/repo/benchmarks').maxChunks).toBe(1_000_000);
   });
 
   it('includes environment examples while skipping benchmark and local agent worktree noise', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'spacefolding-evaluate-corpus-'));
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     mkdirSync(join(tempDir, 'benchmarks'), { recursive: true });
+    mkdirSync(join(tempDir, 'corpora', 'large-repo'), { recursive: true });
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     mkdirSync(join(tempDir, '.claude', 'worktrees', 'agent', 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'index.ts'), 'export const ok = true;');
     writeFileSync(join(tempDir, '.env.example'), 'DB_PATH=/tmp/db.sqlite');
     writeFileSync(join(tempDir, 'benchmarks', 'ignored.ts'), 'export const ignored = true;');
+    writeFileSync(join(tempDir, 'corpora', 'large-repo', 'ignored.ts'), 'export const ignored = true;');
     writeFileSync(join(tempDir, 'tests', 'ignored.test.ts'), 'export const ignored = true;');
     writeFileSync(join(tempDir, '.claude', 'worktrees', 'agent', 'src', 'ignored.ts'), 'export const ignored = true;');
 
@@ -109,6 +118,15 @@ describe('retrieval benchmark report', () => {
     );
     expect(() => parseArgs(['structural'], '/benchmarks')).toThrow(
       'Unknown argument: structural'
+    );
+    expect(() => parseArgs(['--workers', '0'], '/benchmarks')).toThrow(
+      '--workers must be a positive integer'
+    );
+    expect(() => parseArgs(['--workers', '1.5'], '/benchmarks')).toThrow(
+      '--workers must be a positive integer'
+    );
+    expect(() => parseArgs(['--max-chunks', '0'], '/benchmarks')).toThrow(
+      '--max-chunks must be a positive integer'
     );
   });
 

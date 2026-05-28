@@ -31,6 +31,19 @@ npx tsx benchmarks/evaluate.ts \
 
 This measures top-k ranking quality with exhaustive selection so token-budget pruning does not affect ranking metrics.
 
+For large corpora, shard task evaluation across worker threads after the corpus
+has been ingested:
+
+```bash
+npx tsx benchmarks/evaluate.ts \
+  --dataset /tmp/spacefolding-heldout-repo.json \
+  --corpus /path/to/other/repo \
+  --strategy structural \
+  --workers 10 \
+  --max-chunks 1000000 \
+  --json > /tmp/spacefolding-heldout-repo-structural.json
+```
+
 ## Run Focused E2E Evaluation
 
 ```bash
@@ -79,6 +92,8 @@ npx tsx benchmarks/evaluate.ts \
   --dataset /tmp/spacefolding-heldout-repo.json \
   --corpus /path/to/other/repo \
   --strategy all \
+  --workers 10 \
+  --max-chunks 1000000 \
   --json > /tmp/spacefolding-heldout-eval.json
 ```
 

@@ -23,8 +23,15 @@ npx tsx benchmarks/evaluate.ts \
   --dataset /tmp/spacefolding-heldout-repo.json \
   --corpus /path/to/other/repo \
   --strategy all \
+  --workers 10 \
+  --max-chunks 1000000 \
   --json > /tmp/spacefolding-heldout-eval.json
 ```
+
+Pass `--workers N` on large corpora to evaluate task shards in parallel after
+the benchmark has completed its single ingest pass. Pass `--max-chunks N` when
+the benchmark should evaluate a full large corpus rather than exercising the
+pipeline's production eviction cap.
 
 Profile ingest/index cost and retrieval latency on the same held-out corpus:
 
