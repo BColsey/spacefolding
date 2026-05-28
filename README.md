@@ -27,14 +27,29 @@
 
 ## What Spacefolding Does
 
-Coding agents need the right context, not all context. Spacefolding ingests project material, scores it against a task, routes it into hot/warm/cold tiers, and retrieves a compact set of useful chunks when the prompt window is smaller than the workspace.
+Coding agents fail in predictable ways on large codebases: they search for the
+wrong words, read the wrong files, miss the symbol that matters, or dump too
+much code into the prompt and lose the thread. Spacefolding is a local context
+engine that gives an agent a ranked, prompt-sized bundle of the files and
+snippets most likely to matter for the task.
+
+The practical value is simple: before an agent edits code, Spacefolding helps it
+find the right part of the repository.
 
 | Problem | Spacefolding response |
 | --- | --- |
-| The repo is larger than the model context window. | Chunk, embed, index, and retrieve only the relevant pieces. |
-| Some facts must stay exact. | Keep high-priority constraints and source snippets hot. |
-| Useful background is too verbose. | Compress warm context into structured summaries. |
-| Old context might matter later. | Store cold context in SQLite, vector search, FTS5, and a dependency graph. |
+| The repo is larger than the model context window. | Index the repo once, then retrieve only the files and chunks that match the current task. |
+| Keyword search misses code because names are indirect. | Use paths, symbols, references, FTS, vectors, and dependency signals together. |
+| The agent needs exact requirements and source snippets. | Keep high-priority constraints and active code hot, without summarizing them away. |
+| Useful background is too verbose. | Compress warm context into structured summaries with source links. |
+| Old context might matter later. | Keep cold context in SQLite so it can be searched instead of discarded. |
+
+| If you ask an agent to... | Spacefolding is useful when it can... |
+| --- | --- |
+| Fix a bug in unfamiliar code. | Put the likely owning files and symbols in front of the agent before it guesses. |
+| Add a feature across a large repo. | Retrieve the interfaces, implementations, and related references that define the pattern. |
+| Explain a subsystem. | Return a compact trail of source files instead of forcing the agent to scan the whole tree. |
+| Work inside a long-running session. | Preserve decisions, constraints, and older context without carrying all of it in every prompt. |
 
 ## How It Works
 
@@ -145,12 +160,33 @@ flowchart TB
 
 ## Large Repository Benchmarks
 
+The retrieval benchmark asks a concrete agent question: when the task requires
+a specific source file, does Spacefolding put that file near the top before the
+agent spends tokens reading the wrong code?
+
+The generated held-out tasks are built from real files in repositories that are
+not part of this project. A good result means the target file appears early in
+the ranked retrieval list:
+
+| Metric | What it means for an agent |
+| --- | --- |
+| R@10 | The needed file appears somewhere in the first 10 retrieved paths. |
+| NDCG@10 | The needed file appears high in the first 10, not buried near the bottom. |
+| MRR | The first correct hit appears early. A score near 1 means rank 1. |
+
 The large-repository snapshot captured on May 27, 2026 showed structural
 retrieval beating keyword search on completed 60-task held-out runs for Django,
-Spring Framework, and Rust. The largest retry, Kibana, originally timed out
-after one hour on a 5-task structural run. With parallel task evaluation and a
-larger benchmark chunk cap, Kibana completed a 20-task structural run in 6:45
-with R@10 `1.000`, NDCG@10 `0.822`, and MRR `0.769`.
+Spring Framework, and Rust. That matters because keyword search is the obvious
+baseline: if structural retrieval only matched grep-like search, it would not be
+worth using.
+
+The largest retry was Kibana, a 1.8 GB checkout with 63,399 supported source
+files and 222,701 extracted symbols. The original single-task benchmark path
+timed out after one hour on a 5-task structural run. With parallel task
+evaluation and a larger benchmark chunk cap, Kibana completed a 20-task
+structural run in 6:45 with R@10 `1.000`, NDCG@10 `0.822`, and MRR `0.769`.
+In plain terms: every generated Kibana task found its target file in the first
+10 results, and the first correct file was usually near the top.
 
 ```bash
 npx tsx benchmarks/evaluate.ts \

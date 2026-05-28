@@ -31,6 +31,27 @@ npx tsx benchmarks/evaluate.ts \
 
 This measures top-k ranking quality with exhaustive selection so token-budget pruning does not affect ranking metrics.
 
+## Interpret Ranking Results
+
+Use the ranking benchmark to answer whether retrieval is useful before an
+agent spends tokens on code. Each task has one or more expected files. The
+benchmark runs a strategy, ranks retrieved paths, and compares that ranked list
+with the expected files.
+
+| Metric | Read it as |
+| --- | --- |
+| `recallAt10` | How often the expected file appears in the first 10 retrieved paths. |
+| `ndcgAt10` | Whether expected files appear near the top of the first 10 results. |
+| `mrr` | How early the first expected file appears. `1.0` means rank 1. |
+| `avgResults` | How broad the strategy's candidate set is before the top-k cutoffs. |
+
+For code agents, high recall means the needed file is available. High NDCG and
+MRR mean the agent is likely to read it before lower-value files. The keyword
+strategy is the baseline to beat because it approximates simple grep-like
+search over paths and content. Structural retrieval is meaningful when it beats
+that baseline by using code-aware signals such as paths, symbols, references,
+FTS, vector similarity, and dependencies.
+
 For large corpora, shard task evaluation across worker threads after the corpus
 has been ingested:
 
