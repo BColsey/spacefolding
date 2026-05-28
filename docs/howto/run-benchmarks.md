@@ -52,6 +52,11 @@ search over paths and content. Structural retrieval is meaningful when it beats
 that baseline by using code-aware signals such as paths, symbols, references,
 FTS, vector similarity, and dependencies.
 
+When presenting results, convert recall into task counts. For example, a
+`recallAt10` of `0.883` on a 60-task dataset means the strategy placed an
+expected file in the first 10 results for about 53 tasks. This is usually easier
+to understand than the decimal alone.
+
 For large corpora, shard task evaluation across worker threads after the corpus
 has been ingested:
 

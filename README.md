@@ -180,6 +180,27 @@ Spring Framework, and Rust. That matters because keyword search is the obvious
 baseline: if structural retrieval only matched grep-like search, it would not be
 worth using.
 
+Read the benchmark as "how often did the method put the needed file in front of
+the agent?" On the completed 60-task held-out runs, structural retrieval found
+the target file in the top 10 much more often:
+
+| Repository | Keyword search | FTS | Symbol only | Spacefolding structural |
+| --- | ---: | ---: | ---: | ---: |
+| Django | 16 / 60 | 40 / 60 | 48 / 60 | 53 / 60 |
+| Spring Framework | 14 / 60 | 33 / 60 | 26 / 60 | 48 / 60 |
+| Rust | 5 / 60 | 34 / 60 | 34 / 60 | 38 / 60 |
+
+The important comparison is not only "structural beats keyword." It is that the
+combined structural strategy is more robust than any one signal by itself:
+
+| Method | Why it is useful | Where it breaks down |
+| --- | --- | --- |
+| Keyword search | Fast grep-like baseline over text and paths. | Misses when the task uses different words than the code. |
+| FTS | Strong lexical search with better ranking than simple keyword matching. | Still mostly depends on words appearing in the file. |
+| Symbol only | Good when the task names the exact class, function, or type. | Misses path intent, references, and broader implementation clues. |
+| Vector only | Useful with strong embeddings and semantic phrasing. | Weak with deterministic fallback embeddings in these held-out runs. |
+| Structural | Combines paths, symbols, references, FTS, vectors, and dependency signals. | Costs more to index and retrieve on very large repos. |
+
 The largest retry was Kibana, a 1.8 GB checkout with 63,399 supported source
 files and 222,701 extracted symbols. The original single-task benchmark path
 timed out after one hour on a 5-task structural run. With parallel task
