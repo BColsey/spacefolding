@@ -329,8 +329,8 @@ export class HybridRetriever {
     const sparseTerms = buildSparseStructuralTerms(query, structuralQuery);
     const pathIntentTerms = buildPathIntentTerms(sparseTerms);
     const candidates = new Map<string, FusedCandidate>();
-    let codeSymbolLookupFailed = false;
-    let codeReferenceLookupFailed = false;
+    const structuralData = createStructuralDataCache(this.storage, retrievalWarnings);
+    const shouldScoreSparseFields = sparseTerms.length > 0 || strongIdentifiers.size > 0;
 
     for (const result of lexicalResults) {
       const lexicalScore = scaleDeterministicLexicalScore(result.score);
@@ -371,18 +371,12 @@ export class HybridRetriever {
       candidates.set(result.chunkId, existing);
     }
 
-    if (sparseTerms.length > 0 || structuralQuery.tokens.length > 0 || structuralQuery.identifierParts.length > 0) {
+    if (shouldScoreSparseFields || structuralQuery.tokens.length > 0 || structuralQuery.identifierParts.length > 0) {
       for (const chunk of this.storage.getAllChunks()) {
         if (chunk.metadata?.split) continue;
-        const symbols = codeSymbolLookupFailed ? [] : safeCodeSymbols(this.storage, chunk.id, retrievalWarnings);
-        if (symbols.length === 0 && retrievalWarnings.some((warning) => warning.startsWith('code symbol lookup unavailable'))) {
-          codeSymbolLookupFailed = true;
-        }
-        const references = codeReferenceLookupFailed ? [] : safeCodeReferences(this.storage, chunk.id, retrievalWarnings);
-        if (references.length === 0 && retrievalWarnings.some((warning) => warning.startsWith('code reference lookup unavailable'))) {
-          codeReferenceLookupFailed = true;
-        }
-        const sparseScore = (sparseTerms.length > 0 || strongIdentifiers.size > 0) ? scoreSparseStructuralFields(
+        const symbols = shouldScoreSparseFields ? structuralData.symbolsFor(chunk.id) : [];
+        const references = shouldScoreSparseFields ? structuralData.referencesFor(chunk.id) : [];
+        const sparseScore = shouldScoreSparseFields ? scoreSparseStructuralFields(
           chunk,
           sparseTerms,
           symbols,
@@ -426,6 +420,101 @@ export class HybridRetriever {
           ],
         };
       });
+  }
+}
+
+interface StructuralDataCache {
+  symbolsFor(chunkId: string): CodeSymbol[];
+  referencesFor(chunkId: string): CodeReference[];
+}
+
+function createStructuralDataCache(
+  storage: SQLiteRepository,
+  warnings: string[]
+): StructuralDataCache {
+  const symbolCache = new Map<string, CodeSymbol[]>();
+  const referenceCache = new Map<string, CodeReference[]>();
+  let symbolsBatched = false;
+  let referencesBatched = false;
+  let symbolBatchAttempted = false;
+  let referenceBatchAttempted = false;
+  let symbolLookupFailed = false;
+  let referenceLookupFailed = false;
+
+  const loadSymbolsBatch = () => {
+    if (symbolBatchAttempted) return;
+    symbolBatchAttempted = true;
+    try {
+      const symbols = typeof storage.getAllCodeSymbols === 'function'
+        ? storage.getAllCodeSymbols()
+        : null;
+      if (symbols) {
+        fillStructuralCache(symbolCache, symbols, (symbol) => symbol.chunkId);
+        symbolsBatched = true;
+      }
+    } catch {
+      symbolsBatched = false;
+    }
+  };
+
+  const loadReferencesBatch = () => {
+    if (referenceBatchAttempted) return;
+    referenceBatchAttempted = true;
+    try {
+      const references = typeof storage.getAllCodeReferences === 'function'
+        ? storage.getAllCodeReferences()
+        : null;
+      if (references) {
+        fillStructuralCache(referenceCache, references, (reference) => reference.chunkId);
+        referencesBatched = true;
+      }
+    } catch {
+      referencesBatched = false;
+    }
+  };
+
+  return {
+    symbolsFor(chunkId: string): CodeSymbol[] {
+      loadSymbolsBatch();
+      if (symbolsBatched) return symbolCache.get(chunkId) ?? [];
+      if (symbolCache.has(chunkId)) return symbolCache.get(chunkId) ?? [];
+      if (symbolLookupFailed) return [];
+      const symbols = safeCodeSymbols(storage, chunkId, warnings);
+      symbolCache.set(chunkId, symbols);
+      if (symbols.length === 0 && warnings.some((warning) => warning.startsWith('code symbol lookup unavailable'))) {
+        symbolLookupFailed = true;
+      }
+      return symbols;
+    },
+    referencesFor(chunkId: string): CodeReference[] {
+      loadReferencesBatch();
+      if (referencesBatched) return referenceCache.get(chunkId) ?? [];
+      if (referenceCache.has(chunkId)) return referenceCache.get(chunkId) ?? [];
+      if (referenceLookupFailed) return [];
+      const references = safeCodeReferences(storage, chunkId, warnings);
+      referenceCache.set(chunkId, references);
+      if (references.length === 0 && warnings.some((warning) => warning.startsWith('code reference lookup unavailable'))) {
+        referenceLookupFailed = true;
+      }
+      return references;
+    },
+  };
+}
+
+function fillStructuralCache<T>(
+  cache: Map<string, T[]>,
+  items: T[],
+  getChunkId: (item: T) => string | undefined
+): void {
+  for (const item of items) {
+    const chunkId = getChunkId(item);
+    if (!chunkId) continue;
+    const existing = cache.get(chunkId);
+    if (existing) {
+      existing.push(item);
+    } else {
+      cache.set(chunkId, [item]);
+    }
   }
 }
 

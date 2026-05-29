@@ -357,6 +357,13 @@ export class SQLiteRepository implements StorageProvider {
     return rows.map(rowToCodeSymbol);
   }
 
+  getAllCodeReferences(): CodeReference[] {
+    const rows = this.db
+      .prepare('SELECT * FROM code_references ORDER BY path, startLine, target')
+      .all() as CodeReferenceRow[];
+    return rows.map(rowToCodeReference);
+  }
+
   hasCodeStructure(): boolean {
     const row = this.db
       .prepare('SELECT COUNT(*) as count FROM code_symbols')

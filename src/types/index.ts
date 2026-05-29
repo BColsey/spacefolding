@@ -252,6 +252,7 @@ export interface StorageProvider {
   getCodeSymbols(chunkId: string): CodeSymbol[];
   getCodeReferences(chunkId: string): CodeReference[];
   getAllCodeSymbols(): CodeSymbol[];
+  getAllCodeReferences(): CodeReference[];
   hasCodeStructure(): boolean;
   searchByStructure(query: StructuralQuery, topK?: number): StructuralSearchResult[];
 }

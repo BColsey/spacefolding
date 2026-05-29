@@ -1,7 +1,7 @@
 ---
 title: Documentation Index
 description: A task-oriented map of Spacefolding documentation.
-last_updated: 2026-05-27
+last_updated: 2026-05-29
 review_schedule: quarterly
 owner: maintainers
 doc_type: reference
@@ -16,6 +16,7 @@ Start here when you know what you want to do but not which file has the answer.
 | Goal | Read |
 | --- | --- |
 | Install and try Spacefolding. | [Quick-start tutorial](./tutorials/quick-start.md) |
+| Understand when Spacefolding is useful. | [Why Spacefolding](./concepts/why-spacefolding.md) |
 | Understand hot/warm/cold routing. | [How Spacefolding works](./concepts/how-spacefolding-works.md) |
 | Understand focused retrieval. | [Retrieval pipeline](./concepts/retrieval-pipeline.md) |
 | Connect Claude Code. | [Claude Code integration](./integration-guide.md) |
@@ -45,6 +46,7 @@ Start here when you know what you want to do but not which file has the answer.
 
 ### Concepts
 
+- [Why Spacefolding](./concepts/why-spacefolding.md) - Audience, search comparison, benchmark meaning, and current proof boundaries.
 - [How Spacefolding works](./concepts/how-spacefolding-works.md) - Context lifecycle, routing tiers, scoring, and storage.
 - [Retrieval pipeline](./concepts/retrieval-pipeline.md) - Query planning, strategies, modes, and token budgets.
 

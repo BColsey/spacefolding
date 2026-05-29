@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <strong>Local-first context compression and retrieval for coding agents.</strong><br />
-  Fold oversized repos, conversations, logs, and docs into prompt-ready context.
+  <strong>Local codebase context engine for coding agents.</strong><br />
+  Find the right files, symbols, and snippets before an agent edits.
 </p>
 
 <p align="center">
@@ -27,14 +27,18 @@
 
 ## What Spacefolding Does
 
-Coding agents fail in predictable ways on large codebases: they search for the
-wrong words, read the wrong files, miss the symbol that matters, or dump too
-much code into the prompt and lose the thread. Spacefolding is a local context
-engine that gives an agent a ranked, prompt-sized bundle of the files and
-snippets most likely to matter for the task.
+Spacefolding helps coding agents start with the right local repository context.
+Before an agent edits code, it ranks the files, symbols, and snippets most
+likely to matter for the task, then returns a prompt-sized bundle the agent can
+read immediately.
 
-The practical value is simple: before an agent edits code, Spacefolding helps it
-find the right part of the repository.
+Use it when the repository is too large for an agent to scan reliably, when
+keyword search is too brittle, or when you want an MCP/local workflow that keeps
+codebase context on your machine.
+
+The payoff is fewer blind starts. On the completed Django, Spring Framework,
+and Rust held-out benchmark runs, structural retrieval put the target file in
+the top 10 results 139 / 180 times. Keyword search did that 35 / 180 times.
 
 | Problem | Spacefolding response |
 | --- | --- |
@@ -160,13 +164,13 @@ flowchart TB
 
 ## Large Repository Benchmarks
 
-The retrieval benchmark asks a concrete agent question: when the task requires
-a specific source file, does Spacefolding put that file near the top before the
-agent spends tokens reading the wrong code?
+The benchmark is designed around the workflow Spacefolding is meant to improve:
+before a coding agent edits, can the context engine put the file it will need in
+the first few results?
 
-The generated held-out tasks are built from real files in repositories that are
-not part of this project. A good result means the target file appears early in
-the ranked retrieval list:
+Held-out tasks are generated from real files in large repositories outside this
+project. Each task has a known target file. Retrieval methods are scored by how
+early that target appears in the ranked list:
 
 | Metric | What it means for an agent |
 | --- | --- |
@@ -174,59 +178,29 @@ the ranked retrieval list:
 | NDCG@10 | The needed file appears high in the first 10, not buried near the bottom. |
 | MRR | The first correct hit appears early. A score near 1 means rank 1. |
 
-The large-repository snapshot captured on May 27, 2026 showed structural
-retrieval beating keyword search on completed 60-task held-out runs for Django,
-Spring Framework, and Rust. That matters because keyword search is the obvious
-baseline: if structural retrieval only matched grep-like search, it would not be
-worth using.
+The large-repository snapshot captured on May 27, 2026 showed Spacefolding's
+structural retrieval finding the target file in the top 10 much more often than
+simple methods on completed 60-task held-out runs:
 
-Read the benchmark as "how often did the method put the needed file in front of
-the agent?" On the completed 60-task held-out runs, structural retrieval found
-the target file in the top 10 much more often:
+- Combined: 139 / 180 with structural retrieval, compared with 35 / 180 for
+  keyword search.
+- Django: 53 / 60 with structural retrieval, compared with 16 / 60 for keyword
+  search.
+- Spring Framework: 48 / 60 with structural retrieval, compared with 14 / 60 for
+  keyword search.
+- Rust: 38 / 60 with structural retrieval, compared with 5 / 60 for keyword
+  search.
 
-| Repository | Keyword search | FTS | Symbol only | Spacefolding structural |
-| --- | ---: | ---: | ---: | ---: |
-| Django | 16 / 60 | 40 / 60 | 48 / 60 | 53 / 60 |
-| Spring Framework | 14 / 60 | 33 / 60 | 26 / 60 | 48 / 60 |
-| Rust | 5 / 60 | 34 / 60 | 34 / 60 | 38 / 60 |
+That is the main benchmark claim: Spacefolding is better at getting the likely
+target files in front of the agent before the agent spends tokens on the wrong
+part of the repository. Structural retrieval does this by combining paths,
+symbols, references, FTS, vectors, and dependency signals instead of relying on
+one search signal alone.
 
-The important comparison is not only "structural beats keyword." It is that the
-combined structural strategy is more robust than any one signal by itself:
-
-| Method | Why it is useful | Where it breaks down |
-| --- | --- | --- |
-| Keyword search | Fast grep-like baseline over text and paths. | Misses when the task uses different words than the code. |
-| FTS | Strong lexical search with better ranking than simple keyword matching. | Still mostly depends on words appearing in the file. |
-| Symbol only | Good when the task names the exact class, function, or type. | Misses path intent, references, and broader implementation clues. |
-| Vector only | Useful with strong embeddings and semantic phrasing. | Weak with deterministic fallback embeddings in these held-out runs. |
-| Structural | Combines paths, symbols, references, FTS, vectors, and dependency signals. | Costs more to index and retrieve on very large repos. |
-
-The largest retry was Kibana, a 1.8 GB checkout with 63,399 supported source
-files and 222,701 extracted symbols. The original single-task benchmark path
-timed out after one hour on a 5-task structural run. With parallel task
-evaluation and a larger benchmark chunk cap, Kibana completed a 20-task
-structural run in 6:45 with R@10 `1.000`, NDCG@10 `0.822`, and MRR `0.769`.
-In plain terms: every generated Kibana task found its target file in the first
-10 results, and the first correct file was usually near the top.
-
-```bash
-npx tsx benchmarks/evaluate.ts \
-  --dataset /tmp/spacefolding-heldout-kibana-20.json \
-  --corpus corpora/kibana \
-  --strategy structural \
-  --workers 10 \
-  --max-chunks 1000000 \
-  --json > /tmp/spacefolding-heldout-kibana-20-structural.json
-```
-
-This mode still ingests the corpus once into a temporary SQLite benchmark
-artifact. After ingest, `--workers N` shards benchmark tasks across worker
-threads; each worker opens its own repository connection and evaluates its task
-shard against the shared artifact. `--max-chunks N` raises the benchmark chunk
-limit so large-corpus runs measure retrieval quality instead of repeatedly
-triggering the production eviction cap. On Kibana, the 10-worker retrieval phase
-used ten CPU cores and peaked around 31 GB RSS, so it is intended for capable
-local machines.
+A larger Kibana retry tested a 1.8 GB checkout with 63,399 supported source
+files and 222,701 extracted symbols. In that 20-task structural run, every
+target file appeared in the first 10 results, with the first correct file
+usually near the top.
 
 See [large repository held-out results](benchmarks/LARGE-REPO-HELDOUT.md) for
 the full tables, commands, and caveats.
@@ -236,6 +210,7 @@ the full tables, commands, and caveats.
 | Reader goal | Document |
 | --- | --- |
 | Start from scratch. | [Quick-start tutorial](docs/tutorials/quick-start.md) |
+| Decide whether Spacefolding fits. | [Why Spacefolding](docs/concepts/why-spacefolding.md) |
 | Understand the model. | [How Spacefolding works](docs/concepts/how-spacefolding-works.md) |
 | Tune retrieval behavior. | [Retrieval pipeline](docs/concepts/retrieval-pipeline.md) |
 | Use command-line commands. | [CLI reference](docs/reference/cli.md) |

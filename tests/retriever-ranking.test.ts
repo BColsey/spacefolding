@@ -73,6 +73,20 @@ function makeStorage(
   references: Record<string, string[]> = {}
 ) {
   const chunkMap = new Map(chunks.map((chunk) => [chunk.id, chunk]));
+  const getCodeSymbols = (chunkId: string): CodeSymbol[] => {
+    const chunk = chunkMap.get(chunkId);
+    if (!chunk) return [];
+    return (symbols[chunkId] ?? []).map((symbol) => {
+      if (typeof symbol === 'string') return makeSymbol(chunk, symbol);
+      return makeSymbol(chunk, symbol.name, symbol.kind);
+    });
+  };
+  const getCodeReferences = (chunkId: string): CodeReference[] => {
+    const chunk = chunkMap.get(chunkId);
+    if (!chunk) return [];
+    return (references[chunkId] ?? []).map((target) => makeReference(chunk, target));
+  };
+
   return {
     getChunk: (id: string) => chunkMap.get(id) ?? null,
     getAllChunks: () => chunks,
@@ -83,19 +97,10 @@ function makeStorage(
       .sort((a, b) => b.score - a.score),
     searchByText: () => [],
     searchByStructure: () => [],
-    getCodeSymbols: (chunkId: string): CodeSymbol[] => {
-      const chunk = chunkMap.get(chunkId);
-      if (!chunk) return [];
-      return (symbols[chunkId] ?? []).map((symbol) => {
-        if (typeof symbol === 'string') return makeSymbol(chunk, symbol);
-        return makeSymbol(chunk, symbol.name, symbol.kind);
-      });
-    },
-    getCodeReferences: (chunkId: string): CodeReference[] => {
-      const chunk = chunkMap.get(chunkId);
-      if (!chunk) return [];
-      return (references[chunkId] ?? []).map((target) => makeReference(chunk, target));
-    },
+    getCodeSymbols,
+    getCodeReferences,
+    getAllCodeSymbols: () => chunks.flatMap((chunk) => getCodeSymbols(chunk.id)),
+    getAllCodeReferences: () => chunks.flatMap((chunk) => getCodeReferences(chunk.id)),
   };
 }
 
@@ -470,6 +475,45 @@ describe('HybridRetriever structural ranking', () => {
     expect(results[0].reasons).toContain(
       'structural retrieval unavailable: code structure index unavailable'
     );
+  });
+
+  it('batches structural field lookups during deterministic structural scans', async () => {
+    const chunks = [
+      makeChunk('owner', 'src/domain/target.ts', 900),
+      makeChunk('reference', 'src/domain/caller.ts', 900),
+      makeChunk('noise', 'src/domain/noise.ts', 900),
+    ];
+    const baseStorage = makeStorage(
+      chunks,
+      {},
+      {
+        owner: ['TargetSymbol'],
+      },
+      {
+        reference: ['TargetSymbol'],
+      }
+    );
+    const storage = {
+      ...baseStorage,
+      getCodeSymbols: vi.fn(baseStorage.getCodeSymbols),
+      getCodeReferences: vi.fn(baseStorage.getCodeReferences),
+      getAllCodeSymbols: vi.fn(baseStorage.getAllCodeSymbols),
+      getAllCodeReferences: vi.fn(baseStorage.getAllCodeReferences),
+    };
+    const retriever = new HybridRetriever(storage as any, new DeterministicEmbeddingProvider());
+
+    const results = await retriever.retrieve('where is TargetSymbol defined', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    expect(storage.getAllCodeSymbols).toHaveBeenCalledTimes(1);
+    expect(storage.getAllCodeReferences).toHaveBeenCalledTimes(1);
+    expect(storage.getCodeSymbols).not.toHaveBeenCalled();
+    expect(storage.getCodeReferences).not.toHaveBeenCalled();
+    expect(results.map((result) => result.chunkId)).toEqual(['owner', 'reference']);
+    expect(results[0].reasons).toContain('sparse exact identifier symbol: TargetSymbol');
+    expect(results[1].reasons).toContain('sparse exact identifier reference: TargetSymbol');
   });
 
   it('falls back to vector results when hybrid text sources fail', async () => {
