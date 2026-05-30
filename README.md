@@ -121,6 +121,7 @@ npm run build
 node dist/main.js download-model
 node dist/main.js ingest-project .
 node dist/main.js retrieve --query "how does routing work" --mode focused
+node dist/main.js retrieve --query "fix auth timeout" --format pack
 ```
 
 For the full setup path, see the [quick-start tutorial](docs/tutorials/quick-start.md).

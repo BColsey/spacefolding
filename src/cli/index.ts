@@ -23,12 +23,15 @@ import { exportState, importState } from './commands/export-import.js';
 import { lstatSync, readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { formatSourceScoreBreakdown } from '../core/retriever.js';
+import { formatContextPack } from '../core/context-pack.js';
 import type { EmbeddingProvider, RetrievalMode, RetrievalStrategy } from '../types/index.js';
 import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
 
 type EmbeddingProviderName = 'local' | 'gpu' | 'deterministic';
+type RetrieveOutputFormat = 'summary' | 'pack';
 const VALID_RETRIEVAL_MODES = RETRIEVAL_MODES;
 const VALID_RETRIEVAL_STRATEGIES = RETRIEVAL_STRATEGIES;
+const VALID_RETRIEVE_OUTPUT_FORMATS: RetrieveOutputFormat[] = ['summary', 'pack'];
 
 interface EmbeddingProviderConfig {
   providerName: EmbeddingProviderName;
@@ -44,6 +47,7 @@ export interface ParsedRetrieveCommandOptions {
   topK?: number;
   returnLimit?: number;
   maxHops?: number;
+  format: RetrieveOutputFormat;
 }
 
 function parseIntegerOption(
@@ -97,6 +101,11 @@ export function parseRetrieveCommandOptions(opts: Record<string, unknown>): {
   const maxHops = parseIntegerOption(opts.maxHops, '--max-hops', { allowZero: true });
   if (maxHops.error) return { error: maxHops.error };
 
+  const format = (opts.format ?? 'summary') as RetrieveOutputFormat;
+  if (!VALID_RETRIEVE_OUTPUT_FORMATS.includes(format)) {
+    return { error: `Invalid format "${format}". Must be one of: ${VALID_RETRIEVE_OUTPUT_FORMATS.join(', ')}` };
+  }
+
   return {
     options: {
       query,
@@ -106,6 +115,7 @@ export function parseRetrieveCommandOptions(opts: Record<string, unknown>): {
       topK: topK.value,
       returnLimit: returnLimit.value,
       maxHops: maxHops.value,
+      format,
     },
   };
 }
@@ -463,6 +473,7 @@ export function buildCLI(): Command {
     .option('--top-k <number>', 'Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)')
     .option('--return-limit <number>', 'Max scored candidates to consider before token budgeting')
     .option('--max-hops <number>', 'Max graph traversal hops (default: 1 for graph strategy, 0 otherwise)')
+    .option('--format <type>', 'Output format: summary or pack', 'summary')
     .action(async (opts, cmd) => {
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const parsed = parseRetrieveCommandOptions(opts);
@@ -481,6 +492,12 @@ export function buildCLI(): Command {
         returnLimit: retrieveOptions.returnLimit,
         maxHops: retrieveOptions.maxHops,
       });
+
+      if (retrieveOptions.format === 'pack') {
+        console.log(formatContextPack({ query: retrieveOptions.query, ...result }));
+        pipeline.close();
+        return;
+      }
 
       console.log(chalk.bold(`Query: ${retrieveOptions.query}`));
       console.log(chalk.gray(

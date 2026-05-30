@@ -1,7 +1,7 @@
 ---
 title: MCP Tools Reference
 description: Reference for Spacefolding MCP tool names, inputs, outputs, and common workflows.
-last_updated: 2026-05-27
+last_updated: 2026-05-29
 review_schedule: quarterly
 owner: maintainers
 doc_type: reference
@@ -119,7 +119,8 @@ Retrieve task-relevant context.
   "mode": "focused",
   "maxTokens": 50000,
   "returnLimit": 15,
-  "maxHops": 0
+  "maxHops": 0,
+  "format": "pack"
 }
 ```
 
@@ -132,6 +133,7 @@ Retrieve task-relevant context.
 | `topK` | Adaptive | Retrieval candidates before selection. |
 | `returnLimit` | `topK` | Scored candidates considered before budget fill. |
 | `maxHops` | Strategy-dependent | Graph traversal hops. |
+| `format` | `json` | `json` returns structured fields. `pack` returns an agent-ready Markdown context pack with selected chunks, reasons, token use, and omissions. |
 
 See [retrieval pipeline](../concepts/retrieval-pipeline.md) for strategy and mode details.
 

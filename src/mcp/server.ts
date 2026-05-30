@@ -7,6 +7,7 @@ import {
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import type { RetrievalMode, RetrievalStrategy } from '../types/index.js';
 import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
+import { formatContextPack } from '../core/context-pack.js';
 
 const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
@@ -15,6 +16,7 @@ const MAX_CHUNK_IDS = 1_000;
 
 const VALID_STRATEGIES: readonly string[] = RETRIEVAL_STRATEGIES;
 const VALID_MODES: readonly string[] = RETRIEVAL_MODES;
+const VALID_RETRIEVE_FORMATS = ['json', 'pack'] as const;
 const VALID_GRAPH_OPERATIONS = ['add', 'remove'] as const;
 const VALID_DEPENDENCY_TYPES = ['references', 'defines', 'summarizes', 'overrides', 'contains'] as const;
 
@@ -223,6 +225,11 @@ export const TOOL_DEFINITIONS = [
         maxHops: {
           type: 'number',
           description: 'Max dependency graph traversal hops (default: 1 for graph strategy, 0 otherwise; graph traversal is disabled unless requested)',
+        },
+        format: {
+          type: 'string',
+          enum: VALID_RETRIEVE_FORMATS,
+          description: 'Response format: json returns structured fields; pack returns an agent-ready Markdown context pack',
         },
       },
       required: ['query'],
@@ -463,8 +470,12 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           const topK = args!.topK as number | undefined;
           const returnLimit = args!.returnLimit as number | undefined;
           const maxHops = args!.maxHops as number | undefined;
+          const format = (args!.format as string | undefined) ?? 'json';
 
           const result = await pipeline.retrieve(query, maxTokens, { strategy, mode, topK, returnLimit, maxHops });
+          if (format === 'pack') {
+            return textResponse(formatContextPack({ query, ...result }));
+          }
           return jsonResponse({
             chunks: result.chunks.map((c) => ({
               id: c.id,
@@ -578,6 +589,12 @@ function jsonResponse(data: unknown) {
   };
 }
 
+function textResponse(text: string) {
+  return {
+    content: [{ type: 'text' as const, text }],
+  };
+}
+
 function errorResponse(message: string) {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
@@ -596,6 +613,12 @@ export function validateArgs(args: Record<string, unknown> | undefined, toolName
   if (toolName === 'retrieve_context' || toolName === 'iterative_retrieve') {
     if (typeof args.query !== 'string' || args.query.trim().length === 0) {
       return 'query must be a non-empty string';
+    }
+  }
+
+  if (toolName === 'retrieve_context' && args.format !== undefined) {
+    if (!VALID_RETRIEVE_FORMATS.includes(args.format as typeof VALID_RETRIEVE_FORMATS[number])) {
+      return `format must be one of: ${VALID_RETRIEVE_FORMATS.join(', ')}`;
     }
   }
 

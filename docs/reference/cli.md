@@ -1,7 +1,7 @@
 ---
 title: CLI Reference
 description: Command-line reference for running, ingesting, retrieving, exporting, and inspecting Spacefolding context.
-last_updated: 2026-05-27
+last_updated: 2026-05-29
 review_schedule: quarterly
 owner: maintainers
 doc_type: reference
@@ -88,6 +88,7 @@ node dist/main.js ingest-project . --no-docs
 node dist/main.js retrieve --query "how does routing work"
 node dist/main.js retrieve --query "where is ContextRouter" --strategy structural --mode focused
 node dist/main.js retrieve --query "all retrieval budget behavior" --mode broad --max-tokens 50000
+node dist/main.js retrieve --query "fix auth timeout" --format pack
 ```
 
 | Option | Default | Description |
@@ -99,6 +100,7 @@ node dist/main.js retrieve --query "all retrieval budget behavior" --mode broad 
 | `--top-k <number>` | Adaptive | Retrieval candidates before selection. |
 | `--return-limit <number>` | `top-k` | Candidates considered before budget fill. |
 | `--max-hops <number>` | Strategy-dependent | Graph traversal hops. |
+| `--format <type>` | `summary` | `summary` for terminal diagnostics or `pack` for an agent-ready Markdown context pack. |
 
 See [retrieval pipeline](../concepts/retrieval-pipeline.md) for strategy and mode behavior.
 

@@ -76,6 +76,15 @@ async function callMcpTool<T>(
   name: string,
   args: Record<string, unknown>
 ): Promise<T> {
+  const text = await callMcpToolText(pipeline, name, args);
+  return JSON.parse(text) as T;
+}
+
+async function callMcpToolText(
+  pipeline: PipelineOrchestrator,
+  name: string,
+  args: Record<string, unknown>
+): Promise<string> {
   const server = createMCPServer(pipeline);
   const client = new Client({ name: 'spacefolding-interface-test', version: '0.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -86,7 +95,7 @@ async function callMcpTool<T>(
     const response = await client.callTool({ name, arguments: args });
     const text = response.content.find((item) => item.type === 'text');
     expect(text).toBeDefined();
-    return JSON.parse(text!.text) as T;
+    return text!.text;
   } finally {
     await client.close();
     await server.close();
@@ -113,15 +122,16 @@ describe('CLI interface', () => {
     expect(ingestProject?.options.map((option) => option.long)).toContain('--include-benchmarks');
     expect(ingestProject?.options.map((option) => option.long)).toContain('--no-docs');
     expect(retrieve?.options.map((option) => option.long)).toEqual(
-      expect.arrayContaining(['--mode', '--return-limit', '--top-k'])
+      expect.arrayContaining(['--mode', '--return-limit', '--top-k', '--format'])
     );
   });
 
-  it('retrieve command has mode, strategy, max-tokens, and top-k options', () => {
+  it('retrieve command has mode, strategy, max-tokens, top-k, and format options', () => {
     const cli = buildCLI();
     const retrieve = cli.commands.find((command) => command.name() === 'retrieve');
     const optionLongs = retrieve?.options.map((option) => option.long) ?? [];
     const topKOpt = retrieve?.options.find((option) => option.long === '--top-k');
+    const formatOpt = retrieve?.options.find((option) => option.long === '--format');
 
     expect(optionLongs).toContain('--mode');
     expect(optionLongs).toContain('--strategy');
@@ -129,8 +139,11 @@ describe('CLI interface', () => {
     expect(optionLongs).toContain('--top-k');
     expect(optionLongs).toContain('--return-limit');
     expect(optionLongs).toContain('--max-hops');
+    expect(optionLongs).toContain('--format');
     expect(topKOpt?.description).toContain('retrieval candidates');
     expect(topKOpt?.description).toContain('selection and token budgeting');
+    expect(formatOpt?.description).toContain('summary');
+    expect(formatOpt?.description).toContain('pack');
   });
 
   it('retrieve command mode option describes focused, broad, exhaustive', () => {
@@ -193,6 +206,7 @@ describe('CLI interface', () => {
       topK: 12,
       returnLimit: 8,
       maxHops: 0,
+      format: 'summary',
     });
   });
 
@@ -204,6 +218,7 @@ describe('CLI interface', () => {
     expect(parsed.error).toBeUndefined();
     expect(parsed.options?.maxTokens).toBeUndefined();
     expect(parsed.options?.maxHops).toBeUndefined();
+    expect(parsed.options?.format).toBe('summary');
   });
 
   it('rejects malformed retrieve numeric options before running retrieval', () => {
@@ -215,6 +230,7 @@ describe('CLI interface', () => {
     expect(parseRetrieveCommandOptions({ query: '   ' }).error).toContain('query must be a non-empty string');
     expect(parseRetrieveCommandOptions({ query: 'x', mode: 'all' }).error).toContain('Invalid mode');
     expect(parseRetrieveCommandOptions({ query: 'x', strategy: 'all' }).error).toContain('Invalid strategy');
+    expect(parseRetrieveCommandOptions({ query: 'x', format: 'xml' }).error).toContain('Invalid format');
   });
 
   it('retrieve command output includes retrieval token usage metadata', async () => {
@@ -247,6 +263,53 @@ describe('CLI interface', () => {
       expect(output).toContain('Intent:');
       expect(output).toContain('Mode: focused');
       expect(output).toMatch(/Tokens: \d+\/\d+ target \(8000 hard cap\)/);
+    } finally {
+      if (originalEmbeddingProvider === undefined) {
+        delete process.env.EMBEDDING_PROVIDER;
+      } else {
+        process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('retrieve command can print an agent-ready context pack', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'spacefolding-cli-pack-'));
+    const dbPath = join(dir, 'spacefolding.db');
+    const sourcePath = join(dir, 'pack-target.ts');
+    const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
+    process.env.EMBEDDING_PROVIDER = 'deterministic';
+    writeFileSync(sourcePath, 'export function cliContextPackTarget() { return "pack"; }');
+
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      const ingestCli = buildCLI();
+      ingestCli.exitOverride();
+      await ingestCli.parseAsync(['node', 'spacefolding', '--db', dbPath, 'ingest', sourcePath]);
+      log.mockClear();
+
+      const retrieveCli = buildCLI();
+      retrieveCli.exitOverride();
+      await retrieveCli.parseAsync([
+        'node',
+        'spacefolding',
+        '--db',
+        dbPath,
+        'retrieve',
+        '--query',
+        'where is cliContextPackTarget',
+        '--strategy',
+        'text',
+        '--format',
+        'pack',
+      ]);
+
+      const output = log.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(output).toContain('# Spacefolding Context Pack');
+      expect(output).toContain('Query: where is cliContextPackTarget');
+      expect(output).toContain('pack-target.ts');
+      expect(output).toContain('export function cliContextPackTarget()');
     } finally {
       if (originalEmbeddingProvider === undefined) {
         delete process.env.EMBEDDING_PROVIDER;
@@ -310,6 +373,7 @@ describe('MCP interface', () => {
     expect(names).toContain('ingest_project');
     expect(retrieve?.inputSchema.properties).toHaveProperty('mode');
     expect(retrieve?.inputSchema.properties).toHaveProperty('returnLimit');
+    expect(retrieve?.inputSchema.properties).toHaveProperty('format');
     expect(ingestProject?.inputSchema.properties).toHaveProperty('includeTests');
     expect(ingestProject?.inputSchema.properties).toHaveProperty('includeBenchmarks');
   });
@@ -340,6 +404,7 @@ describe('MCP interface', () => {
     expect(props.maxHops?.description).toContain('default: 1 for graph strategy');
     expect(props.maxHops?.description).toContain('0 otherwise');
     expect(props.maxHops?.description).toContain('disabled');
+    expect(props.format?.description).toContain('agent-ready Markdown context pack');
   });
 
   it('iterative_retrieve describes structural default strategy wiring', () => {
@@ -471,11 +536,42 @@ describe('MCP retrieve_context tool calls', () => {
       query: 'find auth',
       strategy: 'keyword',
     });
+    const invalidFormat = await callMcpTool<{ error: string }>(pipeline, 'retrieve_context', {
+      query: 'find auth',
+      format: 'xml',
+    });
 
     expect(invalidMode.error).toContain('mode must be one of');
     expect(invalidMode.error).toContain('focused');
     expect(invalidStrategy.error).toContain('strategy must be one of');
     expect(invalidStrategy.error).toContain('structural');
+    expect(invalidFormat.error).toContain('format must be one of');
+    expect(invalidFormat.error).toContain('pack');
+  });
+
+  it('returns an agent-ready context pack when requested', async () => {
+    const { pipeline } = createWebFixture();
+
+    await pipeline.ingest(
+      'file',
+      'export function mcpContextPackTarget() { return "pack"; }',
+      'code',
+      'src/mcp/context-pack.ts',
+      'typescript'
+    );
+
+    const pack = await callMcpToolText(pipeline, 'retrieve_context', {
+      query: 'where is mcpContextPackTarget',
+      strategy: 'text',
+      mode: 'focused',
+      format: 'pack',
+      maxTokens: 8_000,
+    });
+
+    expect(pack).toContain('# Spacefolding Context Pack');
+    expect(pack).toContain('Query: where is mcpContextPackTarget');
+    expect(pack).toContain('src/mcp/context-pack.ts');
+    expect(pack).toContain('export function mcpContextPackTarget()');
   });
 
   it('limits score_context tiers and diagnostics to chunkIds when provided', async () => {
