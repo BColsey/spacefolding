@@ -50,15 +50,27 @@ Landed and verified green (build + lint + 360 tests):
   listener); `ingest_context.type` is now a JSON-Schema enum; intent detection uses
   word-boundary matching only (dropped the substring false positives).
 
-In flight (background workflow): **WS0.6** — BM25 baseline, Hits@1/Hits@5 metrics, remove
-fabricated dataset task T01, unify E2E token accounting (benchmarks/ only).
+Done since: **WS0.6** (BM25 baseline, Hits@1/Hits@5, removed fabricated T01, unified E2E
+token accounting), **WS0.3 RRF core**, **WS0.4 default**, **WS0.1 CI**, **WS0.2 corpus
+expansion** — all committed/pushed to the branch.
 
-Deliberately NOT yet done (and why): **WS0.3 RRF fusion core has now landed** (see above),
-measured against the BM25 + Hits benchmark from WS0.6 — structural held/improved and the
-no-match-returns-empty acceptance is covered by a unit test. Its remaining sub-items (typed
-`StructuralSearchResult` match fields, `mergeRawResults` double-count removal, and wiring the
-relevance floor into `retrieval-policy.ts`) are deferred. **WS0.2 corpus-derived expansion**,
-chunk-size/AST defaults (WS0.5), and the storage-scale work (Phase 2) remain.
+Remaining in Phase 0 (and why deferred):
+- **Acceptance-gate recalibration (WS0.1/WS0.6).** Removing the contamination dropped in-repo
+  E2E focused recall to ~0.80 against thresholds (0.95/0.35) that were reverse-engineered from
+  the *contaminated* system. The thresholds must be re-derived on a calibration split with
+  commit-derived ground truth before the E2E gate becomes blocking. NOT lowered to force green.
+- **WS0.5 chunk-size (~500) + AST-default.** A behavioral change to chunking that needs the
+  recalibrated benchmark to validate (gated for the same reason RRF was) — doing it blind would
+  change retrieval with no trustworthy measure. AST-default also needs the Python sidecar made
+  reliable.
+- **WS0.3 sub-items** — typed `StructuralSearchResult` match fields (replace stringly-typed
+  boost parsing), `mergeRawResults` double-count removal, wiring the relevance floor into
+  `retrieval-policy.ts`. Medium-risk ranking-logic refactors; better done with review than
+  unsupervised.
+- **Security:** `npm audit` reports 7 vulns (1 critical, 5 high, 1 moderate), almost all in
+  dev/transitive deps (vitest→vite/esbuild; `hono` via the MCP SDK). `npm audit fix` is
+  available but left for a supervised run (it touches the lockfile / test runner).
+- Phase 2 storage-scale work.
 
 ## Guiding principles
 
