@@ -43,6 +43,8 @@ export interface Metrics {
   ndcgAt10: number;
   ndcgAt20: number;
   mrr: number; // Mean Reciprocal Rank
+  hitsAt1: number; // 1.0 if any relevant file is ranked #1, else 0.0
+  hitsAt5: number; // 1.0 if any relevant file is in the top 5, else 0.0
   avgResults: number;
 }
 
@@ -97,7 +99,7 @@ export interface CliOptions {
   maxChunks: number | null;
 }
 
-const ALL_STRATEGIES = ['keyword', 'path-match', 'fts', 'vector', 'symbol-only', 'structural'];
+const ALL_STRATEGIES = ['keyword', 'bm25', 'path-match', 'fts', 'vector', 'symbol-only', 'structural'];
 const KNOWN_STRATEGIES = new Set([
   ...ALL_STRATEGIES,
   'hybrid',
@@ -181,6 +183,10 @@ function computeMetrics(retrieved: string[], relevant: Set<string>, totalRelevan
     return 0;
   })();
 
+  // hits@k: 1.0 if any relevant file appears in the top-k results, else 0.0.
+  // These are the most meaningful metrics when a task has a single gold file.
+  const hitsAt = (k: number) => (retrieved.slice(0, k).some((p) => relevant.has(p)) ? 1 : 0);
+
   return {
     recallAt5: recallAt(5),
     recallAt10: recallAt(10),
@@ -191,6 +197,8 @@ function computeMetrics(retrieved: string[], relevant: Set<string>, totalRelevan
     ndcgAt10: ndcgAt(10),
     ndcgAt20: ndcgAt(20),
     mrr,
+    hitsAt1: hitsAt(1),
+    hitsAt5: hitsAt(5),
     avgResults: retrieved.length,
   };
 }
@@ -383,6 +391,85 @@ async function keywordBaseline(
 
   scored.sort((a, b) => b.score - a.score);
   return scored.filter((s) => s.score > 0).map((s) => s.path);
+}
+
+/**
+ * Tokenize text for BM25 — lowercase, split on non-word characters, keep
+ * tokens of length >= 2 (matches the granularity of a real lexical search).
+ */
+function bm25Tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length >= 2);
+}
+
+/**
+ * Classic Okapi BM25 baseline (k1=1.5, b=0.75).
+ *
+ * Each chunk is treated as a document — consistent with how the keyword
+ * baseline scores `allChunks`. IDF is computed over the chunk corpus, the
+ * query is tokenized the same way, and per-chunk BM25 scores are aggregated
+ * by file path so the strategy ranks files (like every other strategy here).
+ */
+async function bm25Baseline(
+  task: BenchmarkTask,
+  allChunks: { id: string; text: string; path?: string }[]
+): Promise<string[]> {
+  const K1 = 1.5;
+  const B = 0.75;
+
+  // Pre-tokenize documents (one per chunk) and term frequencies.
+  const docs = allChunks.map((chunk) => {
+    const tokens = bm25Tokenize(chunk.text + ' ' + (chunk.path ?? ''));
+    const termFreq = new Map<string, number>();
+    for (const token of tokens) {
+      termFreq.set(token, (termFreq.get(token) ?? 0) + 1);
+    }
+    return { path: chunk.path ?? chunk.id, length: tokens.length, termFreq };
+  });
+
+  const docCount = docs.length;
+  if (docCount === 0) return [];
+
+  const avgDocLength = docs.reduce((sum, doc) => sum + doc.length, 0) / docCount;
+
+  // Document frequency per term across the corpus.
+  const docFreq = new Map<string, number>();
+  for (const doc of docs) {
+    for (const term of doc.termFreq.keys()) {
+      docFreq.set(term, (docFreq.get(term) ?? 0) + 1);
+    }
+  }
+
+  const queryTerms = [...new Set(bm25Tokenize(task.task))];
+  const idf = new Map<string, number>();
+  for (const term of queryTerms) {
+    const df = docFreq.get(term) ?? 0;
+    // Standard BM25 IDF with +1 to keep it non-negative.
+    idf.set(term, Math.log(1 + (docCount - df + 0.5) / (df + 0.5)));
+  }
+
+  // Aggregate BM25 scores per file path.
+  const fileScores = new Map<string, number>();
+  for (const doc of docs) {
+    let score = 0;
+    for (const term of queryTerms) {
+      const tf = doc.termFreq.get(term);
+      if (!tf) continue;
+      const termIdf = idf.get(term) ?? 0;
+      const numerator = tf * (K1 + 1);
+      const denominator = tf + K1 * (1 - B + (B * doc.length) / avgDocLength);
+      score += termIdf * (numerator / denominator);
+    }
+    if (score <= 0) continue;
+    fileScores.set(doc.path, (fileScores.get(doc.path) ?? 0) + score);
+  }
+
+  return [...fileScores.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([path]) => path);
 }
 
 /** Random baseline — pick random chunks */
@@ -596,6 +683,9 @@ async function evaluateBenchmarkTask(
       break;
     case 'keyword':
       retrievedPaths = await keywordBaseline(task, allChunks);
+      break;
+    case 'bm25':
+      retrievedPaths = await bm25Baseline(task, allChunks);
       break;
     case 'path-match':
       retrievedPaths = await pathMatchBaseline(task, allChunks);
@@ -862,6 +952,8 @@ async function runEvaluation(options: CliOptions) {
     log(`  NDCG@10:        ${avgMetrics.ndcgAt10.toFixed(3)}`);
     log(`  NDCG@20:        ${avgMetrics.ndcgAt20.toFixed(3)}`);
     log(`  MRR:            ${avgMetrics.mrr.toFixed(3)}`);
+    log(`  Hits@1:         ${avgMetrics.hitsAt1.toFixed(3)}`);
+    log(`  Hits@5:         ${avgMetrics.hitsAt5.toFixed(3)}`);
     log(`  Avg results:    ${avgMetrics.avgResults.toFixed(1)}`);
 
     // Breakdown by intent

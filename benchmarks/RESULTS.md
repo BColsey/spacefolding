@@ -1,5 +1,12 @@
 # Benchmark Results - Spacefolding Retrieval Evaluation
 
+> ⚠️ **These numbers are stale and must be regenerated.** They pre-date two changes:
+> (1) removal of the hardcoded query-expansion tables that mapped generic terms to this
+> repo's own symbols (train-on-test contamination), and (2) the addition of a file-level
+> BM25 baseline (`--strategy bm25`) and Hits@1/Hits@5 metrics. Re-run `evaluate.ts` and
+> grade structural retrieval against **BM25**, not the binary keyword baseline, before
+> citing any figures here. See `CHANGELOG.md` and `IMPLEMENTATION-PLAN.md` (WS0.6).
+
 Last verified: 2026-05-25
 
 Dataset: `benchmarks/dataset.json`

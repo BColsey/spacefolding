@@ -31,6 +31,7 @@ First-time: run `node dist/main.js download-model` to get the embedding model.
 | Tool | What it does |
 |------|-------------|
 | `ingest_context` | Add context (text, code, diffs, logs, constraints) — auto-chunks if oversized |
+| `ingest_project` | Index a whole project tree (preferred bulk ingest entry point) |
 | `ingest_directory` | Bulk-ingest all files in a directory tree |
 | `score_context` | Score + route chunks into hot/warm/cold |
 | `compress_context` | Compress chunks into structured summary |

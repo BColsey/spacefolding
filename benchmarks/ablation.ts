@@ -50,6 +50,8 @@ interface Metrics {
   ndcgAt10: number;
   ndcgAt20: number;
   mrr: number;
+  hitsAt1: number;
+  hitsAt5: number;
   avgResults: number;
 }
 
@@ -261,11 +263,14 @@ function computeMetrics(retrieved: string[], relevant: Set<string>, totalRelevan
     }
     return 0;
   })();
+  // hits@k: 1.0 if any relevant file is in the top-k results, else 0.0.
+  const hitsAt = (k: number) => (retrieved.slice(0, k).some((p) => relevant.has(p)) ? 1 : 0);
 
   return {
     recallAt5: recallAt(5), recallAt10: recallAt(10), recallAt20: recallAt(20),
     precisionAt5: precisionAt(5), precisionAt10: precisionAt(10), precisionAt20: precisionAt(20),
-    ndcgAt10: ndcgAt(10), ndcgAt20: ndcgAt(20), mrr, avgResults: retrieved.length,
+    ndcgAt10: ndcgAt(10), ndcgAt20: ndcgAt(20), mrr,
+    hitsAt1: hitsAt(1), hitsAt5: hitsAt(5), avgResults: retrieved.length,
   };
 }
 
@@ -514,6 +519,8 @@ async function runAblation(options: AblationCliOptions) {
     console.log(`  Precis@10:   ${avg.precisionAt10.toFixed(3)}`);
     console.log(`  NDCG@10:     ${avg.ndcgAt10.toFixed(3)}`);
     console.log(`  MRR:         ${avg.mrr.toFixed(3)}`);
+    console.log(`  Hits@1:      ${avg.hitsAt1.toFixed(3)}`);
+    console.log(`  Hits@5:      ${avg.hitsAt5.toFixed(3)}`);
     console.log(`  Avg results: ${avg.avgResults.toFixed(1)}`);
   }
 
@@ -535,6 +542,8 @@ async function runAblation(options: AblationCliOptions) {
     ['precisionAt10', 'Precis@10 '],
     ['ndcgAt10', 'NDCG@10   '],
     ['mrr', 'MRR       '],
+    ['hitsAt1', 'Hits@1    '],
+    ['hitsAt5', 'Hits@5    '],
     ['avgResults', 'Avg results'],
   ];
 

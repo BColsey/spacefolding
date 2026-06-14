@@ -9,6 +9,7 @@ env.useBrowserCache = false;
 type EmbeddingPipeline = Awaited<ReturnType<typeof pipeline<'feature-extraction'>>>;
 
 export class LocalEmbeddingProvider implements EmbeddingProvider {
+  readonly quality = 'local' as const;
   private pipe: EmbeddingPipeline | null = null;
   private loading: Promise<EmbeddingPipeline> | null = null;
 

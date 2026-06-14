@@ -3,15 +3,6 @@
   "description": "Benchmark dataset for evaluating Spacefolding's retrieval accuracy against its own codebase",
   "tasks": [
     {
-      "id": "T01",
-      "task": "Fix the authentication bug causing 401 errors in the login flow",
-      "intent": "debug",
-      "relevant_files": ["src/core/scorer.ts", "src/core/router.ts", "src/mcp/server.ts"],
-      "relevant_types": ["constraint", "code", "log"],
-      "relevant_keywords": ["scoring", "routing", "hot", "warm", "cold", "threshold"],
-      "irrelevant_files": ["src/core/watcher.ts", "src/web/server.ts", "docs/logo.svg"]
-    },
-    {
       "id": "T02",
       "task": "How does the scoring engine weight different factors?",
       "intent": "explain",

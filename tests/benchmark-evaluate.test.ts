@@ -24,6 +24,8 @@ const baseMetrics: Metrics = {
   ndcgAt10: 0,
   ndcgAt20: 0,
   mrr: 0,
+  hitsAt1: 0,
+  hitsAt5: 0,
   avgResults: 0,
 };
 
@@ -133,6 +135,7 @@ describe('retrieval benchmark report', () => {
   it('validates requested benchmark strategies consistently', () => {
     expect(resolveStrategies('all')).toEqual([
       'keyword',
+      'bm25',
       'path-match',
       'fts',
       'vector',

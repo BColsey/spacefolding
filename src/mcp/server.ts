@@ -122,6 +122,7 @@ export const TOOL_DEFINITIONS = [
         text: { type: 'string', description: 'The context text' },
         type: {
           type: 'string',
+          enum: ['fact', 'constraint', 'instruction', 'code', 'log', 'background', 'summary', 'diff', 'reference'],
           description:
             'Chunk type: fact, constraint, instruction, code, log, background, summary, diff, reference',
         },

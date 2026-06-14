@@ -3,6 +3,7 @@ import type {
   CodeSymbol,
   ContextChunk,
   EmbeddingProvider,
+  EmbeddingQuality,
   RerankerProvider,
   RetrievalMode,
   RetrievalStrategy,
@@ -59,6 +60,19 @@ export function formatSourceScoreBreakdown(sourceScores: RetrievalSourceScores):
 /** Maximum candidates to send to the reranker (avoids unnecessary work) */
 const RERANKER_MAX_CANDIDATES = 20;
 
+/**
+ * Single source of truth for embedding quality. Prefers the provider's declared
+ * `quality` tier; falls back to a constructor-name check for older providers and
+ * test mocks. Replaces the brittle `constructor.name` check that broke under
+ * minification and disagreed with the env-var path in the query planner.
+ */
+function inferEmbeddingQuality(provider: EmbeddingProvider): EmbeddingQuality {
+  if (provider.quality) return provider.quality;
+  return provider.constructor?.name === 'DeterministicEmbeddingProvider'
+    ? 'deterministic'
+    : 'local';
+}
+
 export class HybridRetriever {
   private reranker: RerankerProvider | null;
   private vectorReliable: boolean;
@@ -69,7 +83,7 @@ export class HybridRetriever {
     reranker?: RerankerProvider
   ) {
     this.reranker = reranker ?? null;
-    this.vectorReliable = embeddingProvider.constructor?.name !== 'DeterministicEmbeddingProvider';
+    this.vectorReliable = inferEmbeddingQuality(embeddingProvider) !== 'deterministic';
   }
 
   async retrieve(query: string, options: RetrievalOptions = {}): Promise<RetrievalResult[]> {
@@ -326,7 +340,7 @@ export class HybridRetriever {
     } catch (err) {
       pushUniqueWarning(retrievalWarnings, `structural retrieval unavailable: ${errorMessage(err)}`);
     }
-    const sparseTerms = buildSparseStructuralTerms(query, structuralQuery);
+    const sparseTerms = buildSparseStructuralTerms(structuralQuery);
     const pathIntentTerms = buildPathIntentTerms(sparseTerms);
     const candidates = new Map<string, FusedCandidate>();
     const structuralData = createStructuralDataCache(this.storage, retrievalWarnings);
@@ -840,142 +854,13 @@ const PATH_INTENT_STOP_WORDS = new Set([
   'types',
 ]);
 
-const TERM_EXPANSIONS: Record<string, Array<[string, number]>> = {
-  scoring: [['score', 1.2], ['scorer', 1.4], ['weight', 0.9], ['factor', 0.7]],
-  score: [['scorer', 1.1], ['scoring', 0.8]],
-  engine: [['scorer', 0.5], ['router', 0.4]],
-  weight: [['weights', 0.8], ['scorer', 0.6], ['routingweights', 0.8]],
-  weights: [['weight', 1.0], ['scorer', 0.6], ['routingweights', 0.8]],
-  factor: [['factors', 0.8], ['scorer', 0.5]],
-  factors: [['factor', 1.0], ['scorer', 0.5]],
-
-  route: [['router', 1.2], ['routing', 0.8], ['hot', 0.4], ['warm', 0.4], ['cold', 0.4]],
-  routed: [['route', 1.2], ['router', 1.4], ['routing', 1.0]],
-  routing: [['route', 1.0], ['router', 1.3], ['hot', 0.5], ['warm', 0.5], ['cold', 0.5]],
-  hot: [['router', 0.7], ['scorer', 0.4], ['routing', 0.5]],
-  warm: [['router', 0.7], ['routing', 0.5]],
-  cold: [['router', 0.7], ['scorer', 0.4], ['routing', 0.5]],
-  constraint: [['router', 0.8], ['scorer', 0.7], ['constraint', 1.0]],
-
-  chunk: [['chunks', 0.8], ['chunker', 0.9], ['ingester', 0.5], ['contextchunk', 0.5]],
-  chunks: [['chunk', 1.0], ['chunker', 0.9], ['ingester', 0.5], ['contextchunk', 0.5]],
-  chunking: [['chunk', 1.2], ['chunker', 1.4], ['split', 1.1], ['ingester', 0.9]],
-  splitter: [['split', 1.1], ['chunker', 1.2], ['ingester', 0.7]],
-  splits: [['split', 1.0], ['chunker', 1.0]],
-  split: [['chunker', 0.8], ['ingester', 0.6], ['maybesplit', 0.9]],
-  ingest: [['ingester', 1.0], ['ingestfile', 1.0], ['orchestrator', 0.8]],
-  ingested: [['ingest', 1.1], ['ingester', 0.9], ['ingestfile', 0.9]],
-  ingestion: [['ingest', 1.1], ['ingester', 0.9], ['orchestrator', 0.7]],
-  reingestion: [['ingest', 1.1], ['ingester', 0.9], ['watcher', 1.2], ['filewatcher', 1.2]],
-  reingest: [['ingest', 1.1], ['ingester', 0.9], ['watcher', 1.2], ['filewatcher', 1.2]],
-  change: [['watcher', 1.0], ['filewatcher', 1.0], ['chokidar', 0.8]],
-  changed: [['change', 1.0], ['watcher', 1.1], ['filewatcher', 1.1], ['chokidar', 0.8]],
-  changing: [['change', 1.0], ['watcher', 1.0], ['filewatcher', 1.0], ['chokidar', 0.8]],
-  modified: [['change', 0.9], ['watcher', 1.1], ['filewatcher', 1.1], ['chokidar', 0.8]],
-  modification: [['change', 0.9], ['watcher', 1.0], ['filewatcher', 1.0], ['chokidar', 0.8]],
-  watch: [['watcher', 1.2], ['filewatcher', 1.2], ['chokidar', 1.0]],
-  watcher: [['filewatcher', 1.0], ['chokidar', 0.8]],
-
-  embedding: [['embed', 1.0], ['embeddings', 0.8], ['embeddingprovider', 1.0], ['provider', 0.5]],
-  embeddings: [['embedding', 1.0], ['embed', 0.9], ['embeddingprovider', 1.0], ['provider', 0.5]],
-  provider: [['providers', 0.7], ['embeddingprovider', 0.5], ['compressionprovider', 0.5]],
-  providers: [['provider', 1.0], ['embeddingprovider', 0.5], ['compressionprovider', 0.5]],
-  openai: [['embedding', 0.5], ['provider', 0.5]],
-
-  mcp: [['server', 0.8], ['tool', 0.8], ['calltoolrequestschema', 0.8]],
-  tool: [['mcp', 0.7], ['server', 0.5], ['calltoolrequestschema', 0.7]],
-  tools: [['tool', 1.0], ['mcp', 0.7], ['server', 0.5]],
-  delete: [['deletechunk', 1.0], ['deletechunks', 1.0], ['remove', 0.8], ['repository', 0.7], ['storage', 0.5]],
-  deleting: [['delete', 1.1], ['deletechunk', 1.0], ['remove', 0.8], ['repository', 0.7]],
-  deletion: [['delete', 1.1], ['deletechunk', 1.0], ['remove', 0.8], ['repository', 0.7]],
-  remove: [['delete', 0.8], ['repository', 0.5]],
-
-  schema: [['migration', 0.9], ['migrations', 0.9], ['repository', 0.7], ['currentversion', 0.8]],
-  migrations: [['migration', 1.0], ['schema', 1.0], ['currentversion', 0.9], ['repository', 0.6]],
-  migration: [['migrations', 0.8], ['schema', 0.8], ['currentversion', 0.8]],
-  database: [['storage', 1.0], ['repository', 1.1], ['schema', 0.8], ['db', 0.5]],
-  stored: [['store', 1.1], ['storage', 1.0], ['repository', 0.9]],
-  store: [['stored', 0.8], ['storage', 0.8], ['repository', 0.7]],
-  queried: [['query', 1.0], ['get', 0.9], ['search', 0.7], ['repository', 0.7]],
-
-  dependency: [['dependencies', 0.9], ['dependencylink', 1.1], ['repository', 0.8], ['graph', 0.7]],
-  dependencies: [['dependency', 1.0], ['dependencylink', 1.1], ['repository', 0.8], ['graph', 0.7]],
-  links: [['link', 1.0], ['dependencylink', 0.9], ['dependency', 0.7]],
-  link: [['links', 0.8], ['dependencylink', 0.8]],
-  graph: [['dependency', 0.7], ['dependencylink', 0.7]],
-
-  hybrid: [['hybridretriever', 1.2], ['retriever', 1.0], ['retrieval', 0.7]],
-  retriever: [['retrieve', 0.9], ['retrieval', 0.8], ['hybridretriever', 0.8]],
-  retrieval: [['retrieve', 0.9], ['retriever', 1.0], ['hybridretriever', 0.7]],
-  reranking: [['rerank', 1.2], ['reranker', 1.4], ['deterministicreranker', 1.0], ['rerankerprovider', 1.0]],
-  rerank: [['reranker', 1.2], ['rerankerprovider', 0.9], ['deterministicreranker', 0.9]],
-  cross: [['reranker', 0.7], ['rerankerprovider', 0.7]],
-  encoder: [['reranker', 0.7], ['rerankerprovider', 0.7]],
-
-  classifier: [['classify', 1.1], ['classification', 0.6], ['chunktype', 0.7]],
-  classify: [['classifier', 1.2], ['chunktype', 0.7]],
-  detect: [['classify', 0.8], ['classifier', 0.9]],
-  detects: [['detect', 0.8], ['classifier', 0.9]],
-  types: [['type', 1.0], ['chunktype', 0.9], ['contextchunk', 0.6]],
-
-  environment: [['env', 1.1], ['process', 0.9], ['cli', 0.9], ['dbpath', 0.8], ['modelpath', 0.7], ['embeddingprovider', 0.8], ['compressionprovider', 0.8]],
-  variables: [['env', 1.1], ['process', 0.9], ['cli', 0.8], ['dbpath', 0.8], ['modelpath', 0.7]],
-  variable: [['env', 0.9], ['process', 0.7], ['cli', 0.6]],
-  behavior: [['config', 0.5], ['env', 0.5]],
-
-  sse: [['sseservertransport', 1.1], ['transport', 1.0], ['session', 0.9], ['sessionid', 0.9], ['transports', 0.8], ['server', 0.6]],
-  transport: [['sse', 0.9], ['sseservertransport', 1.0], ['session', 0.8], ['transports', 0.8]],
-  sessions: [['session', 1.0], ['sessionid', 0.9], ['transports', 0.7]],
-  session: [['sessions', 0.8], ['sessionid', 0.9], ['transports', 0.7]],
-  cleanup: [['close', 0.7], ['onclose', 0.9], ['delete', 0.4]],
-
-  web: [['server', 0.8], ['html', 0.7], ['api', 0.5]],
-  ui: [['web', 1.0], ['html', 0.8], ['server', 0.7], ['display', 0.5]],
-  display: [['web', 0.8], ['html', 0.8], ['render', 0.6]],
-  commands: [['command', 1.0], ['commander', 1.1], ['program', 0.9], ['cli', 0.9]],
-  command: [['commands', 0.8], ['commander', 1.0], ['program', 0.8], ['cli', 0.8]],
-  descriptions: [['description', 1.0], ['program', 0.4]],
-
-  compression: [['compress', 1.1], ['compressionprovider', 0.9], ['summary', 0.6], ['provider', 0.4]],
-  compress: [['compression', 0.9], ['compressionprovider', 0.8]],
-  fallback: [['deterministic', 0.8], ['provider', 0.5]],
-  deterministic: [['deterministiccompression', 0.7], ['deterministicembedding', 0.5], ['deterministicreranker', 0.5]],
-  token: [['tokens', 0.8], ['estimate', 0.8], ['tokenestimator', 1.0]],
-  tokens: [['token', 1.0], ['estimate', 0.8], ['tokenestimator', 1.0]],
-  estimator: [['estimate', 1.0], ['tokenestimator', 1.2]],
-  underestimating: [['estimate', 1.0], ['tokenestimator', 1.1], ['tokens', 0.6]],
-  budget: [['fillbudget', 1.3], ['budgetresult', 0.9], ['retrievalresult', 0.8], ['retriever', 0.7]],
-  controller: [['budget', 0.8], ['fillbudget', 0.7], ['router', 0.4]],
-  overflow: [['budget', 0.8], ['fillbudget', 0.7], ['retrievalresult', 0.5]],
-  sibling: [['collapsesiblings', 1.0], ['parentid', 0.6], ['budget', 0.5]],
-  collapse: [['collapsesiblings', 1.0], ['parentid', 0.6], ['budget', 0.5]],
-  python: [['def', 0.6], ['class', 0.4], ['chunker', 0.6]],
-  export: [['exportdata', 0.8], ['dependencylink', 0.5]],
-  import: [['exportdata', 0.6], ['dependencylink', 0.5]],
-};
-
-const PHRASE_EXPANSIONS: Array<[RegExp, Array<[string, number]>]> = [
-  [/\bembedding providers?\b/i, [['embeddingprovider', 1.5], ['embedbatch', 1.1], ['types', 0.9]]],
-  [/\bfull[-\s]?text\b/i, [['fts', 1.1], ['searchbytext', 0.9], ['searchbylexical', 0.8]]],
-  [/\breranking\s+step\b/i, [['rerankerprovider', 1.6], ['reranker', 1.4], ['types', 1.0]]],
-  [/\bcross[-\s]?encoder\b/i, [['reranker', 1.4], ['rerankerprovider', 1.6], ['deterministicreranker', 0.9], ['types', 1.0]]],
-  [/\benvironment variables?\b/i, [['env', 1.4], ['process', 1.0], ['cli', 1.0], ['dbpath', 0.9], ['modelpath', 0.8]]],
-  [/\bmcp tools?\b/i, [['mcp', 1.2], ['server', 1.0], ['calltoolrequestschema', 0.9]]],
-  [/\bbatch\s+delet(?:e|es|ed|ing|ion)\b/i, [['repository', 1.3], ['storage', 1.2], ['deletechunks', 1.1], ['deletechunk', 1.1], ['contextfilter', 2.0]]],
-  [/\b(?:source|path)\s+(?:or|and)\s+(?:source|path)\s+patterns?\b/i, [['contextfilter', 3.2], ['repository', 1.2], ['storage', 1.0], ['querychunks', 0.9]]],
-  [/\b(?:authentication|auth|login)\b.*\b(?:401|unauthorized|errors?|bug)\b|\b(?:401|unauthorized|errors?|bug)\b.*\b(?:authentication|auth|login)\b/i, [['scorer', 1.3], ['router', 1.3], ['routing', 1.0]]],
-  [/\blogin\s+flow\b/i, [['router', 1.2], ['scorer', 1.0]]],
-  [/\bdependency graph\b/i, [['dependencylink', 1.2], ['repository', 0.9], ['exportdata', 0.7]]],
-  [/\bweb ui\b/i, [['web', 1.2], ['server', 1.0], ['html', 0.9]]],
-  [/\bcli commands?\b/i, [['cli', 1.2], ['commander', 1.1], ['program', 1.0]]],
-  [/\btoken estimator\b/i, [['tokenestimator', 1.3], ['estimate', 1.0]]],
-  [/\bbudget controller\b/i, [['fillbudget', 1.4], ['budgetresult', 1.0], ['retrievalresult', 0.9], ['retriever', 0.8]]],
-  [/\bre[-\s]?ingest(?:ion|ed|s)?\b/i, [['ingest', 1.2], ['ingestfile', 1.1], ['watcher', 1.2], ['filewatcher', 1.2]]],
-  [/\bincremental\s+file\s+re[-\s]?ingestion\b/i, [['filewatcher', 1.5], ['watcher', 1.5], ['chokidar', 1.1], ['scheduleingest', 1.1]]],
-  [/\bfiles?\s+(?:is\s+|are\s+)?(?:modified|changed)|\b(?:modified|changed)\s+files?\b/i, [['filewatcher', 1.5], ['watcher', 1.5], ['chokidar', 1.1], ['scheduleingest', 1.0]]],
-];
-
-function buildSparseStructuralTerms(query: string, structuralQuery: StructuralQuery): SparseStructuralTerm[] {
+// Sparse structural terms are derived ONLY from the query itself (tokens,
+// identifiers, split-identifier parts, and conservative stems). Earlier versions
+// expanded queries through hand-coded TERM_EXPANSIONS / PHRASE_EXPANSIONS tables
+// that mapped generic words to this repository's own symbol names — which inflated
+// in-repo benchmark scores and added noise on every other codebase. They were
+// removed; corpus-aware expansion belongs in a vocabulary derived at ingest time.
+function buildSparseStructuralTerms(structuralQuery: StructuralQuery): SparseStructuralTerm[] {
   const terms = new Map<string, SparseStructuralTerm>();
   const add = (value: string, weight: number, origin: string) => {
     const term = normalizeSymbolName(value);
@@ -996,19 +881,6 @@ function buildSparseStructuralTerms(query: string, structuralQuery: StructuralQu
     for (const part of splitIdentifier(identifier)) add(part, 0.55, 'identifier');
   }
 
-  for (const [pattern, expanded] of PHRASE_EXPANSIONS) {
-    if (!pattern.test(query)) continue;
-    for (const [term, weight] of expanded) add(term, weight, 'phrase');
-  }
-
-  const snapshot = [...terms.values()];
-  for (const { term, weight } of snapshot) {
-    const expansions = TERM_EXPANSIONS[term] ?? TERM_EXPANSIONS[stemSparseTerm(term)] ?? [];
-    for (const [expanded, expansionWeight] of expansions) {
-      add(expanded, Math.min(1.5, weight * expansionWeight), `expand:${term}`);
-    }
-  }
-
   return [...terms.values()]
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 32);
@@ -1016,19 +888,28 @@ function buildSparseStructuralTerms(query: string, structuralQuery: StructuralQu
 
 function buildPathIntentTerms(sparseTerms: SparseStructuralTerm[]): string[] {
   return [...new Set(sparseTerms
-    .filter((term) => term.weight >= 0.8 && (term.origin === 'phrase' || term.origin.startsWith('expand:')))
+    .filter((term) => term.weight >= 0.8 && term.origin === 'identifier')
     .map((term) => term.term)
     .filter((term) => term.length > 2 && !PATH_INTENT_STOP_WORDS.has(term)))];
 }
 
+// Common code words that must not be naively stemmed (e.g. "string" -> "str",
+// "bytes" -> "byt", "class" -> "clas"). Combined with the length>=4 guard below.
+const STEM_DENYLIST = new Set([
+  'class', 'status', 'address', 'process', 'access', 'express', 'async', 'await',
+  'string', 'bytes', 'native', 'series', 'species', 'analysis', 'business', 'success',
+]);
+
 function stemSparseTerm(value: string): string {
   const term = normalizeSymbolName(value);
-  if (term.endsWith('ies') && term.length > 4) return `${term.slice(0, -3)}y`;
-  if (term.endsWith('ing') && term.length > 5) return term.slice(0, -3);
-  if (term.endsWith('ed') && term.length > 4) return term.slice(0, -2);
-  if (term.endsWith('es') && term.length > 4) return term.slice(0, -2);
-  if (term.endsWith('s') && term.length > 4) return term.slice(0, -1);
-  return term;
+  if (STEM_DENYLIST.has(term)) return term;
+  let stem = term;
+  if (term.endsWith('ies') && term.length > 5) stem = `${term.slice(0, -3)}y`;
+  else if (term.endsWith('ing') && term.length > 6) stem = term.slice(0, -3);
+  else if (term.endsWith('ed') && term.length > 5) stem = term.slice(0, -2);
+  else if (term.endsWith('es') && term.length > 5) stem = term.slice(0, -2);
+  else if (term.endsWith('s') && term.length > 4 && !term.endsWith('ss')) stem = term.slice(0, -1);
+  return stem.length >= 4 ? stem : term;
 }
 
 function scoreSparseStructuralFields(

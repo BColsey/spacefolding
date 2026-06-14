@@ -57,8 +57,9 @@ export function detectIntent(query: string): QueryIntent {
   for (const [intent, keywords] of Object.entries(INTENT_KEYWORDS)) {
     let score = 0;
     for (const keyword of keywords) {
+      // Word-boundary match only. Substring matching produced false positives
+      // ("show" contains "how", "prefix" contains "fix") that polluted intent.
       if (words.includes(keyword)) score += 2;
-      else if (lower.includes(keyword)) score += 1;
     }
     if (score > bestScore) {
       bestScore = score;

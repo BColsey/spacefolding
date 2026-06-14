@@ -311,6 +311,17 @@ export function startWebServer(options: {
   });
   const host = options.host ?? '127.0.0.1';
 
+  // Without an 'error' listener, an async listen failure (e.g. EADDRINUSE when
+  // WEB_PORT is already taken) surfaces as an uncaught exception. When the web
+  // inspector is embedded in the MCP server process, that crashes the whole
+  // server. Log and disable the inspector instead of taking the host down.
+  server.on('error', (error: NodeJS.ErrnoException) => {
+    const detail = error.code === 'EADDRINUSE'
+      ? `port ${options.port} is already in use`
+      : error.message ?? String(error);
+    process.stderr.write(`Web inspector disabled: ${detail}\n`);
+  });
+
   server.listen(options.port, host);
   return server;
 }

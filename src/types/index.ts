@@ -208,9 +208,14 @@ export declare function cosineSimilarity(a: number[], b: number[]): number;
 
 // --- Provider Interfaces ---
 
+/** Quality tier of an embedding provider, used to choose retrieval strategy. */
+export type EmbeddingQuality = 'gpu' | 'local' | 'deterministic';
+
 export interface EmbeddingProvider {
   embed(text: string): Promise<number[]>;
   embedBatch(texts: string[]): Promise<number[][]>;
+  /** Quality tier; consumed by the retriever to decide whether to trust vectors. */
+  readonly quality?: EmbeddingQuality;
 }
 
 export interface RerankerProvider {

@@ -17,6 +17,7 @@ import { createInterface } from 'node:readline';
  *   PYTHON_PATH          - Python executable (default: python3)
  */
 export class GpuEmbeddingProvider implements EmbeddingProvider {
+  readonly quality = 'gpu' as const;
   private process: ChildProcess | null = null;
   private ready = false;
   private pending = new Map<number, {

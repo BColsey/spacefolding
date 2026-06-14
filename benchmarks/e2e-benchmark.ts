@@ -265,9 +265,17 @@ function walkDir(dir: string): string[] {
   return walkBenchmarkSourceFiles(dir, { extensions: ['.ts'] });
 }
 
-/** Estimate tokens for a string (rough: words * 1.3) */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.split(/\s+/).length * 1.3);
+interface TokenEstimatorLike {
+  estimate(text: string): number;
+}
+
+/**
+ * Estimate tokens for a string using the same DeterministicTokenEstimator the
+ * retrieval pipeline uses, so codebase totals and retrieval totals are
+ * measured with one estimator (no apples-to-oranges comparison).
+ */
+function estimateTokens(text: string, estimator: TokenEstimatorLike): number {
+  return estimator.estimate(text);
 }
 
 /** Format savings percentage: positive = less tokens used (good) */
@@ -609,9 +617,10 @@ async function runE2EBenchmark(options: CliOptions) {
   const allChunks = storage.getAllChunks();
   log(`Ingested ${allChunks.length} chunks\n`);
 
-  // Compute total codebase tokens for baseline comparison
+  // Compute total codebase tokens for baseline comparison using the same
+  // DeterministicTokenEstimator the retrieval pipeline uses.
   const totalCodebaseTokens = [...fileContents.values()].reduce(
-    (sum, content) => sum + estimateTokens(content),
+    (sum, content) => sum + estimateTokens(content, tokenEstimator),
     0
   );
   const totalCodebaseFiles = fileContents.size;
@@ -637,7 +646,7 @@ async function runE2EBenchmark(options: CliOptions) {
     for (const expectedPath of task.expectedFiles) {
       const content = fileContents.get(expectedPath);
       if (content) {
-        baselineTotalTokens += estimateTokens(content);
+        baselineTotalTokens += estimateTokens(content, tokenEstimator);
       }
     }
 

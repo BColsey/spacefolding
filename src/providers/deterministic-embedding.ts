@@ -32,6 +32,8 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 export class DeterministicEmbeddingProvider implements EmbeddingProvider {
+  readonly quality = 'deterministic' as const;
+
   async embed(text: string): Promise<number[]> {
     const normalized = normalize(text);
     const vector: number[] = [];
