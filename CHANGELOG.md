@@ -65,6 +65,21 @@ All notable changes to Spacefolding are documented here. This project adheres to
 - Unified E2E token accounting to use `DeterministicTokenEstimator` on both sides of the
   savings comparison (was `words × 1.3` vs the estimator).
 
+### Continuous integration
+
+- Added `.github/workflows/ci.yml`: a blocking **build + lint + test** job on every push
+  and PR, plus a **non-blocking** acceptance-benchmark job that runs the offline
+  deterministic retrieval gate (`evaluate.ts` + `e2e-benchmark.ts` + `check-acceptance.ts`)
+  and uploads the JSON as an artifact.
+- **Honest gate status:** the retrieval *ranking* gate passes (structural still beats
+  keyword on R@10/NDCG@10/MRR after RRF). The E2E *focused-retrieval* thresholds
+  (recall ≥ 0.95, precision ≥ 0.35) currently fail (~0.77 recall) — these thresholds were
+  reverse-engineered from the OLD system while the hardcoded query-expansion contamination
+  was still inflating in-repo recall. Removing the contamination exposed the real number.
+  The E2E job is therefore non-blocking until the thresholds are re-derived on a calibration
+  split with commit-derived ground truth (WS0.1/WS0.6). Thresholds were **not** lowered to
+  force a pass.
+
 ### Bug fixes
 
 - The embedded web inspector no longer crashes the MCP server process on `EADDRINUSE`;
