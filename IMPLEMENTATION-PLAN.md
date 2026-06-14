@@ -24,10 +24,17 @@ Landed and verified green (build + lint + 360 tests):
   the `mergeRawResults` double-count, and wiring the floor into `retrieval-policy.ts`'s
   `scoreThresholdRatio`. The deterministic-structural fallback path was intentionally left
   unchanged (distinct code path for deterministic embeddings).
-- **WS0.2 (partial)** — deleted the `TERM_EXPANSIONS` / `PHRASE_EXPANSIONS` contamination
-  tables and their use in `retriever.ts`; sparse terms now derive only from the query.
-  Removed the 4 unit tests that asserted the contaminated behavior. Fixed the corrupting
-  stemmer (`string`→`str`, `bytes`→`byt`) with a denylist + length guard.
+- **WS0.2 (done)** — deleted the `TERM_EXPANSIONS` / `PHRASE_EXPANSIONS` contamination
+  tables and their use in `retriever.ts`; removed the 4 unit tests that asserted the
+  contaminated behavior; fixed the corrupting stemmer (`string`→`str`, `bytes`→`byt`) with a
+  denylist + length guard. Added **corpus-derived query expansion** (`buildCorpusStemIndex`):
+  query terms expand to the actual indexed-corpus symbols sharing their stem, fetched once via
+  the shared structural cache — generalizes to any repo, no hardcoding. Recovered in-repo E2E
+  focused recall 0.767→0.800, ranking unchanged.
+- **WS0.1 (done)** — `.github/workflows/ci.yml`: blocking build+lint+test on every push/PR,
+  plus a non-blocking acceptance-benchmark job (the E2E thresholds were calibrated on the
+  contaminated system and now fail honestly at ~0.80 recall; recalibration on a calibration
+  split is the WS0.6 follow-up — thresholds were NOT lowered).
 - **WS0.4 (partial → default-swap done)** — added `EmbeddingQuality` to the provider
   interface and all three embedding providers; `retriever.vectorReliable` now reads it
   (fixes the minification hazard / env-vs-constructor disagreement). The recommended

@@ -345,10 +345,11 @@ export class HybridRetriever {
     } catch (err) {
       pushUniqueWarning(retrievalWarnings, `structural retrieval unavailable: ${errorMessage(err)}`);
     }
-    const sparseTerms = buildSparseStructuralTerms(structuralQuery);
+    const structuralData = createStructuralDataCache(this.storage, retrievalWarnings);
+    const corpusStemIndex = buildCorpusStemIndex(structuralData.allSymbols());
+    const sparseTerms = buildSparseStructuralTerms(structuralQuery, corpusStemIndex);
     const pathIntentTerms = buildPathIntentTerms(sparseTerms);
     const candidates = new Map<string, FusedCandidate>();
-    const structuralData = createStructuralDataCache(this.storage, retrievalWarnings);
     const shouldScoreSparseFields = sparseTerms.length > 0 || strongIdentifiers.size > 0;
 
     for (const result of lexicalResults) {
@@ -445,6 +446,7 @@ export class HybridRetriever {
 interface StructuralDataCache {
   symbolsFor(chunkId: string): CodeSymbol[];
   referencesFor(chunkId: string): CodeReference[];
+  allSymbols(): CodeSymbol[];
 }
 
 function createStructuralDataCache(
@@ -453,6 +455,7 @@ function createStructuralDataCache(
 ): StructuralDataCache {
   const symbolCache = new Map<string, CodeSymbol[]>();
   const referenceCache = new Map<string, CodeReference[]>();
+  let allSymbolsList: CodeSymbol[] = [];
   let symbolsBatched = false;
   let referencesBatched = false;
   let symbolBatchAttempted = false;
@@ -468,6 +471,7 @@ function createStructuralDataCache(
         ? storage.getAllCodeSymbols()
         : null;
       if (symbols) {
+        allSymbolsList = symbols;
         fillStructuralCache(symbolCache, symbols, (symbol) => symbol.chunkId);
         symbolsBatched = true;
       }
@@ -516,6 +520,10 @@ function createStructuralDataCache(
         referenceLookupFailed = true;
       }
       return references;
+    },
+    allSymbols(): CodeSymbol[] {
+      loadSymbolsBatch();
+      return allSymbolsList;
     },
   };
 }
@@ -901,13 +909,48 @@ const PATH_INTENT_STOP_WORDS = new Set([
   'types',
 ]);
 
-// Sparse structural terms are derived ONLY from the query itself (tokens,
-// identifiers, split-identifier parts, and conservative stems). Earlier versions
-// expanded queries through hand-coded TERM_EXPANSIONS / PHRASE_EXPANSIONS tables
-// that mapped generic words to this repository's own symbol names — which inflated
-// in-repo benchmark scores and added noise on every other codebase. They were
-// removed; corpus-aware expansion belongs in a vocabulary derived at ingest time.
-function buildSparseStructuralTerms(structuralQuery: StructuralQuery): SparseStructuralTerm[] {
+/** Max corpus identifiers added per query term during corpus-derived expansion. */
+const CORPUS_EXPANSION_PER_TERM = 6;
+
+/**
+ * Build a stem -> {corpus identifiers with that stem} index from the indexed
+ * code symbols. This is the principled, repository-agnostic replacement for the
+ * deleted hand-coded TERM_EXPANSIONS table: expansion targets are the symbols
+ * that actually exist in THIS corpus, so the mechanism generalizes to any repo
+ * instead of only matching this project's own names.
+ */
+function buildCorpusStemIndex(symbols: CodeSymbol[]): Map<string, Set<string>> {
+  const index = new Map<string, Set<string>>();
+  const addVocab = (raw: string) => {
+    const term = normalizeSymbolName(raw);
+    if (term.length <= 2 || SPARSE_STOP_WORDS.has(term)) return;
+    const stem = stemSparseTerm(term);
+    if (stem.length < 3) return;
+    let set = index.get(stem);
+    if (!set) {
+      set = new Set<string>();
+      index.set(stem, set);
+    }
+    set.add(term);
+  };
+  for (const symbol of symbols) {
+    addVocab(symbol.name);
+    for (const part of splitIdentifier(symbol.name)) addVocab(part);
+  }
+  return index;
+}
+
+// Sparse structural terms are derived from the query (tokens, identifiers,
+// split-identifier parts, conservative stems) and OPTIONALLY expanded against a
+// vocabulary derived from the indexed corpus itself. The earlier hand-coded
+// TERM_EXPANSIONS / PHRASE_EXPANSIONS tables mapped generic words to THIS repo's
+// own symbols (train-on-test contamination); corpusStemIndex generalizes by
+// expanding a query term to the real corpus identifiers that share its stem
+// (e.g. "scoring" -> corpus symbols "scorer"/"score"), whatever repo is indexed.
+function buildSparseStructuralTerms(
+  structuralQuery: StructuralQuery,
+  corpusStemIndex?: Map<string, Set<string>>
+): SparseStructuralTerm[] {
   const terms = new Map<string, SparseStructuralTerm>();
   const add = (value: string, weight: number, origin: string) => {
     const term = normalizeSymbolName(value);
@@ -928,9 +971,25 @@ function buildSparseStructuralTerms(structuralQuery: StructuralQuery): SparseStr
     for (const part of splitIdentifier(identifier)) add(part, 0.55, 'identifier');
   }
 
+  if (corpusStemIndex) {
+    for (const { term, weight, origin } of [...terms.values()]) {
+      if (origin === 'corpus') continue;
+      const stem = stemSparseTerm(term);
+      if (stem.length < 3) continue;
+      const related = corpusStemIndex.get(stem);
+      if (!related) continue;
+      let added = 0;
+      for (const corpusTerm of related) {
+        if (corpusTerm === term) continue;
+        add(corpusTerm, Math.min(0.5, weight * 0.7), 'corpus');
+        if (++added >= CORPUS_EXPANSION_PER_TERM) break;
+      }
+    }
+  }
+
   return [...terms.values()]
     .sort((a, b) => b.weight - a.weight)
-    .slice(0, 32);
+    .slice(0, 40);
 }
 
 function buildPathIntentTerms(sparseTerms: SparseStructuralTerm[]): string[] {

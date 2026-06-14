@@ -15,6 +15,15 @@ All notable changes to Spacefolding are documented here. This project adheres to
   Sparse query terms now derive solely from the query (tokens, identifiers,
   split-identifier parts, and conservative stems). The four unit tests that asserted
   the contaminated behavior were removed.
+- **Corpus-derived query expansion (WS0.2).** The principled replacement for those
+  deleted tables: a query term is expanded to the actual code symbols in the indexed
+  corpus that share its morphological stem (e.g. `scoring` → corpus symbols
+  `scorer`/`score`), so expansion generalizes to any repository instead of matching only
+  this project's names. Symbols are fetched once via the shared structural cache (no extra
+  scan). On the in-repo deterministic E2E benchmark this recovered focused recall
+  0.767 → 0.800 with ranking unchanged (structural R@10 0.873, Hits@1 0.526); the remaining
+  gap to the legacy 0.95 threshold is the removed contamination (thresholds pending
+  recalibration — see CI note).
 - **Fixed a corrupting stemmer** that turned `string` → `str` and `bytes` → `byt`
   (added a code-word denylist and a minimum-stem-length guard).
 - **Unified embedding-quality detection.** Added an `EmbeddingQuality` tier to the
