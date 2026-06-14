@@ -169,7 +169,9 @@ function getEmbeddingProviderName(): EmbeddingProviderName {
 
 function getDefaultEmbeddingModel(providerName: EmbeddingProviderName = getEmbeddingProviderName()): string {
   if (providerName === 'gpu') {
-    return process.env.GPU_EMBEDDING_MODEL ?? 'Alibaba-NLP/gte-modernbert-base';
+    // Code-specific default for the high-quality path. Open weights, strong on
+    // code retrieval, and CPU-feasible (set GPU_EMBEDDING_DEVICE=cpu).
+    return process.env.GPU_EMBEDDING_MODEL ?? 'Salesforce/SFR-Embedding-Code-400M_R';
   }
   if (providerName === 'deterministic') {
     return 'deterministic';

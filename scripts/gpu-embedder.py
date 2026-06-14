@@ -2,10 +2,15 @@
 """GPU-accelerated embedding server for Spacefolding.
 
 Runs as a subprocess, communicates via JSON-RPC over stdin/stdout.
-Uses sentence-transformers with CUDA for fast batch embedding.
+Uses sentence-transformers for high-quality batch embedding. CUDA is used when
+available; pass --device cpu to run on CPU (the default code embedding model,
+Salesforce/SFR-Embedding-Code-400M_R, is small enough to be CPU-feasible).
 
 Usage:
-  python3 scripts/gpu-embedder.py --model all-mpnet-base-v2 --device cuda
+  # GPU (recommended high-quality, code-specific default):
+  python3 scripts/gpu-embedder.py --model Salesforce/SFR-Embedding-Code-400M_R --device cuda
+  # CPU (no GPU required):
+  python3 scripts/gpu-embedder.py --model Salesforce/SFR-Embedding-Code-400M_R --device cpu
 
 Protocol:
   Input:  JSON line {"id": 1, "texts": ["text1", "text2"], "batch": false}

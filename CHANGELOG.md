@@ -21,6 +21,38 @@ All notable changes to Spacefolding are documented here. This project adheres to
   `EmbeddingProvider` interface and all providers; the retriever now reads it instead
   of a `constructor.name` check that broke under minification and disagreed with the
   query planner's env-var path.
+- **Weighted Reciprocal Rank Fusion (RRF) replaces min-max score fusion.** The hybrid
+  retriever previously min-max normalized each source's raw scores and summed
+  `normalizedScore × weight`. That was not scale-free: a source whose raw scores
+  happened to span a wider range dominated regardless of agreement (cosine ~0..1,
+  BM25 negative log-odds, and structural integers are incommensurate). Fusion is now
+  rank-based: a chunk at 1-based rank `r` in a source contributes `weight / (60 + r)`,
+  accumulated across sources (`src/core/retriever.ts`). The per-source `sourceScores`
+  breakdown now reports each source's RRF contribution and `final` is their sum. Added
+  an **absolute relevance floor applied before ranking** — vector results below cosine
+  0.2 and structural/dependency results with score ≤ 0 are dropped, so when no source
+  has an above-floor hit `retrieve()` returns `[]` instead of top-K noise (FTS/BM25
+  presence is kept as its own relevance signal). The exact-identifier structural boost
+  and the reranker's exact-structural / reranker-score contributions were rescaled to
+  the RRF magnitude so they promote without overwhelming multi-source agreement.
+  Benchmark (deterministic embeddings, in-repo dataset): structural held/improved
+  (NDCG@10 0.720→0.726, MRR 0.689→0.697, Hits@1 0.526, Hits@5 0.895, R@10 0.873
+  unchanged); BM25 is a standalone lexical baseline unaffected by the fusion path.
+
+### Embedding model
+
+- **Code-specific embedding model is now the recommended high-quality default.** The
+  `gpu` provider (Python `sentence-transformers` sidecar, `src/providers/gpu-embedding.ts`)
+  now defaults to `Salesforce/SFR-Embedding-Code-400M_R` (open weights, strong on code
+  retrieval, CPU-feasible) instead of the general `Alibaba-NLP/gte-modernbert-base`.
+  Updated in `getDefaultEmbeddingModel()` (`src/cli/index.ts`), the orchestrator's
+  `defaultEmbeddingModelForProvider()` (`src/pipeline/orchestrator.ts`), the
+  `GpuEmbeddingProvider` constructor default, and the `GPU_EMBEDDING_MODEL` docs/comments.
+  This runs **locally** on GPU or CPU (`GPU_EMBEDDING_DEVICE=cpu`).
+- The transformers.js `local` default is **unchanged** (`Xenova/bge-small-en-v1.5`) and
+  documented as the lightweight, zero-dependency ONNX fallback; the highest-quality
+  local-first path is `EMBEDDING_PROVIDER=gpu` with the code model. No model is downloaded
+  in CI/tests (the deterministic provider is used there), so the test suite stays offline.
 
 ### Benchmark methodology
 
@@ -49,8 +81,7 @@ All notable changes to Spacefolding are documented here. This project adheres to
 
 ### Known follow-ups (next)
 
-- Weighted Reciprocal Rank Fusion to replace min-max score fusion — now unblocked by the
-  BM25 + Hits benchmark that can validate it.
-- Swap the default embedding model to a code-specific model (e.g. SFR-Embedding-Code).
+- Re-tune `getAdaptiveStrategy` and the acceptance gate against the *fixed* benchmark with
+  the code embedding model (requires the multi-GB model download — not done in CI).
 - Update the acceptance gate to compare against the BM25 baseline rather than the weak
   keyword baseline.

@@ -1052,7 +1052,7 @@ function defaultEmbeddingModelForProvider(provider?: EmbeddingProvider): string 
     return 'deterministic';
   }
   if (providerName === 'GpuEmbeddingProvider') {
-    return process.env.GPU_EMBEDDING_MODEL ?? 'Alibaba-NLP/gte-modernbert-base';
+    return process.env.GPU_EMBEDDING_MODEL ?? 'Salesforce/SFR-Embedding-Code-400M_R';
   }
   return process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
 }

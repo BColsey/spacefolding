@@ -7,15 +7,38 @@
 
 ## Execution status (2026-06-13)
 
-Landed and verified green (build + lint + 358 tests):
+Landed and verified green (build + lint + 360 tests):
+- **WS0.3 (core)** — replaced the weighted min-max score fusion in `retriever.ts`
+  (`normalizeSourceResults` + `addSource`) with weighted Reciprocal Rank Fusion:
+  `score(c) = Σ_source w_source / (60 + rank_source(c))`. RRF is rank-based and scale-free,
+  fixing the incommensurate-score-scale problem (cosine vs BM25 vs structural integers).
+  Added an absolute per-source relevance floor before ranking (vector cosine < 0.2 and
+  structural/dependency ≤ 0 dropped; FTS/BM25 kept), so retrieval returns `[]` when no
+  source has an above-floor hit (unit-tested). Rescaled the exact-identifier structural
+  boost and the reranker fusion (`combinedScore`) to the RRF magnitude so they no longer
+  dwarf multi-source agreement. `sourceScores` now reports RRF contributions; `final ==
+  score`. Before/after on the in-repo deterministic-embeddings dataset: structural held/
+  improved (NDCG@10 0.720→0.726, MRR 0.689→0.697; Hits@1 0.526, Hits@5 0.895, R@10 0.873
+  unchanged). Still pending from WS0.3: typed `StructuralSearchResult` fields
+  (`exactSymbolMatches`/`exactPathMatch`) to replace stringly-typed boost parsing, removing
+  the `mergeRawResults` double-count, and wiring the floor into `retrieval-policy.ts`'s
+  `scoreThresholdRatio`. The deterministic-structural fallback path was intentionally left
+  unchanged (distinct code path for deterministic embeddings).
 - **WS0.2 (partial)** — deleted the `TERM_EXPANSIONS` / `PHRASE_EXPANSIONS` contamination
   tables and their use in `retriever.ts`; sparse terms now derive only from the query.
   Removed the 4 unit tests that asserted the contaminated behavior. Fixed the corrupting
   stemmer (`string`→`str`, `bytes`→`byt`) with a denylist + length guard.
-- **WS0.4 (partial)** — added `EmbeddingQuality` to the provider interface and all three
-  embedding providers; `retriever.vectorReliable` now reads it (fixes the minification
-  hazard / env-vs-constructor disagreement). Default model swap + CoIR eval still pending
-  (needs model download + benchmark run).
+- **WS0.4 (partial → default-swap done)** — added `EmbeddingQuality` to the provider
+  interface and all three embedding providers; `retriever.vectorReliable` now reads it
+  (fixes the minification hazard / env-vs-constructor disagreement). The recommended
+  high-quality path is now the `gpu` sidecar defaulting to the code-specific
+  `Salesforce/SFR-Embedding-Code-400M_R` (open weights, CPU-feasible) — changed in
+  `cli/index.ts` `getDefaultEmbeddingModel()`, `pipeline/orchestrator.ts`
+  `defaultEmbeddingModelForProvider()`, and the `GpuEmbeddingProvider` constructor; docs
+  updated. The transformers.js `local` default stays `Xenova/bge-small-en-v1.5` as the
+  lightweight ONNX fallback (no confirmed offline ONNX code model). Still pending: CoIR /
+  SWE-bench-lite eval and the `getAdaptiveStrategy` re-tune (need the model download +
+  benchmark run — not done in CI to keep tests offline).
 - **Bug backlog** — web-server `EADDRINUSE` no longer crashes the host (added `error`
   listener); `ingest_context.type` is now a JSON-Schema enum; intent detection uses
   word-boundary matching only (dropped the substring false positives).
@@ -23,9 +46,11 @@ Landed and verified green (build + lint + 358 tests):
 In flight (background workflow): **WS0.6** — BM25 baseline, Hits@1/Hits@5 metrics, remove
 fabricated dataset task T01, unify E2E token accounting (benchmarks/ only).
 
-Deliberately NOT yet done (and why): **WS0.3 RRF fusion** is gated on WS0.6 — changing the
-ranking math before the honest benchmark exists would just swap one set of hand-tuned
-constants for another with no way to prove it helps. **WS0.2 corpus-derived expansion**,
+Deliberately NOT yet done (and why): **WS0.3 RRF fusion core has now landed** (see above),
+measured against the BM25 + Hits benchmark from WS0.6 — structural held/improved and the
+no-match-returns-empty acceptance is covered by a unit test. Its remaining sub-items (typed
+`StructuralSearchResult` match fields, `mergeRawResults` double-count removal, and wiring the
+relevance floor into `retrieval-policy.ts`) are deferred. **WS0.2 corpus-derived expansion**,
 chunk-size/AST defaults (WS0.5), and the storage-scale work (Phase 2) remain.
 
 ## Guiding principles
@@ -117,15 +142,17 @@ one*, and turn the benchmark into something an outside skeptic would believe.
 ### WS0.4 — Code-specific embedding model as the default (~2–3 d)
 
 - The default `Xenova/bge-small-en-v1.5` (`providers/local-embedding.ts:15`,
-  `cli/index.ts:177`) is a general English model. Swap the local default to a code model.
-  Two tracks:
-  - **Local/ONNX track:** evaluate an ONNX-exportable code embedding model usable by
-    `@huggingface/transformers` (e.g. a `jina-embeddings-v2-base-code` / `bge-code` variant);
-    keep the transformers.js path.
-  - **Sidecar track (already exists):** `GpuEmbeddingProvider` (`providers/gpu-embedding.ts`)
-    already runs `sentence-transformers`. Point `GPU_EMBEDDING_MODEL` at
-    `Salesforce/SFR-Embedding-Code-400M_R` (open weights, beats voyage-code, CPU-feasible) and
-    make it the recommended high-quality path; document CPU mode in `scripts/gpu-embedder.py`.
+  `cli/index.ts:177`) is a general English model. Two tracks:
+  - **Local/ONNX track (DEFERRED):** no ONNX-exportable code embedding model was confirmed
+    to load via `@huggingface/transformers` offline, so the transformers.js `local` default
+    stays `Xenova/bge-small-en-v1.5` and is documented as the lightweight ONNX fallback
+    rather than swapped to an unverified code model.
+  - **Sidecar track (DONE):** `GpuEmbeddingProvider` (`providers/gpu-embedding.ts`) runs
+    `sentence-transformers` and now defaults `GPU_EMBEDDING_MODEL` to
+    `Salesforce/SFR-Embedding-Code-400M_R` (open weights, beats voyage-code, CPU-feasible).
+    This is the recommended high-quality, local-first path. CPU mode is documented in
+    `scripts/gpu-embedder.py` and `docs/configuration.md`; the default is also applied in
+    `cli/index.ts` and `pipeline/orchestrator.ts`. No model is downloaded in CI/tests.
 - Add `quality: 'gpu' | 'local' | 'deterministic'` to the `EmbeddingProvider` interface
   (`types/index.ts:211-214`) and have **both** `getAdaptiveStrategy` (`query-planner.ts:202`,
   env-var based) and the retriever's `vectorReliable` check (`retriever.ts:72`,

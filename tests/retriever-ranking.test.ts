@@ -234,6 +234,63 @@ describe('HybridRetriever structural ranking', () => {
     expect(results[0].sourceScores?.fts).toBeGreaterThan(0);
     expect(results[0].sourceScores?.dependency).toBeGreaterThan(0);
     expect(results[0].sourceScores?.final).toBe(results[0].score);
+
+    // Per-source scores are now RRF contributions (weight / (60 + rank)), so
+    // each is small (O(0.0x)), not the old min-max-normalized 0..weight scale.
+    const scores = results[0].sourceScores!;
+    expect(scores.vector).toBeLessThan(0.05);
+    expect(scores.fts).toBeLessThan(0.05);
+    // final is the sum of the per-source RRF contributions plus the rescaled
+    // exact-identifier boost; it stays on the same small RRF magnitude.
+    expect(scores.final).toBeLessThan(0.5);
+    expect(scores.final).toBeGreaterThan(0);
+  });
+
+  it('returns no results when every source is below its relevance floor', async () => {
+    const chunks = [
+      makeChunk('weak-vector', 'src/unrelated/thing.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      // Below the cosine relevance floor (0.2) — pure noise, should be dropped.
+      searchByVector: () => [{ chunkId: 'weak-vector', score: 0.05 }],
+      // No structural, FTS, or lexical matches for this query.
+      searchByStructure: () => [],
+      searchByText: () => [],
+      searchByLexical: () => [],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('completely unrelated query', {
+      strategy: 'vector',
+      topK: 5,
+    });
+
+    expect(results).toEqual([]);
+  });
+
+  it('drops structural results with non-positive score before RRF ranking', async () => {
+    const chunks = [
+      makeChunk('zero-structural', 'src/core/zero.ts', 900),
+    ];
+    const storage = {
+      ...makeStorage(chunks, {}, {}),
+      // structuralScore 0 must not contribute under the absolute relevance floor.
+      searchByStructure: () => [
+        makeStructuralResult('zero-structural', 0, 0, ['weak heuristic']),
+      ],
+      searchByVector: () => [{ chunkId: 'zero-structural', score: 0.05 }],
+      searchByText: () => [],
+      searchByLexical: () => [],
+    };
+    const retriever = new HybridRetriever(storage as any, new ReliableEmbeddingProvider());
+
+    const results = await retriever.retrieve('no real match here', {
+      strategy: 'structural',
+      topK: 5,
+    });
+
+    expect(results).toEqual([]);
   });
 
   it('includes score breakdown in reasons', async () => {
@@ -302,6 +359,9 @@ describe('HybridRetriever structural ranking', () => {
     });
 
     expect(results.slice(0, 2).map((result) => result.chunkId)).toEqual(['b', 'a']);
+    // 'c' had cosine score 0, below the 0.2 relevance floor, so it is dropped
+    // before RRF ranking and never appears in the fused results.
+    expect(results.map((result) => result.chunkId)).not.toContain('c');
     expect(results[0].score).toBeGreaterThan(results[1].score);
     expect(results[0].sourceScores?.final).toBe(results[0].score);
     expect(results[0].reasons).toContain('reranker direct keyword match: 1.000');

@@ -19,8 +19,8 @@ Spacefolding is configured with environment variables. The default Docker setup 
 | `DB_PATH` | `./data/spacefolding.db` | SQLite database path. |
 | `MODEL_PATH` | `./data/models` | Local model cache directory. |
 | `EMBEDDING_PROVIDER` | `local` | `local`, `gpu`, or `deterministic`. |
-| `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID for local embeddings. |
-| `GPU_EMBEDDING_MODEL` | `Alibaba-NLP/gte-modernbert-base` | Sentence-transformer model for GPU embeddings. |
+| `EMBEDDING_MODEL` | `Xenova/bge-small-en-v1.5` | HuggingFace model ID for local (transformers.js/ONNX) embeddings. Lightweight general-English fallback. |
+| `GPU_EMBEDDING_MODEL` | `Salesforce/SFR-Embedding-Code-400M_R` | Sentence-transformer model for the `gpu` provider. Defaults to a code-specific model; accepts any sentence-transformers model id. |
 | `GPU_EMBEDDING_DEVICE` | `cuda` | PyTorch device for GPU embeddings. |
 | `PYTHON_PATH` | `python3` | Python executable for GPU embeddings and LLMLingua. |
 | `PYTHON` | `python3` | Python executable for structural-index subprocesses. |
@@ -47,9 +47,20 @@ Spacefolding is configured with environment variables. The default Docker setup 
 
 ## Embedding Providers
 
+> **Highest-quality local-first path:** set `EMBEDDING_PROVIDER=gpu` with the default
+> code-specific model (`Salesforce/SFR-Embedding-Code-400M_R`). It runs locally via a
+> Python `sentence-transformers` sidecar — on CUDA when available, or on CPU with
+> `GPU_EMBEDDING_DEVICE=cpu` (the default code model is small enough to be CPU-feasible).
+> The `local` provider's `Xenova/bge-small-en-v1.5` is the lightweight, in-process ONNX
+> fallback (general English, no Python required) used when you want zero extra
+> dependencies.
+
 ### Local Embeddings
 
-Local embeddings are the default. They run in-process with ONNX models and do not require cloud access.
+Local (transformers.js) embeddings are the zero-dependency default. They run in-process
+with ONNX models and do not require cloud access or Python. `Xenova/bge-small-en-v1.5`
+is a lightweight, general-English model — prefer the `gpu` provider with the code-specific
+default for the highest retrieval quality on code.
 
 ```bash
 EMBEDDING_PROVIDER=local
@@ -66,19 +77,30 @@ Common local models:
 | `Xenova/all-MiniLM-L6-v2` | 80 MB | Smaller and faster. |
 | `Xenova/gte-small` | 130 MB | General-purpose alternative. |
 
-### GPU Embeddings
+### GPU / Sidecar Embeddings (recommended high-quality path)
 
-GPU embeddings use a Python subprocess and sentence-transformers.
+The `gpu` provider uses a Python subprocess and `sentence-transformers`. It is the
+recommended high-quality path and defaults to a code-specific model,
+`Salesforce/SFR-Embedding-Code-400M_R` (open weights, strong on code retrieval). The
+model runs locally — no cloud access — on GPU or CPU.
 
 ```bash
 pip install sentence-transformers torch
+# GPU:
 EMBEDDING_PROVIDER=gpu \
-GPU_EMBEDDING_MODEL=Alibaba-NLP/gte-modernbert-base \
+GPU_EMBEDDING_MODEL=Salesforce/SFR-Embedding-Code-400M_R \
 GPU_EMBEDDING_DEVICE=cuda \
+node dist/main.js serve
+
+# CPU-only (no GPU required; the default code model is small enough to be CPU-feasible):
+EMBEDDING_PROVIDER=gpu \
+GPU_EMBEDDING_DEVICE=cpu \
 node dist/main.js serve
 ```
 
-The subprocess communicates with the Node process over JSON-RPC on stdin/stdout.
+The subprocess communicates with the Node process over JSON-RPC on stdin/stdout. The
+first run downloads the model into the HuggingFace cache (multi-hundred-MB), so it is
+not used in CI/tests — the deterministic provider is used there instead.
 
 ### Deterministic Fallback
 

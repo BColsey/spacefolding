@@ -242,9 +242,14 @@ export class HybridRetriever {
         const rerankedCandidates = candidates.map(([chunkId, data], idx) => {
           const rerank = rerankScoreMap.get(idx);
           const rerankerScore = rerank?.score ?? 0;
+          // Both boosts are rescaled to the RRF magnitude (data.fusedScore is a
+          // sum of weight/(RRF_K+rank) terms, typically O(0.0x)). The reranker
+          // score is normally in [0,1]; multiplying by ~3 top-rank contributions
+          // lets a confident reranker move a chunk a few ranks. An exact
+          // structural match adds ~2 top-rank contributions on top.
           const exactStructuralBoost = data.reasons.some((reason) =>
             reason.startsWith('symbol exact match') || reason.startsWith('path exact match')
-          ) ? 1.0 : 0;
+          ) ? RRF_TOP_CONTRIBUTION * 2 : 0;
           const rerankReasons = [];
           if (rerank) rerankReasons.push(`reranker ${rerank.reason}: ${rerankerScore.toFixed(3)}`);
           if (exactStructuralBoost > 0) {
@@ -253,7 +258,7 @@ export class HybridRetriever {
           return {
             chunkId,
             data,
-            combinedScore: data.fusedScore + exactStructuralBoost + rerankerScore * 0.4,
+            combinedScore: data.fusedScore + exactStructuralBoost + rerankerScore * RRF_TOP_CONTRIBUTION * 3,
             rerankReasons,
           };
         });
@@ -711,8 +716,16 @@ function applyStrongIdentifierStructuralBoost(
     const candidate = fused.get(result.chunkId);
     if (!candidate) continue;
 
-    const symbolBoost = symbolMatches.size > 0 ? 1.25 + Math.min(0.35, symbolMatches.size * 0.1) : 0;
-    const referenceBoost = referenceMatches.size > 0 ? 0.45 : 0;
+    // Rescaled to the RRF magnitude. The previous raw values (~1.25) were on the
+    // old min-max scale and would dwarf RRF contributions (~0.016 at rank 1). An
+    // exact symbol match is now worth ~3 top-rank RRF contributions plus a small
+    // per-match increment; a direct reference match adds ~1 top-rank contribution.
+    // This meaningfully promotes exact matches without overwhelming the agreement
+    // signal of several sources independently ranking a chunk highly.
+    const symbolBoost = symbolMatches.size > 0
+      ? RRF_TOP_CONTRIBUTION * (3 + Math.min(1, symbolMatches.size * 0.3))
+      : 0;
+    const referenceBoost = referenceMatches.size > 0 ? RRF_TOP_CONTRIBUTION * 1 : 0;
     const exactIdentifierBoost = symbolBoost + referenceBoost;
     if (exactIdentifierBoost <= 0) continue;
 
@@ -774,6 +787,41 @@ function getFusionWeights(strategy: RetrievalStrategy, vectorReliable: boolean):
   return { structural: 0, vector: 0.55, fts: 0.4, dependency: 0, graph: 0.05 };
 }
 
+/**
+ * Reciprocal Rank Fusion constant. A chunk at 1-based rank `r` in a source
+ * contributes `weight / (RRF_K + r)`. k=60 is the canonical default from
+ * Cormack et al. (2009); it dampens the gap between top ranks without letting
+ * any single source dominate.
+ */
+const RRF_K = 60;
+
+/** Top-rank (rank 1) RRF contribution at unit weight: 1 / (RRF_K + 1). */
+const RRF_TOP_CONTRIBUTION = 1 / (RRF_K + 1);
+
+/**
+ * Absolute relevance floor for vector (cosine) results. Cosine similarities
+ * below this are treated as noise and dropped before ranking, so a source with
+ * no genuinely-relevant hit contributes nothing and retrieval can return [].
+ */
+const VECTOR_RELEVANCE_FLOOR = 0.2;
+
+/**
+ * Reciprocal Rank Fusion. Replaces the previous weighted min-max sum, which was
+ * not scale-free: a source whose raw scores happened to span a wider range
+ * dominated regardless of agreement. RRF is rank-based — only the order of each
+ * source's results matters — so heterogeneous score scales (cosine ~0..1, BM25
+ * negative log-odds, structural integers) become commensurate.
+ *
+ * For each source the results are sorted by score descending; the chunk at
+ * 1-based rank `r` contributes `weight / (RRF_K + r)` to its fused score, and
+ * contributions accumulate across sources. The per-source breakdown in
+ * `sourceScores[source]` stores that RRF contribution (not the raw score).
+ *
+ * An absolute relevance floor is applied per source BEFORE ranking:
+ *   - vector: drop cosine scores < VECTOR_RELEVANCE_FLOOR
+ *   - structural / dependency: drop scores <= 0
+ *   - fts / graph: kept as-is (presence is already a relevance signal)
+ */
 function addSource(
   fused: Map<string, FusedCandidate>,
   source: RetrievalSource,
@@ -781,9 +829,11 @@ function addSource(
   weight: number
 ): void {
   if (weight <= 0 || results.length === 0) return;
-  const normalized = normalizeSourceResults(results);
-  for (const result of normalized) {
-    const contribution = result.normalizedScore * weight;
+  const ranked = rankSourceResults(source, results);
+  for (let i = 0; i < ranked.length; i++) {
+    const result = ranked[i];
+    const rank = i + 1; // 1-based rank within this source
+    const contribution = weight / (RRF_K + rank);
     if (contribution <= 0) continue;
     const existing = fused.get(result.chunkId) ?? {
       fusedScore: 0,
@@ -803,24 +853,21 @@ function addSource(
   }
 }
 
-function normalizeSourceResults(results: SourceResult[]): Array<SourceResult & { normalizedScore: number }> {
-  const sorted = [...results]
-    .filter((result) => Number.isFinite(result.score))
+/**
+ * Sort a source's results by score descending and apply that source's absolute
+ * relevance floor. Returns the surviving results in rank order (rank = index+1).
+ */
+function rankSourceResults(source: RetrievalSource, results: SourceResult[]): SourceResult[] {
+  return [...results]
+    .filter((result) => Number.isFinite(result.score) && passesRelevanceFloor(source, result.score))
     .sort((a, b) => b.score - a.score);
-  if (sorted.length === 0) return [];
+}
 
-  const max = sorted[0].score;
-  const min = sorted[sorted.length - 1].score;
-  return sorted.map((result) => {
-    const scoreRange = max - min;
-    const normalizedScore = scoreRange > 1e-9
-      ? (result.score - min) / scoreRange
-      : 1;
-    return {
-      ...result,
-      normalizedScore: Math.max(0, Math.min(1, normalizedScore)),
-    };
-  });
+function passesRelevanceFloor(source: RetrievalSource, score: number): boolean {
+  if (source === 'vector') return score >= VECTOR_RELEVANCE_FLOOR;
+  if (source === 'structural' || source === 'dependency') return score > 0;
+  // fts / graph: presence is the signal — keep as-is.
+  return true;
 }
 
 function scaleDeterministicLexicalScore(score: number): number {

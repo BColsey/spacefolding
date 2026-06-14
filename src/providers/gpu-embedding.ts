@@ -3,16 +3,20 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
 /**
- * GPU-accelerated embedding provider using a Python subprocess with CUDA.
+ * High-quality embedding provider using a Python subprocess (sentence-transformers).
  *
- * Uses sentence-transformers on GPU for high-quality, fast embeddings.
- * Falls back to CPU if CUDA is unavailable.
+ * This is the recommended high-quality, local-first path. It runs a code-specific
+ * embedding model on the GPU (CUDA) for fast batch embeddings, and also works on CPU
+ * when CUDA is unavailable (set GPU_EMBEDDING_DEVICE=cpu) — the default code model
+ * is small enough to be CPU-feasible.
  *
  * Communication: JSON-RPC over stdin/stdout with the Python embedder.
  * Each request gets a unique ID; responses are matched by ID.
  *
  * Environment variables:
- *   GPU_EMBEDDING_MODEL  - Model name (default: Alibaba-NLP/gte-modernbert-base)
+ *   GPU_EMBEDDING_MODEL  - Model name (default: Salesforce/SFR-Embedding-Code-400M_R,
+ *                          a code-specific embedding model; accepts any
+ *                          sentence-transformers model id)
  *   GPU_EMBEDDING_DEVICE - Device: cuda, cpu (default: cuda)
  *   PYTHON_PATH          - Python executable (default: python3)
  */
@@ -28,7 +32,7 @@ export class GpuEmbeddingProvider implements EmbeddingProvider {
   private initPromise: Promise<void> | null = null;
 
   constructor(
-    private modelId: string = process.env.GPU_EMBEDDING_MODEL ?? 'Alibaba-NLP/gte-modernbert-base',
+    private modelId: string = process.env.GPU_EMBEDDING_MODEL ?? 'Salesforce/SFR-Embedding-Code-400M_R',
     private device: string = process.env.GPU_EMBEDDING_DEVICE ?? 'cuda',
     private pythonPath: string = process.env.PYTHON_PATH ?? 'python3',
   ) {}
