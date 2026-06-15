@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import type { RetrievalStrategy } from '../src/types/index.js';
+import type { EmbeddingProvider, RetrievalStrategy } from '../src/types/index.js';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
@@ -624,7 +624,6 @@ export function buildEvaluationReport(input: {
 async function createEvaluationRuntime(dbPath: string): Promise<BenchmarkRuntime> {
   const { createRepository } = await import('../dist/storage/repository.js');
   const { DeterministicTokenEstimator } = await import('../dist/providers/token-estimator.js');
-  const { DeterministicEmbeddingProvider } = await import('../dist/providers/deterministic-embedding.js');
   const { DeterministicCompressionProvider } = await import('../dist/providers/deterministic-compression.js');
   const { SimpleDependencyAnalyzer } = await import('../dist/providers/dependency-analyzer.js');
   const { ContextScorer } = await import('../dist/core/scorer.js');
@@ -635,7 +634,7 @@ async function createEvaluationRuntime(dbPath: string): Promise<BenchmarkRuntime
 
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
-  const embeddingProvider = new DeterministicEmbeddingProvider();
+  const embeddingProvider = await createBenchmarkEmbeddingProvider();
   const compressionProvider = new DeterministicCompressionProvider();
   const dependencyAnalyzer = new SimpleDependencyAnalyzer();
   const scorer = new ContextScorer(DEFAULT_ROUTING_CONFIG, embeddingProvider, tokenEstimator);
@@ -649,8 +648,33 @@ async function createEvaluationRuntime(dbPath: string): Promise<BenchmarkRuntime
     storage,
     pipeline,
     parseStructuralQuery,
-    close: () => pipeline.close(),
+    close: () => {
+      pipeline.close();
+      (embeddingProvider as { close?: () => void }).close?.();
+    },
   };
+}
+
+/**
+ * Select the benchmark embedding provider. Defaults to the deterministic,
+ * offline provider so CI stays reproducible and network-free. Set
+ * BENCH_EMBEDDING=gpu (GpuEmbeddingProvider, code-specific sentence-transformers
+ * model) or BENCH_EMBEDDING=local (transformers.js bge model) to exercise the
+ * real semantic embedding arm. NOTE: a non-deterministic provider makes the run
+ * non-reproducible and must NOT be used by the acceptance gate.
+ */
+async function createBenchmarkEmbeddingProvider(): Promise<EmbeddingProvider> {
+  const mode = (process.env.BENCH_EMBEDDING ?? 'deterministic').toLowerCase();
+  if (mode === 'gpu') {
+    const { GpuEmbeddingProvider } = await import('../dist/providers/gpu-embedding.js');
+    return new GpuEmbeddingProvider();
+  }
+  if (mode === 'local') {
+    const { LocalEmbeddingProvider } = await import('../dist/providers/local-embedding.js');
+    return new LocalEmbeddingProvider(process.env.EMBEDDING_MODEL);
+  }
+  const { DeterministicEmbeddingProvider } = await import('../dist/providers/deterministic-embedding.js');
+  return new DeterministicEmbeddingProvider();
 }
 
 async function evaluateBenchmarkTask(

@@ -21,6 +21,7 @@ Protocol:
 """
 
 import sys
+import os
 import json
 import time
 import argparse
@@ -32,6 +33,16 @@ def main():
     parser.add_argument('--model', default='all-mpnet-base-v2', help='Sentence-transformer model name')
     parser.add_argument('--device', default='cuda', help='Device: cuda, cpu')
     parser.add_argument('--max-seq-length', type=int, default=None, help='Override max sequence length')
+    # The recommended default (Salesforce/SFR-Embedding-Code-400M_R) ships custom
+    # modeling code and fails to load without this. Defaults ON because the
+    # documented default requires it; set GPU_EMBEDDING_TRUST_REMOTE_CODE=0 to opt
+    # out (then only stock-architecture models will load).
+    parser.add_argument(
+        '--trust-remote-code',
+        action='store_true',
+        default=os.environ.get('GPU_EMBEDDING_TRUST_REMOTE_CODE', '1') not in ('0', 'false', 'False', ''),
+        help='Allow models that ship custom code (required by e.g. SFR-Embedding-Code).',
+    )
     args = parser.parse_args()
 
     # Load model
@@ -42,7 +53,13 @@ def main():
         sys.exit(1)
 
     try:
-        model = SentenceTransformer(args.model, device=args.device)
+        try:
+            model = SentenceTransformer(
+                args.model, device=args.device, trust_remote_code=args.trust_remote_code
+            )
+        except TypeError:
+            # Older sentence-transformers without the trust_remote_code kwarg.
+            model = SentenceTransformer(args.model, device=args.device)
     except Exception as e:
         error({"error": f"Failed to load model '{args.model}': {e}"})
         sys.exit(1)
