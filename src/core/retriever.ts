@@ -777,10 +777,44 @@ function normalizeStrongIdentifier(identifier: string): string {
   return identifier.toLowerCase().replace(/[^a-z0-9_$]/g, '');
 }
 
+/**
+ * Benchmark-only fusion calibration hooks. Both are null in production, so the
+ * hot path is unchanged; they exist so the WS0.3 fusion-sweep harness
+ * (`benchmarks/fusion-sweep.ts`) can vary the fusion weights and the vector
+ * relevance floor in-process — without re-embedding the corpus per config.
+ * Keyed by `${strategy}:${vectorReliable ? 'reliable' : 'deterministic'}`.
+ */
+let fusionWeightsOverride: Map<string, Record<RetrievalSource, number>> | null = null;
+let vectorFloorOverride: number | null = null;
+
+export function setFusionWeightsOverride(
+  override: Record<string, Record<RetrievalSource, number>> | null
+): void {
+  fusionWeightsOverride = override ? new Map(Object.entries(override)) : null;
+}
+
+export function setVectorFloorOverride(floor: number | null): void {
+  vectorFloorOverride = floor;
+}
+
 function getFusionWeights(strategy: RetrievalStrategy, vectorReliable: boolean): Record<RetrievalSource, number> {
+  if (fusionWeightsOverride) {
+    const override = fusionWeightsOverride.get(`${strategy}:${vectorReliable ? 'reliable' : 'deterministic'}`);
+    if (override) return override;
+  }
   if (strategy === 'structural') {
+    // WS0.3 fusion calibration (commit-derived GPU sweep, benchmarks/fusion-sweep.ts).
+    // When the vector arm is a real code-embedding model the previous
+    // structural-heavy weights (0.58/0.24/0.15) UNDER-used the now-strong vector
+    // signal and the fused result fell BELOW max(vector, fts). Trusting vector and
+    // fts equally and highly — with the structural arm demoted to a light booster
+    // (the exact-identifier boost still fires regardless of this weight) — fixes
+    // that: on django (vector≈fts) fused R@10 0.733→~0.87 (now > fts), on
+    // typescript (fts-dominant, weaker vector) 0.581→~0.69 (≈ fts, no longer below
+    // the broken default). Selected as the robust cross-repo config on a
+    // calibration split, holdout-validated. See benchmarks/COMMIT-DERIVED-FINDINGS.md.
     return vectorReliable
-      ? { structural: 0.58, vector: 0.24, fts: 0.15, dependency: 0.03, graph: 0 }
+      ? { structural: 0.2, vector: 0.7, fts: 0.7, dependency: 0.03, graph: 0 }
       : { structural: 0.09, vector: 0, fts: 0.88, dependency: 0.03, graph: 0 };
   }
   if (strategy === 'vector') {
@@ -872,7 +906,7 @@ function rankSourceResults(source: RetrievalSource, results: SourceResult[]): So
 }
 
 function passesRelevanceFloor(source: RetrievalSource, score: number): boolean {
-  if (source === 'vector') return score >= VECTOR_RELEVANCE_FLOOR;
+  if (source === 'vector') return score >= (vectorFloorOverride ?? VECTOR_RELEVANCE_FLOOR);
   if (source === 'structural' || source === 'dependency') return score > 0;
   // fts / graph: presence is the signal — keep as-is.
   return true;

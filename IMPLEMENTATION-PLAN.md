@@ -19,11 +19,20 @@ Landed and verified green (build + lint + 360 tests):
   dwarf multi-source agreement. `sourceScores` now reports RRF contributions; `final ==
   score`. Before/after on the in-repo deterministic-embeddings dataset: structural held/
   improved (NDCG@10 0.720→0.726, MRR 0.689→0.697; Hits@1 0.526, Hits@5 0.895, R@10 0.873
-  unchanged). Still pending from WS0.3: typed `StructuralSearchResult` fields
+  unchanged). **WS0.3 fusion calibration — LANDED (GPU regime):** the commit-derived GPU
+  benchmark showed the `structural:reliable` weights (0.58/0.24/0.15) under-used the strong
+  code-embedding vector arm, dropping the hybrid below FTS. A sweep (`benchmarks/fusion-sweep.ts`,
+  robust cross-repo pick on a calibration/holdout split, confirmed with `evaluate.ts --strategy
+  all` + `paired-bootstrap.ts`) recalibrated them to **0.20/0.70/0.70** (floor unchanged): GPU
+  hybrid is now ≥ best single arm — django structural 0.733→0.871 (− FTS +0.073 \*), typescript
+  0.581→0.693 (− FTS −0.028, tie; − vector +0.106 \*). Not a universal win (FTS-dominant corpora
+  tie, not beat). Null-default `setFusionWeightsOverride`/`setVectorFloorOverride` hooks added for
+  the sweep. Still pending from WS0.3: typed `StructuralSearchResult` fields
   (`exactSymbolMatches`/`exactPathMatch`) to replace stringly-typed boost parsing, removing
   the `mergeRawResults` double-count, and wiring the floor into `retrieval-policy.ts`'s
   `scoreThresholdRatio`. The deterministic-structural fallback path was intentionally left
-  unchanged (distinct code path for deterministic embeddings).
+  unchanged (distinct code path for deterministic embeddings) — so the deterministic acceptance
+  gate is unaffected by this recalibration.
 - **WS0.2 (done)** — deleted the `TERM_EXPANSIONS` / `PHRASE_EXPANSIONS` contamination
   tables and their use in `retriever.ts`; removed the 4 unit tests that asserted the
   contaminated behavior; fixed the corrupting stemmer (`string`→`str`, `bytes`→`byt`) with a
