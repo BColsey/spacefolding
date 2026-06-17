@@ -217,70 +217,92 @@ describe('retrieval benchmark report', () => {
     }
   });
 
-  it('includes per-strategy averages and per-task hit and miss details', () => {
+  const gateStrategies = (s: {
+    keyword: Partial<Metrics>;
+    bm25: Partial<Metrics>;
+    fts: Partial<Metrics>;
+    structural: Partial<Metrics>;
+  }) => [
+    summary('keyword', s.keyword),
+    summary('bm25', s.bm25),
+    summary('fts', s.fts),
+    summary('structural', s.structural),
+  ];
+
+  it('passes the composite gate when structural is non-inferior on recall and beats fts on hits@1', () => {
+    const report = buildEvaluationReport({
+      dataset: 'benchmarks/dataset.json',
+      corpus: 'src',
+      requestedStrategies: ['keyword', 'bm25', 'fts', 'structural'],
+      strategies: gateStrategies({
+        keyword: { recallAt10: 0.70, hitsAt1: 0.30 },
+        bm25: { recallAt10: 0.85, hitsAt1: 0.50 },
+        fts: { recallAt10: 0.80, hitsAt1: 0.20 },
+        structural: { recallAt10: 0.82, hitsAt1: 0.60 },
+      }),
+    });
+
+    expect(report.successGate.missingStrategySummaries).toEqual([]);
+    expect(report.successGate.recallNonInferiorityMargin).toBe(0.05);
+    // best lexical arm by recall@10 is bm25 (0.85); structural 0.82 is within 0.05.
+    expect(report.successGate.bestLexicalStrategy).toBe('bm25');
+    expect(report.successGate.recallAt10NonInferior).toBe(true);
+    expect(report.successGate.hitsAt1BeatsFts).toBe(true);
+    expect(report.successGate.structuralMeetsGate).toBe(true);
+  });
+
+  it('fails the gate when structural recall trails the best lexical arm beyond the margin', () => {
+    const report = buildEvaluationReport({
+      dataset: 'benchmarks/dataset.json',
+      corpus: 'src',
+      requestedStrategies: ['keyword', 'bm25', 'fts', 'structural'],
+      strategies: gateStrategies({
+        keyword: { recallAt10: 0.70, hitsAt1: 0.30 },
+        bm25: { recallAt10: 0.85, hitsAt1: 0.50 },
+        fts: { recallAt10: 0.80, hitsAt1: 0.20 },
+        structural: { recallAt10: 0.74, hitsAt1: 0.60 }, // 0.74 < 0.85 − 0.05
+      }),
+    });
+
+    expect(report.successGate.recallAt10NonInferior).toBe(false);
+    expect(report.successGate.hitsAt1BeatsFts).toBe(true);
+    expect(report.successGate.structuralMeetsGate).toBe(false);
+  });
+
+  it('fails the gate when structural only ties fts on hits@1', () => {
+    const report = buildEvaluationReport({
+      dataset: 'benchmarks/dataset.json',
+      corpus: 'src',
+      requestedStrategies: ['keyword', 'bm25', 'fts', 'structural'],
+      strategies: gateStrategies({
+        keyword: { recallAt10: 0.70, hitsAt1: 0.30 },
+        bm25: { recallAt10: 0.80, hitsAt1: 0.40 },
+        fts: { recallAt10: 0.78, hitsAt1: 0.40 },
+        structural: { recallAt10: 0.82, hitsAt1: 0.40 }, // ties fts on hits@1
+      }),
+    });
+
+    expect(report.successGate.recallAt10NonInferior).toBe(true);
+    expect(report.successGate.hitsAt1BeatsFts).toBe(false);
+    expect(report.successGate.structuralMeetsGate).toBe(false);
+  });
+
+  it('leaves the gate uncomputed when a strong baseline summary is missing', () => {
     const report = buildEvaluationReport({
       dataset: 'benchmarks/dataset.json',
       corpus: 'src',
       requestedStrategies: ['keyword', 'structural'],
       strategies: [
-        summary('keyword', { recallAt10: 0.4, ndcgAt10: 0.3, mrr: 0.25 }),
-        summary('structural', { recallAt10: 0.8, ndcgAt10: 0.7, mrr: 0.5 }),
+        summary('keyword', { recallAt10: 0.70, hitsAt1: 0.30 }),
+        summary('structural', { recallAt10: 0.82, hitsAt1: 0.60 }),
       ],
     });
 
-    expect(report.strategies).toHaveLength(2);
-    expect(report.strategies[1].averages).toMatchObject({
-      recallAt10: 0.8,
-      ndcgAt10: 0.7,
-      mrr: 0.5,
-    });
-    expect(report.strategies[1].results[0].details).toMatchObject({
-      hits: ['src/auth.ts'],
-      misses: ['src/token.ts'],
-      hitDetails: [{ path: 'src/auth.ts', rank: 1 }],
-      retrievedPathCount: 2,
-    });
-    expect(report.successGate.structuralBeatsKeyword).toBe(true);
-    expect(report.successGate.recallAt10Delta).toBeCloseTo(0.4);
-    expect(report.successGate.ndcgAt10Delta).toBeCloseTo(0.4);
-    expect(report.successGate.mrrDelta).toBeCloseTo(0.25);
-    expect(report.successGate.missingStrategySummaries).toEqual([]);
-  });
-
-  it('makes missing strategy summaries explicit when the strict comparison cannot run', () => {
-    const report = buildEvaluationReport({
-      dataset: 'benchmarks/dataset.json',
-      corpus: 'src',
-      requestedStrategies: ['keyword'],
-      strategies: [
-        summary('keyword', { recallAt10: 0.4, ndcgAt10: 0.3, mrr: 0.25 }),
-      ],
-    });
-
-    expect(report.successGate.requiredStrategySummaries).toEqual(['keyword', 'structural']);
-    expect(report.successGate.missingStrategySummaries).toEqual(['structural']);
-    expect(report.successGate).not.toHaveProperty('structuralBeatsKeyword');
-    expect(report.successGate.recallAt10Delta).toBeNull();
-    expect(report.successGate.ndcgAt10Delta).toBeNull();
-    expect(report.successGate.mrrDelta).toBeNull();
-  });
-
-  it('keeps structuralBeatsKeyword false with concrete deltas when structural underperforms', () => {
-    const report = buildEvaluationReport({
-      dataset: 'benchmarks/dataset.json',
-      corpus: 'src',
-      requestedStrategies: ['keyword', 'structural'],
-      strategies: [
-        summary('keyword', { recallAt10: 0.8, ndcgAt10: 0.7, mrr: 0.5 }),
-        summary('structural', { recallAt10: 0.6, ndcgAt10: 0.75, mrr: 0.4 }),
-      ],
-    });
-
-    expect(report.successGate.missingStrategySummaries).toEqual([]);
-    expect(report.successGate.structuralBeatsKeyword).toBe(false);
-    expect(report.successGate.recallAt10Delta).toBeCloseTo(-0.2);
-    expect(report.successGate.ndcgAt10Delta).toBeCloseTo(0.05);
-    expect(report.successGate.mrrDelta).toBeCloseTo(-0.1);
+    expect(report.successGate.requiredStrategySummaries).toEqual(['keyword', 'bm25', 'fts', 'structural']);
+    expect(report.successGate.missingStrategySummaries).toEqual(['bm25', 'fts']);
+    expect(report.successGate).not.toHaveProperty('structuralMeetsGate');
+    expect(report.successGate.recallAt10NonInferior).toBeNull();
+    expect(report.successGate.hitsAt1BeatsFts).toBeNull();
   });
 });
 

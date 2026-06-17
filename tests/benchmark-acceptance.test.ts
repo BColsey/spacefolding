@@ -9,30 +9,22 @@ import {
   parseArgs,
 } from '../benchmarks/check-acceptance.ts';
 
-function retrievalReport() {
+function passingGate() {
   return {
-    strategies: [
-      {
-        strategy: 'keyword',
-        averages: {
-          recallAt10: 0.5,
-          ndcgAt10: 0.4,
-          mrr: 0.25,
-        },
-      },
-      {
-        strategy: 'structural',
-        averages: {
-          recallAt10: 0.7,
-          ndcgAt10: 0.6,
-          mrr: 0.5,
-        },
-      },
-    ],
-    successGate: {
-      structuralBeatsKeyword: true,
-    },
+    requiredStrategySummaries: ['keyword', 'bm25', 'fts', 'structural'],
+    missingStrategySummaries: [],
+    recallNonInferiorityMargin: 0.05,
+    bestLexicalStrategy: 'bm25',
+    recallAt10VsBestLexical: { comparator: 'bm25', metric: 'recallAt10', mean: -0.02, low: -0.03, high: 0.01 },
+    hitsAt1VsFts: { comparator: 'fts', metric: 'hitsAt1', mean: 0.3, low: 0.15, high: 0.45 },
+    recallAt10NonInferior: true,
+    hitsAt1BeatsFts: true,
+    structuralMeetsGate: true,
   };
+}
+
+function retrievalReport() {
+  return { successGate: passingGate() };
 }
 
 function e2eReport() {
@@ -76,7 +68,7 @@ describe('acceptance checker report', () => {
     const text = formatTextReport(report);
     expect(text).toContain('Acceptance gate: PASS');
     expect(text).toContain(
-      'PASS retrieval.recallAt10: actual=0.2 expected=structural R@10 > keyword R@10'
+      'PASS retrieval.composite_gate: actual=true'
     );
     expect(text.split('\n').slice(1).every((line) => (
       /^(PASS|FAIL) [^:]+: actual=.+ expected=.+$/.test(line)
@@ -99,12 +91,6 @@ describe('acceptance checker report', () => {
     });
 
     expect(report.passed).toBe(false);
-    expect(report.checks).toContainEqual(expect.objectContaining({
-      name: 'retrieval.strategy_summaries_present',
-      passed: false,
-      actual: 'missing: structural',
-      expected: 'keyword and structural strategy summaries present',
-    }));
     expect(report.checks).toContainEqual(expect.objectContaining({
       name: 'retrieval.success_gate_present',
       passed: false,
@@ -150,59 +136,58 @@ describe('acceptance checker report', () => {
     }));
   });
 
-  it('fails missing retrieval strategies arrays before comparing metrics', () => {
+  it('fails when the gate cannot be computed because a strong baseline is missing', () => {
     const report = buildAcceptanceReport({
       retrieval: {
         successGate: {
-          structuralBeatsKeyword: true,
+          missingStrategySummaries: ['bm25', 'fts'],
         },
       },
     });
 
     expect(report.passed).toBe(false);
     expect(report.checks).toContainEqual(expect.objectContaining({
-      name: 'retrieval.strategies_present',
+      name: 'retrieval.strategy_summaries_present',
       passed: false,
-      actual: 'missing',
-      expected: 'top-level strategies array',
+      actual: 'missing: bm25, fts',
+      expected: 'keyword, bm25, fts, and structural strategy summaries present',
     }));
   });
 
-  it('fails field-level retrieval diagnostics when summaries or gate values are incomplete', () => {
+  it('fails the composite gate when the structural hybrid does not meet both halves', () => {
     const report = buildAcceptanceReport({
       retrieval: {
-        strategies: [
-          {
-            strategy: 'keyword',
-            averages: { recallAt10: 0.5, ndcgAt10: 0.4, mrr: 0.25 },
-          },
-          {
-            strategy: 'structural',
-            averages: { recallAt10: 0.7, mrr: Number.NaN },
-          },
-        ],
-        successGate: {},
+        successGate: {
+          missingStrategySummaries: [],
+          recallNonInferiorityMargin: 0.05,
+          bestLexicalStrategy: 'fts',
+          recallAt10VsBestLexical: { comparator: 'fts', metric: 'recallAt10', mean: -0.12, low: -0.2, high: -0.04 },
+          hitsAt1VsFts: { comparator: 'fts', metric: 'hitsAt1', mean: 0.0, low: -0.1, high: 0.1 },
+          recallAt10NonInferior: false,
+          hitsAt1BeatsFts: false,
+          structuralMeetsGate: false,
+        },
       },
     });
 
     expect(report.passed).toBe(false);
     expect(report.checks).toContainEqual(expect.objectContaining({
-      name: 'retrieval.ndcgAt10',
+      name: 'retrieval.recall_non_inferior_to_best_lexical',
       passed: false,
-      actual: 'missing/invalid: structural.averages.ndcgAt10',
-      expected: 'numeric keyword and structural averages for NDCG@10',
+      actual: 'structural−fts -0.120 [-0.200, -0.040]',
+      expected: 'structural recall@10 ≥ fts − 0.05 (paired-CI lower bound)',
     }));
     expect(report.checks).toContainEqual(expect.objectContaining({
-      name: 'retrieval.mrr',
+      name: 'retrieval.hits_at1_beats_fts',
       passed: false,
-      actual: 'missing/invalid: structural.averages.mrr',
-      expected: 'numeric keyword and structural averages for MRR',
+      actual: 'structural−fts +0.000 [-0.100, 0.100]',
+      expected: 'structural hits@1 > fts (paired-CI lower bound > 0)',
     }));
     expect(report.checks).toContainEqual(expect.objectContaining({
-      name: 'retrieval.success_gate',
+      name: 'retrieval.composite_gate',
       passed: false,
-      actual: 'missing/invalid: successGate.structuralBeatsKeyword',
-      expected: 'successGate.structuralBeatsKeyword is true',
+      actual: false,
+      expected: 'successGate.structuralMeetsGate is true (non-inferior recall AND top-1 win over fts)',
     }));
   });
 

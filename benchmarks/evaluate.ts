@@ -74,6 +74,15 @@ export interface StrategySummary {
   results: EvalResult[];
 }
 
+/** Paired-bootstrap contrast (structural − comparator) of a per-task metric. */
+export interface PairedContrast {
+  comparator: string;
+  metric: string;
+  mean: number;
+  low: number;
+  high: number;
+}
+
 export interface EvaluationReport {
   dataset: string;
   corpus: string;
@@ -82,10 +91,23 @@ export interface EvaluationReport {
   successGate: {
     requiredStrategySummaries: string[];
     missingStrategySummaries: string[];
-    structuralBeatsKeyword?: boolean;
-    recallAt10Delta: number | null;
-    ndcgAt10Delta: number | null;
-    mrrDelta: number | null;
+    // Pre-registered non-inferiority margin (in recall@10 points) for the
+    // "structural is not worse than the best lexical arm" half of the gate.
+    recallNonInferiorityMargin: number;
+    // The strongest lexical baseline (by mean recall@10) structural is measured
+    // against for non-inferiority.
+    bestLexicalStrategy: string | null;
+    // Composite gate contrasts (structural − comparator), paired bootstrap 95% CI.
+    recallAt10VsBestLexical: PairedContrast | null;
+    hitsAt1VsFts: PairedContrast | null;
+    // Half 1: structural recall@10 is non-inferior to the best lexical arm
+    // (CI lower bound for structural − bestLexical ≥ −margin).
+    recallAt10NonInferior: boolean | null;
+    // Half 2: structural strictly beats fts on top-1 localization
+    // (CI for structural − fts on hits@1 excludes 0, lower bound > 0).
+    hitsAt1BeatsFts: boolean | null;
+    // The blocking condition: both halves hold. Present only when computable.
+    structuralMeetsGate?: boolean;
   };
 }
 
@@ -107,7 +129,15 @@ const KNOWN_STRATEGIES = new Set([
   'spacefolding',
   'text',
 ]);
-const SUCCESS_GATE_STRATEGIES = ['keyword', 'structural'];
+// The composite retrieval gate compares the structural hybrid against the strong
+// lexical baselines (a path-aware BM25F and FTS5) — not the old `keyword`
+// strawman. All four must be present for the gate to be computable.
+const SUCCESS_GATE_STRATEGIES = ['keyword', 'bm25', 'fts', 'structural'];
+const GATE_LEXICAL_BASELINES = ['bm25', 'fts', 'keyword'] as const;
+// Pre-registered non-inferiority margin (recall@10 points) — structural may be
+// up to this much worse than the best lexical arm and still count as "not worse."
+// ~one paired-bootstrap CI half-width at n≈100; fixed, not fitted to a result.
+const RECALL_NONINFERIORITY_MARGIN = 0.05;
 
 type BenchmarkChunk = { id: string; text: string; path?: string };
 
@@ -704,6 +734,60 @@ function computeAverageMetrics(results: EvalResult[]): Record<string, number> {
   return avgMetrics;
 }
 
+/** Seeded RNG (matches paired-bootstrap.ts) so gate CIs are reproducible. */
+function gateRng(seed: string): () => number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  let a = h >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Paired bootstrap 95% CI of the per-task difference (structural − comparator)
+ * for one metric — the same procedure the gate's findings use, so the gate test
+ * and the published CI agree. Deterministic (seeded from the diffs).
+ */
+function pairedContrast(
+  structural: EvalResult[],
+  comparator: StrategySummary,
+  metric: keyof Metrics,
+  nBoot = 10_000,
+  ci = 0.95
+): PairedContrast {
+  const byId = new Map(comparator.results.map((r) => [r.taskId, r]));
+  const diffs: number[] = [];
+  for (const s of structural) {
+    const c = byId.get(s.taskId);
+    if (c) diffs.push((s.metrics[metric] as number) - (c.metrics[metric] as number));
+  }
+  const n = diffs.length;
+  const mean = n > 0 ? diffs.reduce((a, b) => a + b, 0) / n : 0;
+  const rng = gateRng(`gate:${metric}:${diffs.map((v) => v.toFixed(6)).join(',')}`);
+  const means: number[] = [];
+  for (let b = 0; b < nBoot; b++) {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += diffs[Math.floor(rng() * n)];
+    means.push(n > 0 ? s / n : 0);
+  }
+  means.sort((x, y) => x - y);
+  const alpha = (1 - ci) / 2;
+  return {
+    comparator: comparator.strategy,
+    metric: String(metric),
+    mean,
+    low: means[Math.floor(nBoot * alpha)] ?? 0,
+    high: means[Math.ceil(nBoot * (1 - alpha)) - 1] ?? 0,
+  };
+}
+
 export function buildEvaluationReport(input: {
   dataset: string;
   corpus: string;
@@ -713,33 +797,43 @@ export function buildEvaluationReport(input: {
   const byStrategy = Object.fromEntries(
     input.strategies.map((summary) => [summary.strategy, summary])
   ) as Record<string, StrategySummary | undefined>;
-  const keyword = byStrategy.keyword;
   const structural = byStrategy.structural;
+  const fts = byStrategy.fts;
   const missingStrategySummaries = SUCCESS_GATE_STRATEGIES.filter((strategy) => !byStrategy[strategy]);
-  const recallAt10Delta = structural && keyword
-    ? structural.averages.recallAt10 - keyword.averages.recallAt10
-    : null;
-  const ndcgAt10Delta = structural && keyword
-    ? structural.averages.ndcgAt10 - keyword.averages.ndcgAt10
-    : null;
-  const mrrDelta = structural && keyword
-    ? structural.averages.mrr - keyword.averages.mrr
-    : null;
 
   const successGate: EvaluationReport['successGate'] = {
     requiredStrategySummaries: [...SUCCESS_GATE_STRATEGIES],
     missingStrategySummaries,
-    recallAt10Delta,
-    ndcgAt10Delta,
-    mrrDelta,
+    recallNonInferiorityMargin: RECALL_NONINFERIORITY_MARGIN,
+    bestLexicalStrategy: null,
+    recallAt10VsBestLexical: null,
+    hitsAt1VsFts: null,
+    recallAt10NonInferior: null,
+    hitsAt1BeatsFts: null,
   };
 
-  if (keyword && structural) {
-    successGate.structuralBeatsKeyword = Boolean(
-      recallAt10Delta !== null && recallAt10Delta > 0
-      && ndcgAt10Delta !== null && ndcgAt10Delta > 0
-      && mrrDelta !== null && mrrDelta > 0
+  if (missingStrategySummaries.length === 0 && structural && fts) {
+    // Half 1 — non-inferiority on recall@10 vs the STRONGEST lexical arm
+    // (the hardest baseline to be non-inferior to), tested with a paired CI.
+    const lexical = GATE_LEXICAL_BASELINES
+      .map((name) => byStrategy[name])
+      .filter((s): s is StrategySummary => Boolean(s));
+    const bestLexical = lexical.reduce((best, s) =>
+      s.averages.recallAt10 > best.averages.recallAt10 ? s : best
     );
+    const recallContrast = pairedContrast(structural.results, bestLexical, 'recallAt10');
+    const recallNonInferior = recallContrast.low >= -RECALL_NONINFERIORITY_MARGIN;
+
+    // Half 2 — strict top-1 win vs fts (paired CI for hits@1 excludes 0).
+    const hitsContrast = pairedContrast(structural.results, fts, 'hitsAt1');
+    const hitsBeatsFts = hitsContrast.low > 0;
+
+    successGate.bestLexicalStrategy = bestLexical.strategy;
+    successGate.recallAt10VsBestLexical = recallContrast;
+    successGate.hitsAt1VsFts = hitsContrast;
+    successGate.recallAt10NonInferior = recallNonInferior;
+    successGate.hitsAt1BeatsFts = hitsBeatsFts;
+    successGate.structuralMeetsGate = recallNonInferior && hitsBeatsFts;
   }
 
   return {
@@ -1140,12 +1234,20 @@ async function runEvaluation(options: CliOptions) {
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
+    const gate = report.successGate;
     log(`\n${'═'.repeat(70)}`);
     log(`  BENCHMARK COMPLETE`);
-    if (typeof report.successGate.structuralBeatsKeyword === 'boolean') {
-      log(`  Structural beats keyword on strict metrics: ${report.successGate.structuralBeatsKeyword ? 'yes' : 'no'}`);
+    if (typeof gate.structuralMeetsGate === 'boolean') {
+      const r = gate.recallAt10VsBestLexical;
+      const h = gate.hitsAt1VsFts;
+      log(`  Composite retrieval gate: ${gate.structuralMeetsGate ? 'PASS' : 'FAIL'}`);
+      log(`    recall@10 non-inferior to ${gate.bestLexicalStrategy} (≥ −${gate.recallNonInferiorityMargin}): ` +
+        `${gate.recallAt10NonInferior ? 'yes' : 'no'}` +
+        (r ? ` [structural−${r.comparator} ${r.mean >= 0 ? '+' : ''}${r.mean.toFixed(3)}, CI ${r.low.toFixed(3)}..${r.high.toFixed(3)}]` : ''));
+      log(`    hits@1 beats fts (CI excludes 0): ${gate.hitsAt1BeatsFts ? 'yes' : 'no'}` +
+        (h ? ` [structural−fts ${h.mean >= 0 ? '+' : ''}${h.mean.toFixed(3)}, CI ${h.low.toFixed(3)}..${h.high.toFixed(3)}]` : ''));
     } else {
-      log(`  Structural beats keyword on strict metrics: missing summaries for ${report.successGate.missingStrategySummaries.join(', ')}`);
+      log(`  Composite retrieval gate: missing summaries for ${gate.missingStrategySummaries.join(', ')}`);
     }
     log(`${'═'.repeat(70)}\n`);
   }
