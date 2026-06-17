@@ -3,16 +3,36 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  BM25F_PARAMS,
+  buildBm25Corpus,
+  bm25Baseline,
+  bm25BodyBaseline,
   buildEvaluationReport,
   loadBenchmarkDataset,
   parseBenchmarkDataset,
   parseArgs,
   resolveStrategies,
+  scoreBm25f,
   walkDir,
+  type BenchmarkTask,
   type EvalResult,
   type Metrics,
   type StrategySummary,
 } from '../benchmarks/evaluate.ts';
+
+type Chunk = { id: string; text: string; path?: string };
+
+function bmTask(query: string): BenchmarkTask {
+  return {
+    id: 'bm-task',
+    task: query,
+    intent: 'debug',
+    relevant_files: [],
+    relevant_types: [],
+    relevant_keywords: [],
+    irrelevant_files: [],
+  };
+}
 
 const baseMetrics: Metrics = {
   recallAt5: 0,
@@ -136,6 +156,7 @@ describe('retrieval benchmark report', () => {
     expect(resolveStrategies('all')).toEqual([
       'keyword',
       'bm25',
+      'bm25body',
       'path-match',
       'fts',
       'vector',
@@ -260,5 +281,84 @@ describe('retrieval benchmark report', () => {
     expect(report.successGate.recallAt10Delta).toBeCloseTo(-0.2);
     expect(report.successGate.ndcgAt10Delta).toBeCloseTo(0.05);
     expect(report.successGate.mrrDelta).toBeCloseTo(-0.1);
+  });
+});
+
+describe('file-level BM25F baseline', () => {
+  it('treats the FILE as the document unit — score is invariant to chunk boundaries', async () => {
+    // The same three files, once as a single chunk each and once split into
+    // several chunks. A correct file-as-document scorer ignores chunking; the
+    // old per-chunk-summed scorer would inflate files split into more chunks.
+    const single: Chunk[] = [
+      { id: 'a', path: 'a.ts', text: 'alpha beta gamma needle' },
+      { id: 'b', path: 'b.ts', text: 'beta gamma delta' },
+      { id: 'c', path: 'c.ts', text: 'gamma delta epsilon needle needle' },
+    ];
+    const split: Chunk[] = [
+      { id: 'a1', path: 'a.ts', text: 'alpha beta' },
+      { id: 'a2', path: 'a.ts', text: 'gamma needle' },
+      { id: 'b1', path: 'b.ts', text: 'beta gamma delta' },
+      { id: 'c1', path: 'c.ts', text: 'gamma delta' },
+      { id: 'c2', path: 'c.ts', text: 'epsilon needle' },
+      { id: 'c3', path: 'c.ts', text: 'needle' },
+    ];
+
+    const rankSingle = await bm25Baseline(bmTask('needle'), single);
+    const rankSplit = await bm25Baseline(bmTask('needle'), split);
+
+    // Non-matching files are dropped; c.ts (needle x2) outranks a.ts (needle x1).
+    expect(rankSingle).toEqual(['c.ts', 'a.ts']);
+    // And chunk boundaries do not change the ranking — no many-chunk inflation.
+    expect(rankSplit).toEqual(rankSingle);
+  });
+
+  it('scores the path as a first-class field — bm25body (pathBoost=0) ignores it', async () => {
+    const chunks: Chunk[] = [
+      { id: 'p', path: 'src/authentication.ts', text: 'handles requests and responses' },
+      { id: 'q', path: 'src/other.ts', text: 'unrelated helper utilities live here' },
+      { id: 'r', path: 'src/misc.ts', text: 'more unrelated helper utilities' },
+    ];
+
+    // "authentication" appears ONLY in a file path, never in any body.
+    const withPath = await bm25Baseline(bmTask('authentication'), chunks);
+    const bodyOnly = await bm25BodyBaseline(bmTask('authentication'), chunks);
+
+    expect(withPath).toContain('src/authentication.ts');
+    expect(bodyOnly).not.toContain('src/authentication.ts');
+    expect(bodyOnly).toEqual([]); // term is in no body at all
+  });
+
+  it('weights rare query terms over ubiquitous ones via file-frequency IDF', async () => {
+    const chunks: Chunk[] = [
+      { id: '1', path: 'f1.ts', text: 'common words here' },
+      { id: '2', path: 'f2.ts', text: 'common more words' },
+      { id: '3', path: 'special.ts', text: 'common and rare token' },
+    ];
+
+    // "common" is in every file (low IDF); "rare" is in one (high IDF) and must
+    // dominate the ranking even though every file matches "common".
+    const ranked = await bm25Baseline(bmTask('common rare'), chunks);
+    expect(ranked[0]).toBe('special.ts');
+    expect(ranked).toHaveLength(3); // all three contain "common"
+  });
+
+  it('exposes a memoizable, query-independent corpus with file-frequency stats', () => {
+    const chunks: Chunk[] = [
+      { id: 'a1', path: 'a.ts', text: 'needle alpha' },
+      { id: 'a2', path: 'a.ts', text: 'beta needle' },
+      { id: 'b1', path: 'b.ts', text: 'alpha beta' },
+    ];
+    const corpus = buildBm25Corpus(chunks);
+
+    // Two files, not three chunks.
+    expect(corpus.docs).toHaveLength(2);
+    // "needle" occurs in one FILE (twice in a.ts) → file-frequency 1.
+    expect(corpus.docFreq.get('needle')).toBe(1);
+    // "alpha" occurs in both files → file-frequency 2.
+    expect(corpus.docFreq.get('alpha')).toBe(2);
+
+    // Scoring through the prebuilt corpus matches the convenience wrapper.
+    const direct = scoreBm25f(bmTask('needle'), corpus, BM25F_PARAMS);
+    expect(direct).toEqual(['a.ts']);
   });
 });

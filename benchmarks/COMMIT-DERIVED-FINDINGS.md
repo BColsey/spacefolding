@@ -179,6 +179,118 @@ holdout **+0.066**; typescript holdout ≈ tie). Reproduce with
 `benchmarks/fusion-sweep.ts` → `benchmarks/analyze-sweep.ts`; confirm with
 `evaluate.ts --strategy all` (`BENCH_EMBEDDING=gpu`) → `benchmarks/paired-bootstrap.ts`.
 
+## WS0.6 — BM25 baseline fix + retrieval-depth fairness fix — LANDED
+
+Two coupled corrections to the benchmark harness, both credibility-improving and
+both changing earlier conclusions. Neither touches `src/` or the deterministic
+acceptance-gate logic; both are in `benchmarks/evaluate.ts`.
+
+### 1. The old `bm25` baseline was broken; it is now a fair file-level BM25F
+
+The previous `bm25Baseline` treated each **chunk** as a document, folded the path
+into the chunk body, computed IDF at chunk granularity, and **summed** per-chunk
+scores into a per-file total — biasing toward many-chunk files and diluting path
+tokens. It scored 0.565 R@10 on django (far below fts 0.798), so it was not a
+credible "strong lexical" comparator.
+
+The replacement is **file-level BM25F**: document = file (all chunks of a path
+concatenated), with two length-normalized fields — body (w=1) and path
+(w=`pathBoost`=2.0) — file-frequency IDF, and a single k1 saturation (Lucene
+non-negative variant). A `bm25body` strategy (pathBoost=0) is reported alongside
+to expose the path field's contribution, so the boost is auditable, not a hidden
+knob. The scorer was adversarially reviewed (math/fairness/code lenses) and
+confirmed canonically correct; file-level aggregation is a fairness fix (a chunk
+is invariant to how a file is split — unit-tested) not a thumb on the scale. A
+deterministic path tiebreaker makes the ranking reproducible across rebuilds.
+
+Effect (R@10): django **0.565 → 0.854**, typescript 0.606 → 0.575 (the old number
+was *inflated* by the many-chunk bias). The path field barely matters —
+`bm25 ≈ bm25body` everywhere (django Δ +0.005) — so the result is not propped up
+by the boost.
+
+### 2. The retriever arms were truncated at 50 chunks; the JS baselines were not
+
+The review surfaced a binding measurement asymmetry: `fts`/`structural`/`vector`
+go through the retriever capped at 50 chunks (then deduped to files), while
+`bm25`/`keyword` return their full ranked file list. At 50 chunks the retriever
+arms deduped to a **median of ~17–33 files** — binding recall@20 everywhere and
+recall@10 on typescript — so the prior "structural beats fts" was *partly fts
+truncation*, not retrieval quality. Fixed by raising the benchmark retrieval
+depth to **200 chunks** (`BENCHMARK_RETRIEVAL_DEPTH`, env-overridable), enough to
+clear k=20 in distinct files on every corpus. Verified **stable to depth 400**
+(typescript fts R@10 identical, structural drifts ≤0.02, every paired-CI verdict
+unchanged) — 200 is "deep enough," not a tuned sweet spot. `bm25` is
+cap-independent and reproduces 0.854/0.575 exactly across the change.
+
+### Corrected results — commit-derived, n=100/repo, fair depth=200
+
+Lexical arms (`keyword`/`bm25`/`bm25body`/`fts`) are **byte-identical** between
+the deterministic and GPU runs (same corpus/chunks), so the GPU table is a
+controlled comparison: only `vector`/`structural` move. (rust re-measurement with
+the fixed BM25 + fair depth is pending — the earlier rust rows above use the
+broken BM25 and the truncated cap.)
+
+**R@10 (Hits@1):**
+
+| strategy | django det | django GPU | typescript det | typescript GPU |
+|----------|-----------|-----------|----------------|----------------|
+| **bm25** (fixed) | **0.854 (0.550)** | 0.854 (0.550) | 0.575 (0.250) | 0.575 (0.250) |
+| bm25body | 0.849 (0.550) | 0.849 (0.550) | 0.567 (0.240) | 0.567 (0.240) |
+| keyword | 0.836 (0.380) | 0.836 (0.380) | 0.619 (0.360) | 0.619 (0.360) |
+| fts | 0.812 (0.170) | 0.812 (0.170) | 0.662 (0.240) | 0.662 (0.240) |
+| vector | 0.045 (—) | 0.780 (0.310) | 0.377 (0.100) | 0.592 (0.280) |
+| **structural** (hybrid) | 0.867 (0.560) | **0.868 (0.400)** | 0.554 (0.310) | **0.695 (0.350)** |
+
+**Paired bootstrap 95% CIs vs the fixed BM25 (`*` = excludes 0):**
+
+| contrast | metric | django GPU | typescript GPU |
+|----------|--------|-----------|----------------|
+| structural − bm25 | R@10 | +0.014 [−0.045,+0.075] | **+0.121 [+0.047,+0.194] \*** |
+| structural − bm25 | H@1  | **−0.150 [−0.270,−0.030] \*** | +0.100 [−0.010,+0.210] |
+| structural − bm25 | R@20 | **+0.052 [+0.013,+0.098] \*** | **+0.116 [+0.033,+0.200] \*** |
+| structural − fts  | R@10 | +0.055 [−0.011,+0.124] | +0.033 [−0.016,+0.083] |
+| structural − fts  | H@1  | **+0.230 [+0.130,+0.330] \*** | **+0.110 [+0.030,+0.190] \*** |
+| structural − vector | R@10 | **+0.087 [+0.021,+0.156] \*** | **+0.103 [+0.021,+0.189] \*** |
+
+In the deterministic (no real embeddings) regime, `structural − bm25` is a
+**statistical tie on every metric and both repos** — a correctly-implemented BM25
+is not beaten by structural without the vector arm.
+
+### What this establishes (honestly)
+
+1. **A correct BM25 is a strong baseline that structural does not dominate.** With
+   real code embeddings + the recalibrated fusion, the hybrid **ties** the fixed
+   BM25 on django R@10 and **loses to it on django Hits@1** (BM25 0.550 vs hybrid
+   0.400, −0.150 \*). BM25 even beats *pure vector* on django R@10. The hybrid
+   does win the fixed BM25 on typescript recall (+0.121/+0.116 \*) and on R@20 for
+   django. **There is no universal winner — it is corpus- and metric-shaped.**
+2. **The hybrid's consistent, genuine edge over fts is top-1 precision, not
+   recall.** `structural − fts` is a tie on R@10/R@20 on both repos but a
+   significant win on Hits@1 (+0.23 django, +0.11 ts) — the preserved
+   exact-identifier lookup. Uncapped, **fts is the recall@20 leader** (django
+   0.955), so the earlier "structural strictly > fts on django" no longer holds at
+   a fair depth (django R@10 +0.055, ns).
+3. **The WS0.3 "recalibrated fusion ≥ best single arm" claim must be narrowed.**
+   It was measured against fts/vector only and at the truncated cap. Against a
+   *fair* BM25 and at a fair depth, the honest claim is: *the recalibrated hybrid
+   is competitive with the strongest lexical baselines and wins top-1 precision
+   over fts, but does not beat a correctly-implemented BM25 across the board (BM25
+   wins django Hits@1).*
+
+### Disclosures (keep the lexical arms distinct)
+
+- `bm25` = BM25F over file-level docs **with a length-normalized path field**;
+  `fts` = SQLite FTS5 over chunk **text only** (`path UNINDEXED`); `bm25body`
+  isolates the path field. They are three *distinct* lexical models, deliberately
+  so — `bm25` is a stronger (path-aware) "beat-me" target than `fts`.
+- Tokenizer/stopword differences: `bm25` keeps `\w` (so `snake_case` stays one
+  token) with no stopword list (ubiquitous terms self-cancel via near-zero IDF);
+  `fts` uses unicode61 + an explicit stopword list. Disclosed, not "fixed" — they
+  model lexical matching differently by design.
+- `pathBoost`=2.0 is a fixed, pre-registered round value (no canonical BM25F field
+  weight exists), **not** fitted to this benchmark; `bm25body` (=0) brackets it
+  and the conclusions are insensitive to it.
+
 ## Caveats (do not over-read)
 
 - The ablation is a **crude placeholder swap**, a directional lower bound, not an
@@ -207,14 +319,21 @@ fusion is no longer below the best single arm on either repo, and is significant
 above FTS on django. Remaining sequence:
 
 1. ~~**WS0.3 — fix fusion.**~~ **DONE.** Recalibrated `structural:reliable`
-   weights; GPU hybrid is now ≥ best single arm (strictly on django, a tie on
-   typescript). Fusion is no longer the bottleneck.
-2. **Fix the BM25 baseline** (file-level aggregation + path boost) so "beats BM25"
-   is fair. Currently BM25 is the weakest-but-noisy baseline (django 0.565, ts
-   0.606) and not yet a credible strong-lexical comparator — `fts` is the real
-   lexical bar to beat, and structural now does (django) / ties (typescript).
-3. **Revisit the gate / positioning** with fusion fixed. The honest gate is now
-   "recalibrated fusion ≥ best single arm (FTS/vector) within noise, strictly >
-   FTS where the arms are balanced" — **not** "structural beats every baseline
-   everywhere." Do not flip the acceptance gate to a universal-win claim:
-   typescript shows FTS-dominant corpora where fusion ties rather than wins.
+   weights; GPU hybrid is no longer below the fts/vector arms. (Note: the
+   "strictly > FTS on django" part of this claim was measured at the truncated
+   retrieval cap — see WS0.6 below; at a fair depth it is a tie.)
+2. ~~**Fix the BM25 baseline.**~~ **DONE** (WS0.6 above). File-level BM25F + path
+   field; django 0.565 → 0.854. A *correctly-implemented* BM25 is now the strong
+   lexical bar, and the picture it reveals is honest and non-trivial: structural
+   **ties** it deterministically, **wins** typescript recall with embeddings, but
+   **loses django Hits@1** to it. Also fixed the retriever-cap asymmetry that had
+   been flattering structural-vs-fts.
+3. **Revisit the gate / positioning** (next). With a fair BM25 in the comparison,
+   the honest framing is sharper than before: *the recalibrated hybrid is
+   competitive with the strongest lexical baselines (a path-aware BM25 and fts)
+   and wins top-1 precision over fts on both repos, but there is no universal
+   winner — BM25 beats the hybrid on django Hits@1, structural beats BM25 on
+   typescript recall.* Do **not** flip the gate to any "structural beats every
+   baseline" claim. The acceptance-gate's `structuralBeatsKeyword` predicate is
+   also now too weak (keyword is not the strong baseline) and should compare
+   against `bm25`/`fts`.

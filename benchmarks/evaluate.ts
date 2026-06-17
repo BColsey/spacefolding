@@ -19,7 +19,7 @@ import { createBenchmarkSqliteArtifact } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────
 
-interface BenchmarkTask {
+export interface BenchmarkTask {
   id: string;
   task: string;
   intent: string;
@@ -99,7 +99,7 @@ export interface CliOptions {
   maxChunks: number | null;
 }
 
-const ALL_STRATEGIES = ['keyword', 'bm25', 'path-match', 'fts', 'vector', 'symbol-only', 'structural'];
+const ALL_STRATEGIES = ['keyword', 'bm25', 'bm25body', 'path-match', 'fts', 'vector', 'symbol-only', 'structural'];
 const KNOWN_STRATEGIES = new Set([
   ...ALL_STRATEGIES,
   'hybrid',
@@ -406,70 +406,176 @@ function bm25Tokenize(text: string): string[] {
 }
 
 /**
- * Classic Okapi BM25 baseline (k1=1.5, b=0.75).
- *
- * Each chunk is treated as a document — consistent with how the keyword
- * baseline scores `allChunks`. IDF is computed over the chunk corpus, the
- * query is tokenized the same way, and per-chunk BM25 scores are aggregated
- * by file path so the strategy ranks files (like every other strategy here).
+ * Per-FILE BM25F document. Every chunk that shares a `path` is concatenated into
+ * one document, so BM25 ranks files (the relevance unit the benchmark scores)
+ * rather than chunks. This is a deliberate fix to three flaws in the old
+ * per-chunk scorer, which (a) summed per-chunk scores into a per-file total,
+ * biasing toward many-chunk files, (b) computed IDF at chunk granularity, and
+ * (c) folded the path into the chunk body, diluting filename tokens. Here the
+ * path is a SEPARATE BM25F field with its own length normalization so filename
+ * matches are a first-class, undiluted signal.
  */
-async function bm25Baseline(
-  task: BenchmarkTask,
-  allChunks: { id: string; text: string; path?: string }[]
-): Promise<string[]> {
-  const K1 = 1.5;
-  const B = 0.75;
+interface Bm25FileDoc {
+  path: string;
+  bodyTf: Map<string, number>;
+  bodyLength: number;
+  pathTf: Map<string, number>;
+  pathLength: number;
+}
 
-  // Pre-tokenize documents (one per chunk) and term frequencies.
-  const docs = allChunks.map((chunk) => {
-    const tokens = bm25Tokenize(chunk.text + ' ' + (chunk.path ?? ''));
-    const termFreq = new Map<string, number>();
-    for (const token of tokens) {
-      termFreq.set(token, (termFreq.get(token) ?? 0) + 1);
+interface Bm25Corpus {
+  docs: Bm25FileDoc[];
+  /** File-frequency: number of files where the term appears in body OR path. */
+  docFreq: Map<string, number>;
+  avgBodyLength: number;
+  avgPathLength: number;
+}
+
+/**
+ * BM25F parameters. `k1`/`b` are the Okapi defaults (1.5 / 0.75). `pathBoost`
+ * (w_path, with w_body fixed at 1) is a fixed, pre-registered round value: a
+ * filename is a strong but not overwhelming lexical signal, so the path field
+ * counts ~2x a body field per length-normalized occurrence. Unlike k1/b there is
+ * no canonical default for a BM25F field weight (it is normally tuned per
+ * collection); 2.0 is a deliberate round choice that was NOT fitted to this
+ * benchmark. The `bm25body` strategy re-runs the same scorer with pathBoost=0 so
+ * the path field's exact contribution is auditable rather than a hidden knob,
+ * and the conclusions are insensitive to it (bm25 ≈ bm25body on django).
+ */
+interface Bm25fParams {
+  k1: number;
+  bBody: number;
+  bPath: number;
+  pathBoost: number;
+}
+
+export const BM25F_PARAMS: Bm25fParams = { k1: 1.5, bBody: 0.75, bPath: 0.75, pathBoost: 2.0 };
+
+function countTokens(tokens: string[]): Map<string, number> {
+  const tf = new Map<string, number>();
+  for (const token of tokens) tf.set(token, (tf.get(token) ?? 0) + 1);
+  return tf;
+}
+
+/**
+ * Build the file-level BM25F corpus from chunk rows. Query-independent, so it is
+ * memoized per `allChunks` array (the same array is reused across every task in
+ * a strategy run) — the per-task cost is then just query scoring.
+ */
+export function buildBm25Corpus(allChunks: { id: string; text: string; path?: string }[]): Bm25Corpus {
+  const fileAgg = new Map<string, { path: string | null; bodyTokens: string[] }>();
+  for (const chunk of allChunks) {
+    const key = chunk.path ?? chunk.id;
+    let agg = fileAgg.get(key);
+    if (!agg) {
+      agg = { path: chunk.path ?? null, bodyTokens: [] };
+      fileAgg.set(key, agg);
     }
-    return { path: chunk.path ?? chunk.id, length: tokens.length, termFreq };
-  });
+    for (const token of bm25Tokenize(chunk.text)) agg.bodyTokens.push(token);
+  }
 
-  const docCount = docs.length;
-  if (docCount === 0) return [];
+  const docs: Bm25FileDoc[] = [];
+  for (const [key, agg] of fileAgg) {
+    const pathTokens = agg.path ? bm25Tokenize(agg.path) : [];
+    docs.push({
+      path: key,
+      bodyTf: countTokens(agg.bodyTokens),
+      bodyLength: agg.bodyTokens.length,
+      pathTf: countTokens(pathTokens),
+      pathLength: pathTokens.length,
+    });
+  }
 
-  const avgDocLength = docs.reduce((sum, doc) => sum + doc.length, 0) / docCount;
-
-  // Document frequency per term across the corpus.
   const docFreq = new Map<string, number>();
   for (const doc of docs) {
-    for (const term of doc.termFreq.keys()) {
-      docFreq.set(term, (docFreq.get(term) ?? 0) + 1);
-    }
+    const terms = new Set<string>([...doc.bodyTf.keys(), ...doc.pathTf.keys()]);
+    for (const term of terms) docFreq.set(term, (docFreq.get(term) ?? 0) + 1);
   }
+
+  const docCount = docs.length || 1;
+  const avgBodyLength = docs.reduce((sum, doc) => sum + doc.bodyLength, 0) / docCount || 1;
+  const avgPathLength = docs.reduce((sum, doc) => sum + doc.pathLength, 0) / docCount || 1;
+
+  return { docs, docFreq, avgBodyLength, avgPathLength };
+}
+
+const bm25CorpusCache = new WeakMap<object, Bm25Corpus>();
+
+function getBm25Corpus(allChunks: { id: string; text: string; path?: string }[]): Bm25Corpus {
+  const cached = bm25CorpusCache.get(allChunks);
+  if (cached) return cached;
+  const corpus = buildBm25Corpus(allChunks);
+  bm25CorpusCache.set(allChunks, corpus);
+  return corpus;
+}
+
+/**
+ * Score a query against a file-level BM25F corpus. Per term, body and path
+ * occurrences are length-normalized within their own field, combined with the
+ * field weights (w_body=1, w_path=pathBoost), and saturated once by k1 — the
+ * canonical BM25F field combination (Robertson, Zaragoza & Taylor). IDF and the
+ * saturation numerator use the Lucene-style non-negative variant:
+ * log(1 + (N − df + 0.5)/(df + 0.5)) with a (k1 + 1) numerator. The inner `1 +`
+ * is intentional — it keeps IDF ≥ 0 even when a term is in a majority of files
+ * (the literal RSJ form goes negative for df > N/2); it is not the raw RSJ IDF.
+ */
+export function scoreBm25f(task: BenchmarkTask, corpus: Bm25Corpus, params: Bm25fParams): string[] {
+  const { docs, docFreq, avgBodyLength, avgPathLength } = corpus;
+  const docCount = docs.length;
+  if (docCount === 0) return [];
 
   const queryTerms = [...new Set(bm25Tokenize(task.task))];
   const idf = new Map<string, number>();
   for (const term of queryTerms) {
     const df = docFreq.get(term) ?? 0;
-    // Standard BM25 IDF with +1 to keep it non-negative.
     idf.set(term, Math.log(1 + (docCount - df + 0.5) / (df + 0.5)));
   }
 
-  // Aggregate BM25 scores per file path.
-  const fileScores = new Map<string, number>();
+  const scored: { path: string; score: number }[] = [];
   for (const doc of docs) {
     let score = 0;
     for (const term of queryTerms) {
-      const tf = doc.termFreq.get(term);
-      if (!tf) continue;
-      const termIdf = idf.get(term) ?? 0;
-      const numerator = tf * (K1 + 1);
-      const denominator = tf + K1 * (1 - B + (B * doc.length) / avgDocLength);
-      score += termIdf * (numerator / denominator);
+      const occBody = doc.bodyTf.get(term) ?? 0;
+      const occPath = doc.pathTf.get(term) ?? 0;
+      if (occBody === 0 && occPath === 0) continue;
+      const normBody = occBody === 0
+        ? 0
+        : occBody / (1 - params.bBody + params.bBody * (doc.bodyLength / avgBodyLength));
+      const normPath = occPath === 0
+        ? 0
+        : occPath / (1 - params.bPath + params.bPath * (doc.pathLength / avgPathLength));
+      const tfCombined = normBody + params.pathBoost * normPath;
+      if (tfCombined <= 0) continue;
+      score += (idf.get(term) ?? 0) * (tfCombined * (params.k1 + 1)) / (params.k1 + tfCombined);
     }
-    if (score <= 0) continue;
-    fileScores.set(doc.path, (fileScores.get(doc.path) ?? 0) + score);
+    if (score > 0) scored.push({ path: doc.path, score });
   }
 
-  return [...fileScores.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([path]) => path);
+  // Sort by score, breaking exact ties by path so the ranking is reproducible
+  // across rebuilds (it must not depend on the order rows come back from SQLite).
+  return scored
+    .sort((a, b) => b.score - a.score || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+    .map((s) => s.path);
+}
+
+/** File-level BM25F baseline (body + length-normalized path field). */
+export async function bm25Baseline(
+  task: BenchmarkTask,
+  allChunks: { id: string; text: string; path?: string }[]
+): Promise<string[]> {
+  return scoreBm25f(task, getBm25Corpus(allChunks), BM25F_PARAMS);
+}
+
+/**
+ * Body-only file-level BM25 (pathBoost=0). Pairs with `bm25Baseline` to isolate
+ * how much of the BM25F result comes from the path field — keeps the path boost
+ * honest and visible in every report rather than a hidden tuning knob.
+ */
+export async function bm25BodyBaseline(
+  task: BenchmarkTask,
+  allChunks: { id: string; text: string; path?: string }[]
+): Promise<string[]> {
+  return scoreBm25f(task, getBm25Corpus(allChunks), { ...BM25F_PARAMS, pathBoost: 0 });
 }
 
 /** Random baseline — pick random chunks */
@@ -506,6 +612,30 @@ async function pathMatchBaseline(
 
 // ── Spacefolding Retrieval ───────────────────────────────────
 
+/**
+ * Retrieval depth (in CHUNKS) for the spacefolding strategies. The retriever
+ * returns ranked chunks; the benchmark dedups them to files. recall@k is only
+ * well-defined if every arm can offer at least k distinct files, so this must be
+ * large enough that the chunk→file dedup clears the largest evaluated k (20)
+ * with margin on every corpus. At the previous value of 50 chunks the fts and
+ * structural arms deduped to a median of ~17–33 files (binding recall@20, and
+ * recall@10 on typescript) while the uncapped JS baselines returned hundreds —
+ * a measurement asymmetry, not a quality gap. 200 chunks deduped to ≥50 files on
+ * django/typescript/rust, so recall@k for k≤20 is a fair, non-truncated
+ * comparison across all strategies. (recall@k only ever inspects the top k, so a
+ * deeper ranked list never changes recall@k≤20 except by un-truncating an arm
+ * that previously ran out of files.)
+ */
+const BENCHMARK_RETRIEVAL_DEPTH = (() => {
+  const raw = process.env.BENCH_RETRIEVAL_DEPTH;
+  if (raw === undefined) return 200;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 20) {
+    throw new Error('BENCH_RETRIEVAL_DEPTH must be an integer >= 20');
+  }
+  return parsed;
+})();
+
 async function spacefoldingRetrieval(
   task: BenchmarkTask,
   pipeline: any,
@@ -514,8 +644,8 @@ async function spacefoldingRetrieval(
   const result = await pipeline.retrieve(task.task, 200_000, {
     strategy,
     mode: 'exhaustive',
-    topK: 50,
-    returnLimit: 50,
+    topK: BENCHMARK_RETRIEVAL_DEPTH,
+    returnLimit: BENCHMARK_RETRIEVAL_DEPTH,
     maxHops: 0,
   });
 
@@ -710,6 +840,9 @@ async function evaluateBenchmarkTask(
       break;
     case 'bm25':
       retrievedPaths = await bm25Baseline(task, allChunks);
+      break;
+    case 'bm25body':
+      retrievedPaths = await bm25BodyBaseline(task, allChunks);
       break;
     case 'path-match':
       retrievedPaths = await pathMatchBaseline(task, allChunks);
