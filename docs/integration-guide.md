@@ -19,7 +19,7 @@ Use this guide to connect Claude Code to Spacefolding through the Model Context 
 
 ## Local Node.js Setup
 
-Add Spacefolding to `.claude/settings.json`:
+Add Spacefolding to `.mcp.json` (project-scoped), or use `claude mcp add spacefolding -- node /path/to/spacefolding/dist/main.js serve` (user-scoped):
 
 ```json
 {

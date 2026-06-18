@@ -16,6 +16,13 @@
   "bin": {
     "spacefolding": "dist/main.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
