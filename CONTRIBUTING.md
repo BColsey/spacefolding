@@ -82,4 +82,6 @@ tests/           # Test files
 ## License
 
 By contributing, you agree that your contributions will be licensed under the
-Spacefolding Personal Use License in [LICENSE](LICENSE).
+Functional Source License 1.1, ALv2 ([FSL-1.1-ALv2](LICENSE)); see
+[LICENSING.md](LICENSING.md). A Contributor License Agreement may be introduced
+when commercial licensing begins.
