@@ -418,7 +418,8 @@ export class SQLiteRepository implements StorageProvider {
       chunkId: string,
       structuralScore: number,
       dependencyBoost: number,
-      reason: string
+      reason: string,
+      flags?: { symbolExact?: boolean; pathExact?: boolean }
     ) => {
       if (structuralScore <= 0 && dependencyBoost <= 0) return;
       const existing = scores.get(chunkId) ?? {
@@ -427,9 +428,15 @@ export class SQLiteRepository implements StorageProvider {
         structuralScore: 0,
         dependencyBoost: 0,
         reasons: [],
+        symbolExact: false,
+        pathExact: false,
       };
       existing.structuralScore += structuralScore;
       existing.dependencyBoost = Math.min(0.12, existing.dependencyBoost + dependencyBoost);
+      // Typed match flags are set independently of the reason string, which is
+      // capped at 6 entries — so an exact match is never silently lost to the cap.
+      if (flags?.symbolExact) existing.symbolExact = true;
+      if (flags?.pathExact) existing.pathExact = true;
       if (!existing.reasons.includes(reason) && existing.reasons.length < 6) {
         existing.reasons.push(reason);
       }
@@ -450,7 +457,7 @@ export class SQLiteRepository implements StorageProvider {
       for (const fragment of query.pathFragments) {
         const lowerFragment = fragment.toLowerCase();
         if (lowerPath === lowerFragment || lowerPath.endsWith(`/${lowerFragment}`)) {
-          addScore(row.id, 3.2, 0, `path exact match: ${fragment}`);
+          addScore(row.id, 3.2, 0, `path exact match: ${fragment}`, { pathExact: true });
         } else if (lowerPathStem === lowerFragment || lowerPathStem.endsWith(`/${lowerFragment}`)) {
           addScore(row.id, 2.6, 0, `path stem exact match: ${fragment}`);
         } else if (basenameStem === lowerFragment || basename === lowerFragment) {
@@ -498,7 +505,7 @@ export class SQLiteRepository implements StorageProvider {
       }
       if (exactIdentifiers.has(normalizedName) || quotedTerms.has(normalizedName)) {
         const contractBoost = row.kind === 'interface' || row.kind === 'type' ? 0.4 : 0;
-        addScore(row.chunkId, (row.isExported ? 3.4 : 3.1) + contractBoost, 0, `symbol exact match: ${row.name}`);
+        addScore(row.chunkId, (row.isExported ? 3.4 : 3.1) + contractBoost, 0, `symbol exact match: ${row.name}`, { symbolExact: true });
         continue;
       }
 

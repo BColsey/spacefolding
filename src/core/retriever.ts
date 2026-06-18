@@ -247,9 +247,11 @@ export class HybridRetriever {
           // score is normally in [0,1]; multiplying by ~3 top-rank contributions
           // lets a confident reranker move a chunk a few ranks. An exact
           // structural match adds ~2 top-rank contributions on top.
-          const exactStructuralBoost = data.reasons.some((reason) =>
-            reason.startsWith('symbol exact match') || reason.startsWith('path exact match')
-          ) ? RRF_TOP_CONTRIBUTION * 2 : 0;
+          // Typed exact-match flag (uncapped) replaces reason-string prefix matching,
+          // so the exact-identifier boost survives a structural-indexer reason reword
+          // or the 6/8-entry reason cap.
+          const exactStructuralBoost = (data.symbolExact || data.pathExact)
+            ? RRF_TOP_CONTRIBUTION * 2 : 0;
           const rerankReasons = [];
           if (rerank) rerankReasons.push(`reranker ${rerank.reason}: ${rerankerScore.toFixed(3)}`);
           if (exactStructuralBoost > 0) {
@@ -367,9 +369,7 @@ export class HybridRetriever {
       const exactIdentifier = result.reasons.some((reason) =>
         isExactIdentifierSeedReason(reason, strongIdentifiers)
       );
-      const exactPath = structuralQuery.pathFragments.length > 0 && result.reasons.some((reason) =>
-        reason.startsWith('path exact match')
-      );
+      const exactPath = structuralQuery.pathFragments.length > 0 && !!result.pathExact;
       const boost = exactIdentifier
         ? 12 + result.structuralScore
         : exactPath
@@ -385,6 +385,9 @@ export class HybridRetriever {
       existing.fusedScore += boost;
       existing.sources.add('structural');
       existing.sourceScores.structural = (existing.sourceScores.structural ?? 0) + boost;
+      // Propagate the typed exact-match flags (uncapped) into the fused candidate.
+      if (result.symbolExact) existing.symbolExact = true;
+      if (result.pathExact) existing.pathExact = true;
       for (const reason of result.reasons) {
         if (!existing.reasons.includes(reason) && existing.reasons.length < 8) existing.reasons.push(reason);
       }
@@ -643,6 +646,8 @@ interface FusedCandidate {
   sourceScores: Partial<Record<RetrievalSource, number>>;
   reasons: string[];
   rerankReasons?: string[];
+  symbolExact?: boolean;
+  pathExact?: boolean;
 }
 
 const STRONG_IDENTIFIER_STOP_WORDS = new Set([
