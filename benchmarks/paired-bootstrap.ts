@@ -15,6 +15,8 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 interface Metrics { [k: string]: number }
 interface EvalResult { taskId: string; metrics: Metrics }
@@ -72,6 +74,38 @@ function pairedDiffCI(a: number[], b: number[], metric: string, nBoot = 10_000, 
   return { mean: mean(diffs), low, high, excludesZero: (low > 0 && high > 0) || (low < 0 && high < 0) };
 }
 
+/**
+ * Split a contrast pair `A-B` into [A, B] using the known strategy set.
+ *
+ * Strategies themselves may contain hyphens (`path-match`, `symbol-only`,
+ * `bm25body`), so a naive `split('-')` mis-splits `structural-path-match` into
+ * `structural` + `path` (a non-existent strategy) and `structural-symbol-only`
+ * into `structural` + `symbol`. We instead try every hyphen position and accept
+ * the unique split where BOTH halves are known strategies, erroring clearly on
+ * ambiguity or unknown strategies.
+ */
+export function splitPair(pair: string, knownStrategies: Set<string>): [string, string] {
+  const positions: number[] = [];
+  for (let i = 0; i < pair.length; i++) if (pair[i] === '-') positions.push(i);
+  if (positions.length === 0) {
+    throw new Error(
+      `contrast '${pair}' has no '-' separator (known strategies: ${[...knownStrategies].join(', ')})`,
+    );
+  }
+  const valid = positions
+    .map((pos) => [pair.slice(0, pos), pair.slice(pos + 1)] as [string, string])
+    .filter(([a, b]) => knownStrategies.has(a) && knownStrategies.has(b));
+  if (valid.length === 1) return valid[0];
+  if (valid.length > 1) {
+    throw new Error(
+      `ambiguous contrast '${pair}': multiple valid splits (${valid.map((v) => v.join(' − ')).join(' / ')}); use an explicit delimiter`,
+    );
+  }
+  throw new Error(
+    `contrast '${pair}': no '-' split yields two known strategies (known: ${[...knownStrategies].join(', ')})`,
+  );
+}
+
 function main() {
   const [path, ...rest] = process.argv.slice(2);
   if (!path) throw new Error('Provide an evaluate.ts --json report path');
@@ -84,6 +118,7 @@ function main() {
 
   const report = JSON.parse(readFileSync(path, 'utf-8')) as Report;
   const byStrat = new Map(report.strategies.map((s) => [s.strategy, s]));
+  const knownStrategies = new Set(byStrat.keys());
   const vals = (strat: string) => {
     const s = byStrat.get(strat);
     if (!s) throw new Error(`strategy ${strat} not in report (have: ${[...byStrat.keys()].join(', ')})`);
@@ -102,11 +137,16 @@ function main() {
 
   console.log('\n=== Paired contrasts (A − B) [95% CI], * = excludes 0 ===');
   for (const pair of pairs.split(',').map((p) => p.trim()).filter(Boolean)) {
-    const [a, b] = pair.split('-');
+    const [a, b] = splitPair(pair, knownStrategies);
     const ci = pairedDiffCI(vals(a), vals(b), metric);
     console.log(`  ${(a + ' − ' + b).padEnd(26)} ${f(ci.mean)}  [${f(ci.low)}, ${f(ci.high)}] ${ci.excludesZero ? '*' : ''}`);
   }
   console.log('');
 }
 
-main();
+function isMainModule(): boolean {
+  return process.argv[1] !== undefined
+    && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+}
+
+if (isMainModule()) main();
