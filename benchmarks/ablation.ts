@@ -347,7 +347,7 @@ async function runAblation(options: AblationCliOptions) {
   let embeddingProvider: EmbeddingProviderLike;
   if (useGpu) {
     const { GpuEmbeddingProvider } = await import('../dist/providers/gpu-embedding.js');
-    const modelId = process.env.GPU_EMBEDDING_MODEL ?? 'all-mpnet-base-v2';
+    const modelId = process.env.GPU_EMBEDDING_MODEL ?? 'Salesforce/SFR-Embedding-Code-400M_R';
     const device = process.env.GPU_EMBEDDING_DEVICE ?? 'cuda';
     console.log(`Using GPU embeddings: ${modelId} on ${device}`);
     embeddingProvider = new GpuEmbeddingProvider(modelId, device);
