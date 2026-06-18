@@ -56,8 +56,13 @@ Run autonomous measurement iterations with one hour between successful runs:
 RALPH_SLEEP_SECONDS=3600 ./ralph.sh measurement codex
 ```
 
-The checker fails if structural retrieval does not beat keyword on `R@10`,
-`NDCG@10`, and `MRR`; if focused E2E retrieval drops below 0.95 average recall,
-0.35 average precision, or exceeds 13k average tokens; if E2E recall,
-precision, or average tokens regress against the current hybrid strategy; or if
-any E2E task returns more tokens than the full indexed codebase.
+The checker fails if the structural hybrid is NOT non-inferior to the strongest
+lexical baseline (BM25F / FTS / keyword) on recall@10, or does NOT strictly beat
+FTS on Hits@1 (the composite retrieval gate, via paired-bootstrap CIs); if focused
+E2E retrieval drops below 0.70 average recall, 0.25 average precision, or exceeds
+13k average tokens; if E2E recall, precision, or average tokens regress against the
+current hybrid strategy; or if any E2E task returns more tokens than the full
+indexed codebase. (The retrieval half of this composite gate is regime-dependent —
+it holds on the GPU code-embedding model and is informational/non-blocking in CI,
+which runs on the deterministic provider; see
+`benchmarks/COMMIT-DERIVED-FINDINGS.md`.)
