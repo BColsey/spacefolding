@@ -8,13 +8,15 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export interface CliOptions {
   retrievalJson?: string;
   e2eJson?: string;
   json: boolean;
+  blockingSubset?: boolean;
+  baseline?: string;
 }
 
 export interface GateCheck {
@@ -50,6 +52,10 @@ export function parseArgs(argv: string[]): CliOptions {
       options.e2eJson = readOptionValue(argv, i++, arg);
     } else if (arg === '--json') {
       options.json = true;
+    } else if (arg === '--blocking-subset') {
+      options.blockingSubset = true;
+    } else if (arg === '--baseline') {
+      options.baseline = readOptionValue(argv, i++, arg);
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
@@ -58,7 +64,11 @@ export function parseArgs(argv: string[]): CliOptions {
     }
   }
 
-  if (!options.retrievalJson && !options.e2eJson) {
+  if (options.blockingSubset) {
+    if (!options.retrievalJson) {
+      throw new Error('--blocking-subset requires --retrieval-json (the blocking gate is retrieval-only)');
+    }
+  } else if (!options.retrievalJson && !options.e2eJson) {
     throw new Error('Provide --retrieval-json, --e2e-json, or both');
   }
 
@@ -85,7 +95,15 @@ Checks:
              (paired-bootstrap CIs)
   e2e: focused retrieval reaches >=0.70 average recall, >=0.25 precision, and <=13k average tokens
   e2e: recall, precision, and average tokens improve vs current hybrid
-  e2e: no task returns more tokens than the full codebase`);
+  e2e: no task returns more tokens than the full codebase
+
+Blocking subset (--blocking-subset; regime-robust — runs on the deterministic
+provider; the full composite gate above stays informational/non-blocking):
+  blocking: all 8 retrieval strategies reported + composite contrasts computed
+  blocking: structural/fts/bm25/keyword recall@10 & hits@1 not below the pinned
+            deterministic baseline (--baseline; default baselines/deterministic-baseline.json)
+            by more than the baseline margin. This is a NON-REGRESSION guard, not a
+            superiority claim — the composite superiority claim is GPU-regime-only.`);
 }
 
 function readJson(path: string, label: 'retrieval' | 'e2e'): LoadedJson {
@@ -221,6 +239,181 @@ export function addRetrievalChecks(checks: GateCheck[], data: unknown): void {
       : 'missing/invalid: successGate.structuralMeetsGate',
     expected: 'successGate.structuralMeetsGate is true (non-inferior recall AND top-1 win over fts)',
   });
+}
+
+// ── Blocking subset (regime-robust, deterministic) ────────────
+
+const DEFAULT_BASELINE_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  'baselines',
+  'deterministic-baseline.json',
+);
+
+const BLOCKING_HEALTH_STRATEGIES = [
+  'keyword', 'bm25', 'bm25body', 'path-match', 'fts', 'vector', 'symbol-only', 'structural',
+];
+const BLOCKING_REGRESSION_STRATEGIES = ['structural', 'fts', 'bm25', 'keyword'];
+const BLOCKING_REGRESSION_METRICS = ['recallAt10', 'hitsAt1'];
+
+export interface BaselineStrategyMetrics {
+  recallAt10?: number;
+  recallAt20?: number;
+  hitsAt1?: number;
+}
+
+export interface BaselineSpec {
+  provider?: string;
+  dataset?: string;
+  retrievalDepth?: number;
+  margin?: number;
+  strategies?: Record<string, BaselineStrategyMetrics>;
+}
+
+export function defaultBaselinePath(): string {
+  return DEFAULT_BASELINE_PATH;
+}
+
+/**
+ * The blocking subset of the acceptance gate — the regime-robust part that holds
+ * on the CI-deterministic provider (no GPU, no superiority claim). Two families:
+ *   (1) Harness health: all retrieval strategies are reported and the composite-gate
+ *       contrasts are computed (catches a strategy crash or a gate-wiring break).
+ *   (2) Non-regression: structural + lexical-baseline recall@10 / hits@1 must not
+ *       drop below the pinned deterministic baseline by more than `margin`.
+ * Deterministic hash embeddings make the baseline exact and reproducible, so this
+ * guard is non-flaky. The full composite superiority claim stays informational —
+ * it is regime-dependent (holds on the GPU code-embedding model only).
+ */
+export function addBlockingRetrievalChecks(
+  checks: GateCheck[],
+  data: unknown,
+  baseline: BaselineSpec,
+): void {
+  if (!isRecord(data)) {
+    checks.push({
+      name: 'blocking.retrieval_root_present',
+      passed: false,
+      actual: describeValue(data),
+      expected: 'retrieval JSON is an object',
+    });
+    return;
+  }
+
+  const strategyList = Array.isArray(data.strategies) ? data.strategies : [];
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const s of strategyList) {
+    if (isRecord(s) && typeof s.strategy === 'string') byName.set(s.strategy, s);
+  }
+
+  const missing = BLOCKING_HEALTH_STRATEGIES.filter((name) => !byName.has(name));
+  checks.push({
+    name: 'blocking.all_strategies_present',
+    passed: missing.length === 0,
+    actual: missing.length === 0 ? 'all 8 strategies' : `missing: ${missing.join(', ')}`,
+    expected: `all 8 retrieval strategies reported (${BLOCKING_HEALTH_STRATEGIES.join(', ')})`,
+  });
+
+  const gate = isRecord(data.successGate) ? data.successGate : {};
+  const contrastsComputed = gate.recallAt10VsBestLexical != null && gate.hitsAt1VsFts != null;
+  checks.push({
+    name: 'blocking.composite_contrasts_computed',
+    passed: contrastsComputed,
+    actual: contrastsComputed
+      ? 'recall@10 + hits@1 contrasts computed'
+      : describeValue(gate.recallAt10VsBestLexical),
+    expected: 'successGate.recallAt10VsBestLexical and hitsAt1VsFts non-null (composite gate wired)',
+  });
+
+  const margin =
+    typeof baseline.margin === 'number' && Number.isFinite(baseline.margin) ? baseline.margin : 0.03;
+  const baseStrategies = isRecord(baseline.strategies) ? baseline.strategies : {};
+  let guarded = false;
+  for (const name of BLOCKING_REGRESSION_STRATEGIES) {
+    const summary = byName.get(name);
+    const averages = isRecord(summary?.averages) ? summary.averages : {};
+    const baseMetrics = isRecord(baseStrategies[name]) ? baseStrategies[name] : {};
+    for (const metric of BLOCKING_REGRESSION_METRICS) {
+      const baseValue = numericField(baseMetrics as Record<string, unknown>, metric);
+      if (baseValue === undefined) continue;
+      guarded = true;
+      const actual = numericField(averages, metric);
+      const threshold = baseValue - margin;
+      checks.push({
+        name: `blocking.${name}_${metric}_no_regression`,
+        passed: actual !== undefined && actual >= threshold,
+        actual:
+          actual === undefined
+            ? `missing: strategies[${name}].averages.${metric}`
+            : rounded(actual),
+        expected: `${name} ${metric} ≥ baseline ${baseValue.toFixed(3)} − ${margin} (≥ ${threshold.toFixed(3)})`,
+      });
+    }
+  }
+  if (!guarded) {
+    checks.push({
+      name: 'blocking.baseline_loaded',
+      passed: false,
+      actual: 'no pinned baseline metrics found',
+      expected: `baseline.strategies with at least one of ${BLOCKING_REGRESSION_STRATEGIES.join(', ')}`,
+    });
+  }
+}
+
+export function loadBaseline(path: string): { data?: BaselineSpec; check?: GateCheck } {
+  try {
+    return { data: JSON.parse(readFileSync(path, 'utf-8')) as BaselineSpec };
+  } catch (err) {
+    return {
+      check: {
+        name: 'blocking.baseline_readable',
+        passed: false,
+        actual: errorMessage(err),
+        expected: `valid baseline JSON at ${path}`,
+      },
+    };
+  }
+}
+
+export function buildBlockingReport(inputs: AcceptanceInputs, baseline: BaselineSpec): AcceptanceReport {
+  const checks: GateCheck[] = [];
+  if (Object.prototype.hasOwnProperty.call(inputs, 'retrieval')) {
+    addBlockingRetrievalChecks(checks, inputs.retrieval, baseline);
+  } else {
+    checks.push({
+      name: 'cli.inputs_present',
+      passed: false,
+      actual: 'none',
+      expected: '--retrieval-json (blocking subset is retrieval-only)',
+    });
+  }
+  return { passed: checks.every((c) => c.passed), checks };
+}
+
+function buildBlockingReportFromFiles(options: CliOptions): AcceptanceReport {
+  const baselinePath = options.baseline ?? DEFAULT_BASELINE_PATH;
+  const loadedBaseline = loadBaseline(baselinePath);
+  const inputChecks: GateCheck[] = [];
+  if (loadedBaseline.check) inputChecks.push(loadedBaseline.check);
+
+  if (!options.retrievalJson) {
+    inputChecks.push({
+      name: 'cli.inputs_present',
+      passed: false,
+      actual: 'none',
+      expected: '--retrieval-json (blocking subset is retrieval-only)',
+    });
+    return { passed: false, checks: inputChecks };
+  }
+
+  const loaded = readJson(options.retrievalJson, 'retrieval');
+  if (loaded.check) inputChecks.push(loaded.check);
+  if (!loadedBaseline.data || loaded.check) {
+    return { passed: false, checks: inputChecks };
+  }
+
+  const report = buildBlockingReport({ retrieval: loaded.data }, loadedBaseline.data);
+  const checks = [...inputChecks, ...report.checks];
+  return { passed: checks.every((c) => c.passed), checks };
 }
 
 export function addE2EChecks(checks: GateCheck[], data: unknown): void {
@@ -371,6 +564,10 @@ export function buildAcceptanceReport(inputs: AcceptanceInputs): AcceptanceRepor
 }
 
 export function buildAcceptanceReportFromFiles(options: CliOptions): AcceptanceReport {
+  if (options.blockingSubset) {
+    return buildBlockingReportFromFiles(options);
+  }
+
   const inputChecks: GateCheck[] = [];
   const inputs: AcceptanceInputs = {};
 

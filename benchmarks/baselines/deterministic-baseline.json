@@ -1,0 +1,50 @@
+{
+  "$schema": "spacefolding deterministic regression baseline",
+  "description": "Pinned deterministic-provider retrieval averages on the self-corpus fixture (benchmarks/dataset.json) at retrieval depth 200. Used ONLY as a non-regression reference for the CI blocking gate — NOT a publishable superiority claim (the self-corpus is the pre-decontamination easy fixture; publishable numbers are commit-derived in COMMIT-DERIVED-FINDINGS.md). Deterministic hash embeddings => these numbers are exact and reproducible, so the non-regression guard is non-flaky.",
+  "provider": "deterministic",
+  "dataset": "benchmarks/dataset.json",
+  "retrievalDepth": 200,
+  "margin": 0.03,
+  "strategies": {
+    "structural": {
+      "recallAt10": 0.872807,
+      "recallAt20": 0.947368,
+      "hitsAt1": 0.526316
+    },
+    "fts": {
+      "recallAt10": 0.692982,
+      "recallAt20": 0.929825,
+      "hitsAt1": 0.210526
+    },
+    "bm25": {
+      "recallAt10": 0.723684,
+      "recallAt20": 0.868421,
+      "hitsAt1": 0.263158
+    },
+    "bm25body": {
+      "recallAt10": 0.618421,
+      "recallAt20": 0.763158,
+      "hitsAt1": 0.210526
+    },
+    "keyword": {
+      "recallAt10": 0.837719,
+      "recallAt20": 0.916667,
+      "hitsAt1": 0.368421
+    },
+    "vector": {
+      "recallAt10": 0.052632,
+      "recallAt20": 0.052632,
+      "hitsAt1": 0.052632
+    },
+    "symbol-only": {
+      "recallAt10": 0.70614,
+      "recallAt20": 0.70614,
+      "hitsAt1": 0.210526
+    },
+    "path-match": {
+      "recallAt10": 0.442982,
+      "recallAt20": 0.442982,
+      "hitsAt1": 0.263158
+    }
+  }
+}

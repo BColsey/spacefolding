@@ -1,0 +1,94 @@
+# ADR-001: Regime-robust blocking acceptance gate
+
+- **Status:** Accepted (2026-06-17)
+- **Supersedes:** the all-or-nothing "informational only" rationale in the
+  `acceptance-benchmark` CI job.
+
+## Context
+
+The retrieval acceptance gate's composite claim — *the structural hybrid is
+non-inferior to the strongest lexical baseline on recall@10 AND strictly beats
+FTS on Hits@1* — is **regime-dependent**. It holds only on the GPU
+code-specific embedding model
+(`Salesforce/SFR-Embedding-Code-400M_R`) for django+typescript, and **fails on
+every CI-reproducible regime**:
+
+| regime | recall non-inferior | hits@1 > fts | composite |
+|--------|--------------------|--------------|-----------|
+| GPU code-model (django / typescript) | pass | pass | **PASS** |
+| deterministic hash (self-corpus) | pass | pass | PASS (but easy corpus) |
+| deterministic (typescript / rust / commit-derived) | **fail** | fail/tie | **FAIL** |
+| general `bge` (self) | pass | **−0.100 \*** | **FAIL** |
+
+So the composite gate **cannot** be flipped to blocking on a CPU/deterministic
+CI runner without either (a) a GPU-code-model CI runner (not available) or (b)
+lowering the bar to force green — which is explicitly disallowed. This left the
+gate informational-only, which means **no automated regression net** guarded
+ranking refactors (WS0.3 cleanup), chunk-size changes (WS0.5), or model swaps
+(WS0.4). That is the binding constraint that orders the post-Phase-0 roadmap.
+
+## Decision
+
+Stand up a **blocking subset** of the gate that enforces the narrow part of the
+claim that **does** hold deterministically, offline, without lowering any
+threshold:
+
+1. **Harness health** — all 8 retrieval strategies are reported, and the
+   composite-gate contrasts (`recallAt10VsBestLexical`, `hitsAt1VsFts`) are
+   computed. Catches a strategy crash, a renamed strategy, or a gate-wiring
+   break.
+2. **Non-regression vs a pinned deterministic baseline** —
+   `structural`, `fts`, `bm25`, `keyword` `recallAt10` and `hits@1` must not
+   drop below the committed baseline
+   (`benchmarks/baselines/deterministic-baseline.json`) by more than the
+   baseline `margin` (0.03).
+
+Implemented as `check-acceptance.ts --blocking-subset`, wired as the
+**`continue-on-error: false`** `acceptance-blocking` CI job. The full composite
+superiority claim stays in the separate, **informational** `acceptance-benchmark`
+job.
+
+This is a **non-regression guard, not a superiority claim.** It asserts "the
+retrieval stack did not get worse on the deterministic fixture," which is true
+and reproducible — not "the hybrid beats every baseline," which is GPU-regime-only.
+
+## Why this subset
+
+- **Deterministic ⇒ exact ⇒ non-flaky.** Hash embeddings make every number
+  bit-reproducible, so the pinned baseline is stable and the guard never flakes.
+- **Non-regression is honest.** It makes no publishable quality claim; it cannot
+  be attacked as "forcing green on an easy corpus" because it asserts nothing
+  about absolute quality.
+- **It is the safety net the later phases need.** WS0.3 ranking refactors
+  (typed fields, commensurate merge, floor wiring), WS0.5 chunk-size sweeps, and
+  WS0.4 model/strategy changes can now land behind a blocking regression net
+  instead of unsupervised.
+
+## Exclusions (deliberate)
+
+- **The composite superiority claim is NOT blocking.** It is GPU-regime-only;
+  keeping it informational preserves the honest "this needs the GPU code model"
+  framing rather than hiding it behind a green CPU check.
+- **rust is not in the blocking baseline.** The commit-derived deterministic
+  result has structural **losing** to BM25 on rust recall (−0.189 \*); any
+  future commit-derived blocking baseline must exclude rust or use the
+  non-regression form (which this does — it guards against *change*, not
+  *superiority*).
+- **The `bge` blind spot.** A "better" general model *lowers* top-1 when fusion
+  trusts it (bge self H@1 0.425 → 0.325). The deterministic blocking gate
+  **cannot see this** (the deterministic vector arm is ≈ random), so swapping in
+  `bge` without per-model fusion recalibration is not caught here — it must be
+  caught by a GPU-regime check (Phase 2/7) before such a swap lands.
+
+## Open follow-up (surfaced, not resolved)
+
+The blocking baseline is the **deterministic self-corpus fixture**
+(`benchmarks/dataset.json`) — what CI can actually evaluate offline. The
+roadmap's ideal is a **commit-derived** baseline, but the commit-derived corpora
+(django 7k / typescript 81k / rust 60k files) are far too large to vendor into
+CI. Moving the blocking baseline to commit-derived requires a design decision:
+vendor a small self-contained commit-derived fixture, or add a corpus-fetch CI
+step. Tracked in NEXT-PHASES Phase 1. Until then, the self-corpus baseline is a
+valid *regression* reference (it is not cited as a publishable result — see the
+retired `RESULTS.md` / `E2E-RESULTS.md` and the honest
+`COMMIT-DERIVED-FINDINGS.md`).
