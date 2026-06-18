@@ -1,5 +1,10 @@
 # Commit-derived benchmark — first honest results (WS0.6 / NEXT-STEPS Step 1)
 
+> **The frozen, publishable claim now lives in
+> [`FROZEN-CLAIM.md`](./FROZEN-CLAIM.md)** — the 3-language GPU table (incl. the
+> previously-never-run rust cell), paired-bootstrap CIs, and the rust-exclusion
+> rationale. This doc is the full empirical narrative + method.
+
 **Status:** preliminary but CI-backed. 3 repos / 3 languages, n=100 commit-derived
 tasks each. Reproducible offline from a clean checkout (after deepening the
 corpora — see `COMMIT-GROUND-TRUTH.md`).

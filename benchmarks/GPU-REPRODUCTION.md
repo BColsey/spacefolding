@@ -71,10 +71,22 @@ run (same corpus/chunks), so the GPU table is a controlled comparison: only
 `vector`/`structural` move. Composite gate **meets** on django (structural R@10
 0.868 ≥ bm25 0.854 non-inferior; H@1 0.400 > fts 0.170).
 
-## typescript / rust — pending
+## typescript / rust — completed
 
-Running (background) at the time of writing. Rust GPU was **never run** before
-this; it is the missing cell the frozen claim must address (and where structural
-loses to BM25 deterministically, so the GPU result decides whether the claim
-includes rust or excludes it with a stated reason). Fill in from
-`/tmp/sf-gpu-typescript.json` / `/tmp/sf-gpu-rust.json` when the runs land.
+Both reproduced with `GPU_EMBEDDING_SEED=42`. The canonical claim + paired-CI
+table is in [`FROZEN-CLAIM.md`](./FROZEN-CLAIM.md); R@10 / Hits@1 summary:
+
+| strategy | typescript | rust |
+|----------|------------|------|
+| bm25 | 0.575 / 0.250 | 0.554 / 0.340 |
+| fts | 0.662 / 0.240 | 0.516 / 0.130 |
+| vector | 0.592 / 0.280 | 0.447 / 0.120 |
+| **structural** | **0.695 / 0.350** | **0.568 / 0.160** |
+| **composite gate** | **PASS** | **FAIL** |
+
+The rust GPU cell — **never run before this** — is the honest negative that
+narrows the claim: on rust, structural has the best R@10 (0.568) but **BM25 wins
+Hits@1 decisively** (0.340 vs 0.160), and structural does not significantly beat
+FTS on Hits@1 (+0.030, CI includes 0). The composite gate therefore **fails on
+rust**, so the publishable claim is scoped to **django + typescript** with rust
+excluded for this stated reason (see FROZEN-CLAIM.md).
