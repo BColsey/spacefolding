@@ -3,16 +3,36 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  BM25F_PARAMS,
+  buildBm25Corpus,
+  bm25Baseline,
+  bm25BodyBaseline,
   buildEvaluationReport,
   loadBenchmarkDataset,
   parseBenchmarkDataset,
   parseArgs,
   resolveStrategies,
+  scoreBm25f,
   walkDir,
+  type BenchmarkTask,
   type EvalResult,
   type Metrics,
   type StrategySummary,
 } from '../benchmarks/evaluate.ts';
+
+type Chunk = { id: string; text: string; path?: string };
+
+function bmTask(query: string): BenchmarkTask {
+  return {
+    id: 'bm-task',
+    task: query,
+    intent: 'debug',
+    relevant_files: [],
+    relevant_types: [],
+    relevant_keywords: [],
+    irrelevant_files: [],
+  };
+}
 
 const baseMetrics: Metrics = {
   recallAt5: 0,
@@ -136,6 +156,7 @@ describe('retrieval benchmark report', () => {
     expect(resolveStrategies('all')).toEqual([
       'keyword',
       'bm25',
+      'bm25body',
       'path-match',
       'fts',
       'vector',
@@ -196,69 +217,170 @@ describe('retrieval benchmark report', () => {
     }
   });
 
-  it('includes per-strategy averages and per-task hit and miss details', () => {
+  const gateStrategies = (s: {
+    keyword: Partial<Metrics>;
+    bm25: Partial<Metrics>;
+    fts: Partial<Metrics>;
+    structural: Partial<Metrics>;
+  }) => [
+    summary('keyword', s.keyword),
+    summary('bm25', s.bm25),
+    summary('fts', s.fts),
+    summary('structural', s.structural),
+  ];
+
+  it('passes the composite gate when structural is non-inferior on recall and beats fts on hits@1', () => {
+    const report = buildEvaluationReport({
+      dataset: 'benchmarks/dataset.json',
+      corpus: 'src',
+      requestedStrategies: ['keyword', 'bm25', 'fts', 'structural'],
+      strategies: gateStrategies({
+        keyword: { recallAt10: 0.70, hitsAt1: 0.30 },
+        bm25: { recallAt10: 0.85, hitsAt1: 0.50 },
+        fts: { recallAt10: 0.80, hitsAt1: 0.20 },
+        structural: { recallAt10: 0.82, hitsAt1: 0.60 },
+      }),
+    });
+
+    expect(report.successGate.missingStrategySummaries).toEqual([]);
+    expect(report.successGate.recallNonInferiorityMargin).toBe(0.05);
+    // best lexical arm by recall@10 is bm25 (0.85); structural 0.82 is within 0.05.
+    expect(report.successGate.bestLexicalStrategy).toBe('bm25');
+    expect(report.successGate.recallAt10NonInferior).toBe(true);
+    expect(report.successGate.hitsAt1BeatsFts).toBe(true);
+    expect(report.successGate.structuralMeetsGate).toBe(true);
+  });
+
+  it('fails the gate when structural recall trails the best lexical arm beyond the margin', () => {
+    const report = buildEvaluationReport({
+      dataset: 'benchmarks/dataset.json',
+      corpus: 'src',
+      requestedStrategies: ['keyword', 'bm25', 'fts', 'structural'],
+      strategies: gateStrategies({
+        keyword: { recallAt10: 0.70, hitsAt1: 0.30 },
+        bm25: { recallAt10: 0.85, hitsAt1: 0.50 },
+        fts: { recallAt10: 0.80, hitsAt1: 0.20 },
+        structural: { recallAt10: 0.74, hitsAt1: 0.60 }, // 0.74 < 0.85 − 0.05
+      }),
+    });
+
+    expect(report.successGate.recallAt10NonInferior).toBe(false);
+    expect(report.successGate.hitsAt1BeatsFts).toBe(true);
+    expect(report.successGate.structuralMeetsGate).toBe(false);
+  });
+
+  it('fails the gate when structural only ties fts on hits@1', () => {
+    const report = buildEvaluationReport({
+      dataset: 'benchmarks/dataset.json',
+      corpus: 'src',
+      requestedStrategies: ['keyword', 'bm25', 'fts', 'structural'],
+      strategies: gateStrategies({
+        keyword: { recallAt10: 0.70, hitsAt1: 0.30 },
+        bm25: { recallAt10: 0.80, hitsAt1: 0.40 },
+        fts: { recallAt10: 0.78, hitsAt1: 0.40 },
+        structural: { recallAt10: 0.82, hitsAt1: 0.40 }, // ties fts on hits@1
+      }),
+    });
+
+    expect(report.successGate.recallAt10NonInferior).toBe(true);
+    expect(report.successGate.hitsAt1BeatsFts).toBe(false);
+    expect(report.successGate.structuralMeetsGate).toBe(false);
+  });
+
+  it('leaves the gate uncomputed when a strong baseline summary is missing', () => {
     const report = buildEvaluationReport({
       dataset: 'benchmarks/dataset.json',
       corpus: 'src',
       requestedStrategies: ['keyword', 'structural'],
       strategies: [
-        summary('keyword', { recallAt10: 0.4, ndcgAt10: 0.3, mrr: 0.25 }),
-        summary('structural', { recallAt10: 0.8, ndcgAt10: 0.7, mrr: 0.5 }),
+        summary('keyword', { recallAt10: 0.70, hitsAt1: 0.30 }),
+        summary('structural', { recallAt10: 0.82, hitsAt1: 0.60 }),
       ],
     });
 
-    expect(report.strategies).toHaveLength(2);
-    expect(report.strategies[1].averages).toMatchObject({
-      recallAt10: 0.8,
-      ndcgAt10: 0.7,
-      mrr: 0.5,
-    });
-    expect(report.strategies[1].results[0].details).toMatchObject({
-      hits: ['src/auth.ts'],
-      misses: ['src/token.ts'],
-      hitDetails: [{ path: 'src/auth.ts', rank: 1 }],
-      retrievedPathCount: 2,
-    });
-    expect(report.successGate.structuralBeatsKeyword).toBe(true);
-    expect(report.successGate.recallAt10Delta).toBeCloseTo(0.4);
-    expect(report.successGate.ndcgAt10Delta).toBeCloseTo(0.4);
-    expect(report.successGate.mrrDelta).toBeCloseTo(0.25);
-    expect(report.successGate.missingStrategySummaries).toEqual([]);
+    expect(report.successGate.requiredStrategySummaries).toEqual(['keyword', 'bm25', 'fts', 'structural']);
+    expect(report.successGate.missingStrategySummaries).toEqual(['bm25', 'fts']);
+    expect(report.successGate).not.toHaveProperty('structuralMeetsGate');
+    expect(report.successGate.recallAt10NonInferior).toBeNull();
+    expect(report.successGate.hitsAt1BeatsFts).toBeNull();
+  });
+});
+
+describe('file-level BM25F baseline', () => {
+  it('treats the FILE as the document unit — score is invariant to chunk boundaries', async () => {
+    // The same three files, once as a single chunk each and once split into
+    // several chunks. A correct file-as-document scorer ignores chunking; the
+    // old per-chunk-summed scorer would inflate files split into more chunks.
+    const single: Chunk[] = [
+      { id: 'a', path: 'a.ts', text: 'alpha beta gamma needle' },
+      { id: 'b', path: 'b.ts', text: 'beta gamma delta' },
+      { id: 'c', path: 'c.ts', text: 'gamma delta epsilon needle needle' },
+    ];
+    const split: Chunk[] = [
+      { id: 'a1', path: 'a.ts', text: 'alpha beta' },
+      { id: 'a2', path: 'a.ts', text: 'gamma needle' },
+      { id: 'b1', path: 'b.ts', text: 'beta gamma delta' },
+      { id: 'c1', path: 'c.ts', text: 'gamma delta' },
+      { id: 'c2', path: 'c.ts', text: 'epsilon needle' },
+      { id: 'c3', path: 'c.ts', text: 'needle' },
+    ];
+
+    const rankSingle = await bm25Baseline(bmTask('needle'), single);
+    const rankSplit = await bm25Baseline(bmTask('needle'), split);
+
+    // Non-matching files are dropped; c.ts (needle x2) outranks a.ts (needle x1).
+    expect(rankSingle).toEqual(['c.ts', 'a.ts']);
+    // And chunk boundaries do not change the ranking — no many-chunk inflation.
+    expect(rankSplit).toEqual(rankSingle);
   });
 
-  it('makes missing strategy summaries explicit when the strict comparison cannot run', () => {
-    const report = buildEvaluationReport({
-      dataset: 'benchmarks/dataset.json',
-      corpus: 'src',
-      requestedStrategies: ['keyword'],
-      strategies: [
-        summary('keyword', { recallAt10: 0.4, ndcgAt10: 0.3, mrr: 0.25 }),
-      ],
-    });
+  it('scores the path as a first-class field — bm25body (pathBoost=0) ignores it', async () => {
+    const chunks: Chunk[] = [
+      { id: 'p', path: 'src/authentication.ts', text: 'handles requests and responses' },
+      { id: 'q', path: 'src/other.ts', text: 'unrelated helper utilities live here' },
+      { id: 'r', path: 'src/misc.ts', text: 'more unrelated helper utilities' },
+    ];
 
-    expect(report.successGate.requiredStrategySummaries).toEqual(['keyword', 'structural']);
-    expect(report.successGate.missingStrategySummaries).toEqual(['structural']);
-    expect(report.successGate).not.toHaveProperty('structuralBeatsKeyword');
-    expect(report.successGate.recallAt10Delta).toBeNull();
-    expect(report.successGate.ndcgAt10Delta).toBeNull();
-    expect(report.successGate.mrrDelta).toBeNull();
+    // "authentication" appears ONLY in a file path, never in any body.
+    const withPath = await bm25Baseline(bmTask('authentication'), chunks);
+    const bodyOnly = await bm25BodyBaseline(bmTask('authentication'), chunks);
+
+    expect(withPath).toContain('src/authentication.ts');
+    expect(bodyOnly).not.toContain('src/authentication.ts');
+    expect(bodyOnly).toEqual([]); // term is in no body at all
   });
 
-  it('keeps structuralBeatsKeyword false with concrete deltas when structural underperforms', () => {
-    const report = buildEvaluationReport({
-      dataset: 'benchmarks/dataset.json',
-      corpus: 'src',
-      requestedStrategies: ['keyword', 'structural'],
-      strategies: [
-        summary('keyword', { recallAt10: 0.8, ndcgAt10: 0.7, mrr: 0.5 }),
-        summary('structural', { recallAt10: 0.6, ndcgAt10: 0.75, mrr: 0.4 }),
-      ],
-    });
+  it('weights rare query terms over ubiquitous ones via file-frequency IDF', async () => {
+    const chunks: Chunk[] = [
+      { id: '1', path: 'f1.ts', text: 'common words here' },
+      { id: '2', path: 'f2.ts', text: 'common more words' },
+      { id: '3', path: 'special.ts', text: 'common and rare token' },
+    ];
 
-    expect(report.successGate.missingStrategySummaries).toEqual([]);
-    expect(report.successGate.structuralBeatsKeyword).toBe(false);
-    expect(report.successGate.recallAt10Delta).toBeCloseTo(-0.2);
-    expect(report.successGate.ndcgAt10Delta).toBeCloseTo(0.05);
-    expect(report.successGate.mrrDelta).toBeCloseTo(-0.1);
+    // "common" is in every file (low IDF); "rare" is in one (high IDF) and must
+    // dominate the ranking even though every file matches "common".
+    const ranked = await bm25Baseline(bmTask('common rare'), chunks);
+    expect(ranked[0]).toBe('special.ts');
+    expect(ranked).toHaveLength(3); // all three contain "common"
+  });
+
+  it('exposes a memoizable, query-independent corpus with file-frequency stats', () => {
+    const chunks: Chunk[] = [
+      { id: 'a1', path: 'a.ts', text: 'needle alpha' },
+      { id: 'a2', path: 'a.ts', text: 'beta needle' },
+      { id: 'b1', path: 'b.ts', text: 'alpha beta' },
+    ];
+    const corpus = buildBm25Corpus(chunks);
+
+    // Two files, not three chunks.
+    expect(corpus.docs).toHaveLength(2);
+    // "needle" occurs in one FILE (twice in a.ts) → file-frequency 1.
+    expect(corpus.docFreq.get('needle')).toBe(1);
+    // "alpha" occurs in both files → file-frequency 2.
+    expect(corpus.docFreq.get('alpha')).toBe(2);
+
+    // Scoring through the prebuilt corpus matches the convenience wrapper.
+    const direct = scoreBm25f(bmTask('needle'), corpus, BM25F_PARAMS);
+    expect(direct).toEqual(['a.ts']);
   });
 });

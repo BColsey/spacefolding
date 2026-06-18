@@ -26,13 +26,21 @@ jobs:
   acceptance-benchmark:
     name: Retrieval acceptance gate (informational)
     runs-on: ubuntu-latest
-    # NON-BLOCKING for now. The retrieval ranking gate (structural beats keyword)
-    # passes, but the E2E focused-retrieval thresholds (recall >= 0.95,
-    # precision >= 0.35) were calibrated on the OLD system before the hardcoded
-    # query-expansion contamination was removed, and currently fail honestly
-    # (~0.77 recall). They must be re-derived on a calibration split with
-    # commit-derived ground truth (see IMPLEMENTATION-PLAN.md WS0.1/WS0.6) before
-    # this job is made blocking. Until then it runs for visibility only.
+    # STILL NON-BLOCKING — but now for an honest, documented reason (WS0.6/Task 2).
+    # The gate itself is fixed: the retrieval gate is the composite condition
+    # (structural hybrid non-inferior to the strongest lexical baseline — BM25F /
+    # FTS / keyword — on recall@10 AND strictly beating FTS on hits@1, via paired
+    # bootstrap CIs), replacing the old `structural beats keyword` strawman; the
+    # E2E thresholds are recalibrated off the contaminated 0.95/0.35 to honest
+    # floors. It CANNOT be flipped to blocking on this (deterministic, CPU) runner:
+    # the composite claim depends on the GPU code-specific embedding model and is
+    # validated there (django/typescript) — see benchmarks/COMMIT-DERIVED-FINDINGS.md.
+    # With deterministic (hash) embeddings the vector arm ≈ random, so the gate
+    # fails honestly on most commit-derived corpora; with the general `local` bge
+    # model it fails too (over-trusting a weak vector arm lowers top-1). Blocking
+    # requires either a GPU-code-model CI runner or narrowing the blocking claim to
+    # the regime-robust subset. Do NOT set continue-on-error:false by lowering the
+    # bar. Until then it runs for visibility only.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
