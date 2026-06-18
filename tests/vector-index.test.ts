@@ -110,4 +110,44 @@ describe('SQLiteRepository vector index', () => {
     expect(results.map((result) => result.chunkId)).toEqual(['a']);
     repo.close();
   });
+
+  it('does not rebuild the vec0 cache when reopened at the same dimension', () => {
+    // Regression for the scale pathology: vec0 was DROPped+rebuilt+reloaded from
+    // chunk_embeddings on every init, so reopening a 60k-vector index re-inserted
+    // every vector on every startup. It must now persist and be reused.
+    const path = testDbPath();
+    const repo = createRepository(path);
+    storeTestChunk(repo, 'a');
+    repo.storeEmbedding('a', [1, 0, 0], 'test-3d');
+    repo.initVectorIndex(3);
+    expect(repo.searchByVector([1, 0, 0], 1).map((r) => r.chunkId)).toEqual(['a']);
+    const rebuildsAfterInit = repo.getVectorIndexRebuildCount();
+    expect(rebuildsAfterInit).toBeGreaterThanOrEqual(1);
+    repo.close();
+
+    // Reopen the SAME db at the SAME dimension: the persisted vec0 must be reused,
+    // not rebuilt (rebuildCount unchanged) and still searchable.
+    const reopened = createRepository(path);
+    reopened.initVectorIndex(3);
+    expect(reopened.getVectorIndexRebuildCount()).toBe(rebuildsAfterInit);
+    expect(reopened.searchByVector([1, 0, 0], 1).map((r) => r.chunkId)).toEqual(['a']);
+    reopened.close();
+    cleanupDb(path);
+  });
+
+  it('still rebuilds the vec0 cache when the embedding dimension changes', () => {
+    const path = testDbPath();
+    const repo = createRepository(path);
+    storeTestChunk(repo, 'three-d');
+    repo.storeEmbedding('three-d', [1, 0, 0], 'test-3d');
+    repo.initVectorIndex(3);
+    const rebuildsBefore = repo.getVectorIndexRebuildCount();
+
+    storeTestChunk(repo, 'two-d');
+    repo.storeEmbedding('two-d', [0, 1], 'test-2d'); // dimension mismatch triggers re-init
+
+    expect(repo.getVectorIndexRebuildCount()).toBeGreaterThan(rebuildsBefore);
+    repo.close();
+    cleanupDb(path);
+  });
 });

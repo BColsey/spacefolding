@@ -42,8 +42,7 @@ export function tryCreateSqliteVecIndex(
     const require = createRequire(import.meta.url);
     const sqliteVec = require('sqlite-vec') as { load: (db: Database.Database) => void };
     sqliteVec.load(db);
-    const index = new SqliteVecIndex(db, dimensions);
-    index.loadFromDb();
+    const index = new SqliteVecIndex(db, dimensions); // constructor hydrates on (re)build
     return index;
   } catch {
     return null;
@@ -51,24 +50,56 @@ export function tryCreateSqliteVecIndex(
 }
 
 const VEC_TABLE = 'vec_chunk_embeddings';
+// Sidecar metadata for the derived vec0 cache. vec0 itself is created lazily here
+// (not via the migration system), so its metadata is too: this records the indexed
+// dimension and a rebuild counter so a reopen can detect a matching persisted index
+// and skip the O(n) reload.
+export const VEC_META_TABLE = 'spacefolding_vec_meta';
 
 class SqliteVecIndex implements VectorIndex {
   private db: Database.Database;
   private dimensionCount: number;
-  private count: number;
+  private count = 0;
   private initialized = false;
 
   constructor(db: Database.Database, dimensions: number) {
     this.db = db;
     this.dimensionCount = dimensions;
-    this.ensureTable();
-    this.count = this.loadCount();
+    const rebuilt = this.ensureTable();
+    if (rebuilt) {
+      // Fresh table or embedding-dimension change: hydrate from chunk_embeddings.
+      this.loadFromDb();
+    } else {
+      // A persisted vec0 at the same dimension is reused. add()/remove() keep it
+      // in sync with chunk_embeddings during normal operation, so skip the O(n)
+      // reload — the scale fix: reopening a 60k-vector index no longer re-inserts
+      // every vector on every startup.
+      this.count = this.loadCount();
+    }
   }
 
-  private ensureTable(): void {
-    if (this.initialized) return;
-    // This table is a derived cache. Rebuilding it on initialization avoids
-    // stale rows and handles embedding-dimension changes across model switches.
+  /**
+   * Ensure the derived vec0 cache exists at the configured dimension. Returns true
+   * when the table was (re)created and must be hydrated from chunk_embeddings,
+   * false when an existing persisted index at the same dimension is reused as-is.
+   */
+  private ensureTable(): boolean {
+    if (this.initialized) return false;
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS ${VEC_META_TABLE}(key TEXT PRIMARY KEY, value TEXT NOT NULL)`
+    );
+    const storedDimRaw = this.readMeta('dimension');
+    const tableExists = this.vecTableExists();
+    if (
+      tableExists
+      && storedDimRaw !== null
+      && Number(storedDimRaw) === this.dimensionCount
+    ) {
+      this.initialized = true;
+      return false;
+    }
+    // First creation, dimension change, or stale metadata: rebuild the cache.
+    // Dropping avoids stale rows when switching embedding models.
     this.db.exec(`DROP TABLE IF EXISTS ${VEC_TABLE}`);
     this.db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS ${VEC_TABLE} USING vec0(
@@ -76,7 +107,36 @@ class SqliteVecIndex implements VectorIndex {
         embedding float[${this.dimensionCount}] distance_metric=cosine
       )
     `);
+    this.writeMeta('dimension', String(this.dimensionCount));
+    this.writeMeta('rebuildCount', String(this.nextRebuildCount()));
     this.initialized = true;
+    return true;
+  }
+
+  private vecTableExists(): boolean {
+    const row = this.db
+      .prepare('SELECT 1 AS ok FROM sqlite_master WHERE name = ?')
+      .get(VEC_TABLE) as { ok: number } | undefined;
+    return row !== undefined;
+  }
+
+  private readMeta(key: string): string | null {
+    const row = this.db
+      .prepare(`SELECT value FROM ${VEC_META_TABLE} WHERE key = ?`)
+      .get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  private writeMeta(key: string, value: string): void {
+    this.db
+      .prepare(`INSERT OR REPLACE INTO ${VEC_META_TABLE}(key, value) VALUES (?, ?)`)
+      .run(key, value);
+  }
+
+  private nextRebuildCount(): number {
+    const raw = this.readMeta('rebuildCount');
+    const n = raw === null ? 0 : Number(raw);
+    return Number.isFinite(n) ? n + 1 : 1;
   }
 
   private loadCount(): number {

@@ -17,7 +17,7 @@ import { dirname } from 'node:path';
 import { MIGRATIONS, CURRENT_VERSION } from './schema.js';
 import { cosineSimilarity } from '../providers/deterministic-embedding.js';
 import type { VectorIndex } from './vector-index.js';
-import { BruteForceVectorIndex, tryCreateSqliteVecIndex } from './vector-index.js';
+import { BruteForceVectorIndex, tryCreateSqliteVecIndex, VEC_META_TABLE } from './vector-index.js';
 
 export class SQLiteRepository implements StorageProvider {
   private db: Database.Database;
@@ -645,6 +645,23 @@ export class SQLiteRepository implements StorageProvider {
       )
       .all(model) as Array<{ id: string }>;
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Number of times the derived vec0 cache has been (re)built. Used by tests and
+   * ops to confirm the index is reused — not rebuilt — across reopenings at a
+   * constant dimension. Returns 0 when sqlite-vec is unavailable (the in-memory
+   * brute-force fallback has no persistence to reuse).
+   */
+  getVectorIndexRebuildCount(): number {
+    try {
+      const row = this.db
+        .prepare(`SELECT value FROM ${VEC_META_TABLE} WHERE key = 'rebuildCount'`)
+        .get() as { value: string } | undefined;
+      return row ? Number(row.value) : 0;
+    } catch {
+      return 0;
+    }
   }
 
   // ── Full-Text Search ───────────────────────────────────────
