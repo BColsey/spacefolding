@@ -27,12 +27,21 @@ Landed and verified green (build + lint + 360 tests):
   hybrid is now ≥ best single arm — django structural 0.733→0.871 (− FTS +0.073 \*), typescript
   0.581→0.693 (− FTS −0.028, tie; − vector +0.106 \*). Not a universal win (FTS-dominant corpora
   tie, not beat). Null-default `setFusionWeightsOverride`/`setVectorFloorOverride` hooks added for
-  the sweep. Still pending from WS0.3: typed `StructuralSearchResult` fields
-  (`exactSymbolMatches`/`exactPathMatch`) to replace stringly-typed boost parsing, removing
-  the `mergeRawResults` double-count, and wiring the floor into `retrieval-policy.ts`'s
-  `scoreThresholdRatio`. The deterministic-structural fallback path was intentionally left
-  unchanged (distinct code path for deterministic embeddings) — so the deterministic acceptance
-  gate is unaffected by this recalibration.
+  the sweep. **WS0.3 ranking sub-items — RESOLVED (Phase 5, branch `ws03-ranking-cleanup`):**
+  (1) typed `symbolExact`/`pathExact` fields on `StructuralSearchResult` now carry the
+  exact-identifier boost, replacing the stringly-typed reason-prefix parsing (a structural-
+  indexer reword can no longer silently destroy Hits@1); (2) the absolute per-source relevance
+  floor is wired into `retrieval-policy.ts` (`max(relative scoreThresholdRatio, absolute
+  fused-score floor)`, no-op under a strong hit); (3) the `mergeRawResults` double-count was
+  **investigated and the raw sum was KEPT by an evidence-backed decision** — a controlled
+  same-session GPU before/after showed every rank-based/normalized replacement (RRF, max-norm)
+  erodes the durable GPU structural Hits@1 edge 0.01–0.02 on all three corpora, because the
+  deterministic-fts-recall and GPU-structural-top-1 regimes want opposite lexical weights; the
+  raw sum is a local optimum (see `benchmarks/COMMIT-DERIVED-FINDINGS.md` → "WS0.3 text-source
+  merge"). Each change was validated to keep the Phase-3 deterministic blocking gate green. The
+  deterministic-structural fallback path was intentionally left unchanged (distinct code path
+  for deterministic embeddings) — so the deterministic acceptance gate is unaffected by this
+  recalibration.
 - **WS0.2 (done)** — deleted the `TERM_EXPANSIONS` / `PHRASE_EXPANSIONS` contamination
   tables and their use in `retriever.ts`; removed the 4 unit tests that asserted the
   contaminated behavior; fixed the corrupting stemmer (`string`→`str`, `bytes`→`byt`) with a

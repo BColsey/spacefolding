@@ -112,6 +112,23 @@ describe('createRetrievalSelectionPolicy', () => {
     expect(policy.scoreThresholdRatio).toBe(0);
     expect(policy.minKeep).toBe(0);
     expect(policy.maxChunksPerPath).toBeNull();
+    // Exhaustive returns everything up to budget — no absolute floor.
+    expect(policy.absoluteScoreFloor).toBe(0);
+  });
+
+  it('wires the absolute fused-score floor into focused and broad policies', () => {
+    // 1 / (RRF_K + retrieval tail rank) = 1 / (60 + 200): the contribution a
+    // single unit-weight source makes at the deepest retrieved rank.
+    const expectedFloor = 1 / 260;
+    for (const mode of ['focused', 'broad'] as const) {
+      const policy = createRetrievalSelectionPolicy({
+        mode,
+        complexity: 'moderate',
+        hardBudget: 50_000,
+        requestedTopK: 10,
+      });
+      expect(policy.absoluteScoreFloor).toBeCloseTo(expectedFloor, 6);
+    }
   });
 
   it('caps target budget at hard budget', () => {
@@ -156,6 +173,7 @@ describe('selectRetrievalCandidates', () => {
       candidateLimit: 10,
       minKeep: 3,
       scoreThresholdRatio: 0.35,
+      absoluteScoreFloor: 0, // default off so these tests isolate the relative threshold
       maxChunksPerPath: 2,
       ...overrides,
     };
@@ -300,6 +318,52 @@ describe('selectRetrievalCandidates', () => {
     // Should still have at least the first candidate
     expect(result.ranked).toHaveLength(1);
     expect(result.ranked[0].chunkId).toBe('a');
+  });
+
+  it('absolute floor drops a tail candidate the relative threshold would keep', () => {
+    const chunks = new Map<string, ContextChunk>([
+      ['top', makeChunk({ id: 'top' })],
+      ['tail', makeChunk({ id: 'tail' })],
+    ]);
+    // Weak set: topScore 0.008 → relativeThreshold = 0.008 * 0.35 = 0.0028.
+    // 'tail' at 0.003 clears the relative threshold but is below the absolute
+    // floor (1/260 ≈ 0.00385), so only the absolute floor can catch it.
+    const retrieval = [makeResult('top', 0.008), makeResult('tail', 0.003)];
+
+    // Control: floor disabled → relative threshold keeps both.
+    const noFloor = selectRetrievalCandidates(
+      retrieval,
+      chunks,
+      makePolicy({ minKeep: 0, scoreThresholdRatio: 0.35, absoluteScoreFloor: 0 })
+    );
+    expect(noFloor.ranked.map((r) => r.chunkId)).toEqual(['top', 'tail']);
+
+    // Floor on → 'tail' is dropped with the absolute-floor reason.
+    const withFloor = selectRetrievalCandidates(
+      retrieval,
+      chunks,
+      makePolicy({ minKeep: 0, scoreThresholdRatio: 0.35, absoluteScoreFloor: 1 / 260 })
+    );
+    expect(withFloor.ranked.map((r) => r.chunkId)).toEqual(['top']);
+    expect(withFloor.dropped.find((d) => d.chunkId === 'tail')?.reason).toBe(
+      'below absolute relevance floor'
+    );
+  });
+
+  it('absolute floor is a no-op when a strong top hit makes the relative threshold dominate', () => {
+    const chunks = new Map<string, ContextChunk>([
+      ['top', makeChunk({ id: 'top' })],
+      ['mid', makeChunk({ id: 'mid' })],
+    ]);
+    // Strong set: topScore 1.0 → relativeThreshold 0.35 >> absolute floor, so the
+    // floor never binds and selection matches the pure relative-threshold result.
+    const retrieval = [makeResult('top', 1.0), makeResult('mid', 0.5)];
+    const result = selectRetrievalCandidates(
+      retrieval,
+      chunks,
+      makePolicy({ minKeep: 0, scoreThresholdRatio: 0.35, absoluteScoreFloor: 1 / 260 })
+    );
+    expect(result.ranked.map((r) => r.chunkId)).toEqual(['top', 'mid']);
   });
 
   it('filters out chunks with metadata.split = true', () => {
