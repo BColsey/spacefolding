@@ -204,7 +204,10 @@ size where AST actually fires:
 | typescript | 800  | +0.010 [−0.009,+0.030] | −0.030 [−0.070,+0.000] | +326 (ns) | 807 / 850 |
 
 Every contrast's CI includes 0 — AST boundaries change neither retrieval quality
-nor token cost, at either size or language. At 2000 this is partly because few
+nor token cost, at either size or language. **The GPU code-model confirms the
+tie** at 800 (structural jsast−regex: django R@10 +0.000, Hits@1 +0.000;
+typescript R@10 +0.013, Hits@1 +0.010 — all ns), so AST has no benefit in the
+load-bearing regime either. At 2000 this is partly because few
 files split at all (regex 0.867 vs jsast 0.864 absolute on django); at 800 (where
 AST fires on most files) the regex code splitter — which already breaks at
 function/class regex boundaries and produces near-identical chunk sizes (748 vs
