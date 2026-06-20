@@ -42,9 +42,9 @@ Narrow queries receive a smaller effective budget. Broad queries receive a large
 
 | Strategy | What it uses | Best for |
 | --- | --- | --- |
-| `structural` | Paths, symbols, references, FTS, vector signals | Default codebase retrieval when symbols are indexed |
+| `structural` | Paths, symbols, references, FTS, vector signals | Default codebase retrieval when symbols are indexed; the calibrated hybrid under a GPU code model |
 | `hybrid` | Vector search plus FTS5 | Local embeddings that benefit from keyword support |
-| `vector` | Embedding similarity | Strong GPU embedding models |
+| `vector` | Embedding similarity | Embedding-only retrieval / debugging |
 | `text` | FTS5 and lexical search | Deterministic embeddings or keyword-heavy tasks |
 | `graph` | Dependency links | Explicit relationship traversal |
 
@@ -52,9 +52,15 @@ Adaptive strategy selection depends on `EMBEDDING_PROVIDER`:
 
 | Provider | Adaptive strategy |
 | --- | --- |
-| `gpu` | `vector` |
+| `gpu` | `structural` |
 | `local` | `hybrid` |
 | `deterministic` | `text` |
+
+For `gpu` (a real code-embedding model), the calibrated `structural` hybrid is
+competitive with the strongest lexical baselines on recall and beats FTS on top-1;
+vector-only is strictly dominated by it on the commit-derived benchmark (no
+universal winner — a correct path-aware BM25F leads top-1 on django/rust). See
+[`benchmarks/FROZEN-CLAIM.md`](../../benchmarks/FROZEN-CLAIM.md).
 
 When code symbols are indexed, CLI and MCP retrieval can use `structural` for code-aware matching.
 

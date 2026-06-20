@@ -33,9 +33,11 @@ describe('QueryPlanner', () => {
       expect(getAdaptiveStrategy()).toBe('hybrid');
     });
 
-    it('returns vector for gpu provider', () => {
+    it('returns structural (calibrated hybrid) for gpu provider', () => {
+      // gpu→structural is the honest, data-backed route; gpu→vector came from the
+      // retired contaminated ablation. See getAdaptiveStrategy.
       process.env.EMBEDDING_PROVIDER = 'gpu';
-      expect(getAdaptiveStrategy()).toBe('vector');
+      expect(getAdaptiveStrategy()).toBe('structural');
     });
 
     it('returns text for deterministic provider', () => {
@@ -46,7 +48,7 @@ describe('QueryPlanner', () => {
     it('planQuery uses adaptive strategy based on EMBEDDING_PROVIDER', () => {
       process.env.EMBEDDING_PROVIDER = 'gpu';
       const gpuPlan = planQuery('test query');
-      expect(gpuPlan.strategy).toBe('vector');
+      expect(gpuPlan.strategy).toBe('structural');
 
       process.env.EMBEDDING_PROVIDER = 'local';
       const localPlan = planQuery('test query');

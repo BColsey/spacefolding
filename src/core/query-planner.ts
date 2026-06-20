@@ -190,20 +190,37 @@ export function estimateComplexity(query: string, expandedTerms: string[]): 'nar
 export type { RetrievalStrategy } from '../types/index.js';
 
 /**
- * Determine the optimal retrieval strategy based on the embedding provider.
+ * Determine the retrieval strategy from the embedding provider.
  *
- * - `gpu` (GTE-ModernBERT, etc.): vector-only is best — ablation testing showed
- *   vector-only beats hybrid by 7.5-19% on R@10, NDCG, and MRR with strong GPU embeddings.
- * - `local` (all-MiniLM-L6-v2, etc.): hybrid (vector + FTS5) is better — weaker local
- *   ONNX embeddings benefit from keyword search as a complement.
- * - `deterministic` (hash-based): text-only is best — deterministic embeddings produce
- *   near-random vectors (R@10 = 0.362), so FTS5/BM25 keyword search is far more reliable.
+ * Justified by the contamination-free commit-derived benchmark (django /
+ * typescript / rust) under the GPU code model — see
+ * `benchmarks/COMMIT-DERIVED-FINDINGS.md` and `benchmarks/FROZEN-CLAIM.md`. The
+ * earlier "vector-only beats hybrid by 7.5–19%" claim came from the retired,
+ * train-on-test-contaminated self-corpus ablation and does NOT survive on the
+ * honest benchmark: vector-only is in fact WORSE than the calibrated hybrid on
+ * both recall and top-1 across all three measured languages.
+ *
+ * - `gpu` (real code embeddings, e.g. `Salesforce/SFR-Embedding-Code-400M_R`):
+ *   `structural` — the calibrated hybrid (RRF over a strong vector arm + FTS at
+ *   weights 0.20/0.70/0.70, plus the exact-identifier boost). Under GPU it is
+ *   competitive with the strongest lexical baselines on R@10 and beats FTS on
+ *   top-1 (Hits@1) on django+typescript — though a correct path-aware BM25F is the
+ *   top-1 leader on django/rust (no universal winner; see FROZEN-CLAIM.md). It
+ *   dominates vector-only on every language measured (django R@10 0.780 vs 0.868,
+ *   H@1 0.310 vs 0.400; ts/rust likewise), so the old `gpu → vector` route is
+ *   strictly dominated.
+ * - `deterministic` (hash-based): `text` — deterministic embeddings are
+ *   near-random vectors, so FTS5/BM25 keyword search is far more reliable.
+ * - `local` (weaker general ONNX): `hybrid`. NOTE the bge counter-result: a
+ *   *stronger general* model does not safely improve top-1 — fusion calibrated to
+ *   trust the vector arm regresses Hits@1 — so do not assume "a better local
+ *   model helps" without re-calibrating the per-model fusion weights.
  */
 export function getAdaptiveStrategy(): RetrievalStrategy {
   const provider = process.env.EMBEDDING_PROVIDER ?? 'local';
   switch (provider) {
     case 'gpu':
-      return 'vector';
+      return 'structural';
     case 'deterministic':
       return 'text';
     case 'local':
@@ -248,10 +265,9 @@ export function planQuery(query: string): QueryPlan {
   const complexity = estimateComplexity(query, expandedTerms);
   const structuralQuery = parseStructuralQuery(query);
 
-  // Strategy is adaptive based on embedding model quality:
-  // - GPU embeddings (GTE-ModernBERT): vector-only is optimal
-  // - Local ONNX (all-MiniLM-L6-v2): hybrid (vector + FTS5) compensates for weaker vectors
-  // - Deterministic (hash-based): text-only since vectors are near-random
+  // Strategy is adaptive based on the embedding provider — see getAdaptiveStrategy
+  // for the honest, commit-derived justification (gpu → calibrated structural
+  // hybrid, deterministic → text, local → hybrid).
   const tokenBudgetRatio = adaptiveBudgetRatio(intent, complexity);
 
   return {
