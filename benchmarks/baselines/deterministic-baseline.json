@@ -1,29 +1,30 @@
 {
   "$schema": "spacefolding deterministic regression baseline",
-  "description": "Pinned deterministic-provider retrieval averages on the self-corpus fixture (benchmarks/dataset.json) at retrieval depth 200. Used ONLY as a non-regression reference for the CI blocking gate — NOT a publishable superiority claim (the self-corpus is the pre-decontamination easy fixture; publishable numbers are commit-derived in COMMIT-DERIVED-FINDINGS.md). Deterministic hash embeddings => these numbers are exact and reproducible, so the non-regression guard is non-flaky.",
+  "description": "Pinned deterministic-provider retrieval averages on the FROZEN self-corpus snapshot (benchmarks/fixtures/self-corpus.json, ingested via evaluate.ts --corpus-snapshot) at retrieval depth 200. The gate corpus is frozen (not the live repo tree), so these references no longer drift as the repo grows — only a deliberate re-freeze (benchmarks/freeze-self-corpus.ts) + re-pin changes them. Used ONLY as a non-regression reference for the CI blocking gate, NOT a publishable superiority claim (the self-corpus is the pre-decontamination easy fixture; publishable numbers are commit-derived in COMMIT-DERIVED-FINDINGS.md). Deterministic hash embeddings => exact and reproducible.",
   "provider": "deterministic",
   "dataset": "benchmarks/dataset.json",
+  "corpusSnapshot": "benchmarks/fixtures/self-corpus.json",
   "retrievalDepth": 200,
   "margin": 0.03,
   "strategies": {
     "structural": {
-      "recallAt10": 0.872807,
+      "recallAt10": 0.885965,
       "recallAt20": 0.947368,
       "hitsAt1": 0.526316
     },
     "fts": {
-      "recallAt10": 0.692982,
+      "recallAt10": 0.675439,
       "recallAt20": 0.929825,
       "hitsAt1": 0.210526
     },
     "bm25": {
-      "recallAt10": 0.723684,
-      "recallAt20": 0.868421,
-      "hitsAt1": 0.263158
+      "recallAt10": 0.662281,
+      "recallAt20": 0.842105,
+      "hitsAt1": 0.315789
     },
     "bm25body": {
-      "recallAt10": 0.618421,
-      "recallAt20": 0.763158,
+      "recallAt10": 0.557018,
+      "recallAt20": 0.723684,
       "hitsAt1": 0.210526
     },
     "keyword": {

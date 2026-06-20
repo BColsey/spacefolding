@@ -140,6 +140,16 @@ export interface CliOptions {
   includeTests: boolean;
   workers: number;
   maxChunks: number | null;
+  // Path to a frozen self-corpus snapshot ({path, content}[] JSON). When set, the
+  // benchmark ingests these files verbatim instead of walking the live repo tree —
+  // so the deterministic blocking gate's reference corpus does NOT drift as the
+  // repo grows. See benchmarks/freeze-self-corpus.ts.
+  corpusSnapshot: string | null;
+}
+
+export interface CorpusSnapshotEntry {
+  path: string;
+  content: string;
 }
 
 const ALL_STRATEGIES = ['keyword', 'bm25', 'bm25body', 'path-match', 'fts', 'vector', 'symbol-only', 'structural'];
@@ -365,6 +375,39 @@ export function loadBenchmarkDataset(datasetPath: string): BenchmarkDataset {
   }
 }
 
+/**
+ * Load a frozen self-corpus snapshot ({ path, content }[] JSON). Paths are
+ * repo-relative strings (e.g. "src/core/scorer.ts") that match dataset.json's
+ * relevant_files. Used by the deterministic blocking gate so its reference corpus
+ * is stable across repo growth (see benchmarks/freeze-self-corpus.ts).
+ */
+export function loadCorpusSnapshot(snapshotPath: string): CorpusSnapshotEntry[] {
+  let raw: string;
+  try {
+    raw = readFileSync(snapshotPath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Unable to read corpus snapshot JSON at ${snapshotPath}: ${errorMessage(error)}`);
+  }
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Malformed corpus snapshot JSON at ${snapshotPath}: ${errorMessage(error)}`);
+  }
+  const files = isRecord(data) && Array.isArray((data as { files?: unknown }).files)
+    ? (data as { files: unknown[] }).files
+    : data;
+  if (!Array.isArray(files)) {
+    throw new Error(`Corpus snapshot must be an array (or { files: [...] }): ${snapshotPath}`);
+  }
+  return files.map((entry, index) => {
+    if (!isRecord(entry) || typeof entry.path !== 'string' || typeof entry.content !== 'string') {
+      throw new Error(`Corpus snapshot entry ${index} must be { path: string, content: string }: ${snapshotPath}`);
+    }
+    return { path: entry.path, content: entry.content };
+  });
+}
+
 export function parseArgs(argv: string[], benchDir: string): CliOptions {
   const options: CliOptions = {
     dataset: join(benchDir, 'dataset.json'),
@@ -374,12 +417,14 @@ export function parseArgs(argv: string[], benchDir: string): CliOptions {
     includeTests: false,
     workers: 1,
     maxChunks: null,
+    corpusSnapshot: null,
   };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--dataset') options.dataset = readOptionValue(argv, i++, arg);
     else if (arg === '--corpus') options.corpus = readOptionValue(argv, i++, arg);
+    else if (arg === '--corpus-snapshot') options.corpusSnapshot = readOptionValue(argv, i++, arg);
     else if (arg === '--strategy') options.strategy = readOptionValue(argv, i++, arg);
     else if (arg === '--json') options.json = true;
     else if (arg === '--include-tests') options.includeTests = true;
@@ -1223,15 +1268,24 @@ async function runEvaluation(options: CliOptions) {
   const dbPath = dbArtifact.path;
   const runtime = await createEvaluationRuntime(dbPath);
 
-  // Ingest the Spacefolding source code
-  const projectRoot = join(benchDir, '..');
-  const files = walkDir(options.corpus, options.includeTests);
-  log(`Ingesting ${files.length} source files...`);
-
-  for (const filePath of files) {
-    const content = readFileSync(filePath, 'utf-8');
-    const relativePath = projectRelativePath(projectRoot, filePath);
-    await runtime.pipeline.ingest('file', content, undefined, relativePath, undefined);
+  // Ingest the corpus. A frozen snapshot (--corpus-snapshot) ingests committed
+  // {path, content} entries verbatim so the gate's reference corpus does not drift
+  // with repo growth; otherwise walk the live corpus tree.
+  if (options.corpusSnapshot) {
+    const snapshot = loadCorpusSnapshot(options.corpusSnapshot);
+    log(`Ingesting ${snapshot.length} frozen snapshot files (${relative(benchDir, options.corpusSnapshot)})...`);
+    for (const entry of snapshot) {
+      await runtime.pipeline.ingest('file', entry.content, undefined, entry.path, undefined);
+    }
+  } else {
+    const projectRoot = join(benchDir, '..');
+    const files = walkDir(options.corpus, options.includeTests);
+    log(`Ingesting ${files.length} source files...`);
+    for (const filePath of files) {
+      const content = readFileSync(filePath, 'utf-8');
+      const relativePath = projectRelativePath(projectRoot, filePath);
+      await runtime.pipeline.ingest('file', content, undefined, relativePath, undefined);
+    }
   }
 
   const allChunks = runtime.storage.getAllChunks() as BenchmarkChunk[];

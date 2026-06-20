@@ -71,7 +71,10 @@ jobs:
     # superiority claim — that is regime-dependent (holds on the GPU code-embedding
     # model only) and stays informational in the acceptance-benchmark job above.
     # Deterministic hash embeddings make the baseline exact, so this guard is
-    # non-flaky. See docs/decisions/adr-001-regime-robust-blocking-gate.md.
+    # non-flaky. The self-corpus is a FROZEN snapshot (benchmarks/fixtures/self-corpus.json,
+    # via --corpus-snapshot) so the BM25F/FTS reference does not drift as the repo
+    # grows — only a deliberate re-freeze (benchmarks/freeze-self-corpus.ts) + re-pin
+    # changes it. See docs/decisions/adr-001-regime-robust-blocking-gate.md.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -80,9 +83,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Deterministic retrieval eval (depth 200, matches the pinned baseline)
+      - name: Deterministic retrieval eval (frozen self-corpus, depth 200, matches the pinned baseline)
         run: |
-          BENCHMARK_RETRIEVAL_DEPTH=200 npx tsx benchmarks/evaluate.ts --strategy all --json > eval.json
+          BENCHMARK_RETRIEVAL_DEPTH=200 npx tsx benchmarks/evaluate.ts --corpus-snapshot benchmarks/fixtures/self-corpus.json --strategy all --json > eval.json
       - name: Blocking non-regression gate
         run: |
           npx tsx benchmarks/check-acceptance.ts --blocking-subset --retrieval-json eval.json
