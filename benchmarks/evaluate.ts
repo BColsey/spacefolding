@@ -65,7 +65,28 @@ export interface EvalResult {
     misses: string[];
     hitDetails: HitDetail[];
     retrievedPathCount: number;
+    // Token-cost accounting for the spacefolding-backed strategies (structural/
+    // text/vector/hybrid), which return real chunks with token estimates. The JS
+    // baselines (bm25/keyword/path-match) return whole-file lists, not chunks, so
+    // they carry no chunk-level token cost and this is omitted for them. Used by
+    // the chunk-size sweep: smaller chunks should reach the first correct file in
+    // fewer tokens (less dead weight per chunk) without losing recall.
+    tokenCost?: TokenCost;
   };
+}
+
+/**
+ * Per-task token-cost of a chunk-returning retrieval. `tokensToFirstHit` is the
+ * cumulative token estimate over the ranked chunk list up to and including the
+ * first chunk whose file is relevant (null when no relevant file was retrieved) —
+ * the tokens-to-first-correct-file metric. `totalTokens` is the sum over all
+ * returned chunks at the benchmark retrieval depth.
+ */
+export interface TokenCost {
+  chunksReturned: number;
+  totalTokens: number;
+  tokensToFirstHit: number | null;
+  avgChunkTokens: number;
 }
 
 export interface StrategySummary {
@@ -666,11 +687,20 @@ const BENCHMARK_RETRIEVAL_DEPTH = (() => {
   return parsed;
 })();
 
+interface RankedRetrieval {
+  /** Ranked file paths (chunk order, before dedup), filtered to defined paths. */
+  paths: string[];
+  /** Ranked chunks with token estimates, in retrieval order (pre-dedup). */
+  ranked: { path?: string; tokens: number }[];
+  /** Sum of token estimates over all returned chunks at the retrieval depth. */
+  totalTokens: number;
+}
+
 async function spacefoldingRetrieval(
   task: BenchmarkTask,
   pipeline: any,
   strategy: Exclude<RetrievalStrategy, 'graph'> = 'structural'
-): Promise<string[]> {
+): Promise<RankedRetrieval> {
   const result = await pipeline.retrieve(task.task, 200_000, {
     strategy,
     mode: 'exhaustive',
@@ -679,7 +709,43 @@ async function spacefoldingRetrieval(
     maxHops: 0,
   });
 
-  return result.chunks.map((c: any) => c.path).filter(Boolean);
+  const ranked = result.chunks.map((c: any) => ({
+    path: c.path as string | undefined,
+    tokens: typeof c.tokensEstimate === 'number' ? c.tokensEstimate : 0,
+  }));
+  return {
+    paths: ranked.map((c: { path?: string }) => c.path).filter(Boolean) as string[],
+    ranked,
+    totalTokens: typeof result.totalTokens === 'number'
+      ? result.totalTokens
+      : ranked.reduce((s: number, c: { tokens: number }) => s + c.tokens, 0),
+  };
+}
+
+/**
+ * Token-cost of a ranked chunk retrieval relative to the relevant file set.
+ * Walks the ranked chunk list accumulating token estimates; `tokensToFirstHit`
+ * is the cumulative cost at the first chunk whose file is relevant.
+ */
+function computeTokenCost(
+  ranked: { path?: string; tokens: number }[],
+  relevant: Set<string>,
+  totalTokens: number
+): TokenCost {
+  let cumulative = 0;
+  let tokensToFirstHit: number | null = null;
+  for (const chunk of ranked) {
+    cumulative += chunk.tokens;
+    if (tokensToFirstHit === null && chunk.path && relevant.has(chunk.path)) {
+      tokensToFirstHit = cumulative;
+    }
+  }
+  return {
+    chunksReturned: ranked.length,
+    totalTokens,
+    tokensToFirstHit,
+    avgChunkTokens: ranked.length > 0 ? totalTokens / ranked.length : 0,
+  };
 }
 
 async function symbolOnlyRetrieval(
@@ -909,21 +975,28 @@ async function evaluateBenchmarkTask(
 ): Promise<EvalResult> {
   const relevantSet = new Set(task.relevant_files);
   let retrievedPaths: string[];
+  let tokenCost: TokenCost | undefined;
+
+  const runRanked = async (s: Exclude<RetrievalStrategy, 'graph'>) => {
+    const ranked = await spacefoldingRetrieval(task, runtime.pipeline, s);
+    tokenCost = computeTokenCost(ranked.ranked, relevantSet, ranked.totalTokens);
+    return ranked.paths;
+  };
 
   switch (strategy) {
     case 'spacefolding':
     case 'structural':
-      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'structural');
+      retrievedPaths = await runRanked('structural');
       break;
     case 'hybrid':
-      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'hybrid');
+      retrievedPaths = await runRanked('hybrid');
       break;
     case 'fts':
     case 'text':
-      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'text');
+      retrievedPaths = await runRanked('text');
       break;
     case 'vector':
-      retrievedPaths = await spacefoldingRetrieval(task, runtime.pipeline, 'vector');
+      retrievedPaths = await runRanked('vector');
       break;
     case 'symbol-only':
       runtime.allSymbols ??= runtime.storage.getAllCodeSymbols() as BenchmarkSymbolRow[];
@@ -969,6 +1042,7 @@ async function evaluateBenchmarkTask(
       misses,
       hitDetails,
       retrievedPathCount: uniquePaths.length,
+      ...(tokenCost ? { tokenCost } : {}),
     },
   };
 }

@@ -23,7 +23,7 @@ interface EvalResult { taskId: string; metrics: Metrics }
 interface StrategySummary { strategy: string; averages: Metrics; results: EvalResult[] }
 interface Report { strategies: StrategySummary[] }
 
-function mulberry32(seedStr: string): () => number {
+export function mulberry32(seedStr: string): () => number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < seedStr.length; i++) {
     h ^= seedStr.charCodeAt(i);
@@ -42,7 +42,7 @@ function mean(xs: number[]): number {
   return xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 
-function bootstrapMeanCI(values: number[], metric: string, nBoot = 10_000, ci = 0.95) {
+export function bootstrapMeanCI(values: number[], metric: string, nBoot = 10_000, ci = 0.95) {
   const n = values.length;
   const rng = mulberry32(`mean:${metric}:${values.map((v) => v.toFixed(6)).join(',')}`);
   const means: number[] = [];
@@ -56,7 +56,7 @@ function bootstrapMeanCI(values: number[], metric: string, nBoot = 10_000, ci = 
   return { mean: mean(values), low: means[Math.floor(nBoot * alpha)], high: means[Math.ceil(nBoot * (1 - alpha)) - 1] };
 }
 
-function pairedDiffCI(a: number[], b: number[], metric: string, nBoot = 10_000, ci = 0.95) {
+export function pairedDiffCI(a: number[], b: number[], metric: string, nBoot = 10_000, ci = 0.95) {
   if (a.length !== b.length) throw new Error('paired arrays differ in length');
   const n = a.length;
   const diffs = a.map((v, i) => v - b[i]);
