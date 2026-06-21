@@ -14,15 +14,15 @@ depth 200. Core matrix (django/typescript/kubernetes) complete; optional follow-
 
 ## TL;DR
 
-**Crossover found (GPU SFR, seed 42):** grep is competitive (django, ~0.9k files) or
-**wins** (typescript, ~0.7k) on tokens-to-first-correct-file at small scale; the GPU
-hybrid **wins significantly at scale** (kubernetes, ~9k files, Δ −25663 tokens,
-paired-bootstrap 95% CI excludes 0). The crossover sits between ~1k and ~9k files —
-grep's lexical ranking dilutes as distractors grow (its tokens-to-first-correct-file
-inflates from ~8.5k to ~37k), while the hybrid's chunk-level ranking holds (~12k).
-grep is a genuine, strong baseline (it beats the hybrid on **Hits@1** at small scale),
-not a strawman — the honest narrative is "where grep loses" = token-constrained
-retrieval at large/monorepo scale.
+**On TypeScript (kibana) — a gated-claim language — the GPU hybrid beats agentic-grep
+on tokens-to-first-correct-file at every scale tested (1k, 10k; 60k pending), paired-
+bootstrap 95% CI excludes 0**, with the margin growing as distractors accumulate (Δ
+−7.4k at 1k → −13.3k at 10k). grep's cost inflates as its lexical ranking dilutes
+(16.8k → 32.2k tokens) while the hybrid's chunk-level ranking holds (9.4k → 14.8k).
+grep is still a genuine, strong baseline — it is competitive (django, tie) and even
+**wins** on the small, declaration-heavy TypeScript *compiler* corpus (710 `.d.ts`
+files) — so the honest narrative is "where grep loses" = token-constrained retrieval
+on application codebases at scale, not "grep is bad."
 
 ## Why this metric (and the dual token model)
 
@@ -91,8 +91,11 @@ grep, chunk-based for structural; whole-file is grep's secondary column):
 | corpus (scale) | files | structural | grep(ctx) | grep(whole) | fts | Δ(s−g) [95% CI] | n |
 |---|---|---|---|---|---|---|---|
 | django (py) | 0.9k | 7,543 | 8,530 | 43,789 | 11,354 | +1233 [−1128..3540] | 99 |
-| typescript (TS) | 0.7k | 23,546 | 14,645 | 1,057,263 | 21,763 | +11038 [5283..17103] ★ | 96 |
-| kubernetes (go) | 8.8k | 12,279 | 36,815 | 989,601 | 17,029 | **−25663 [−41436..−12802] ★** | 73 |
+| typescript compiler (TS) | 0.7k | 23,546 | 14,645 | 1,057,263 | 21,763 | +11038 [5283..17103] ★ | 96 |
+| kubernetes (go) | 8.8k | 12,279 | 36,815 | 989,601 | 17,029 | −25663 [−41436..−12802] ★ | 73 |
+| **kibana (TS)** | **1k** | 9,379 | 16,815 | 50,373 | 12,120 | **−7436 [−13716..−2358] ★** | 99 |
+| **kibana (TS)** | **10k** | 14,780 | 32,208 | 137,961 | 16,989 | **−13303 [−27239..−2007] ★** | 54 |
+| kibana (TS) | 60k | _pending_ | | | | | |
 
 ★ = paired-bootstrap 95% CI excludes 0. Δ = structural − grep (negative ⇒ structural wins).
 
@@ -101,43 +104,57 @@ grep, chunk-based for structural; whole-file is grep's secondary column):
 | corpus (scale) | structural R@10 / h@1 | grep R@10 / h@1 / R@8k | fts R@10 | bm25 R@10 |
 |---|---|---|---|---|
 | django | 0.873 / 0.380 | 0.875 / 0.640 / 0.775 | 0.802 | 0.854 |
-| typescript | 0.695 / 0.330 | 0.794 / 0.460 / 0.625 | 0.679 | 0.575 |
+| typescript compiler | 0.695 / 0.330 | 0.794 / 0.460 / 0.625 | 0.679 | 0.575 |
 | kubernetes | 0.546 / 0.170 | 0.466 / 0.220 / 0.386 | 0.481 | 0.508 |
+| kibana (TS) 1k | 0.742 / 0.300 | 0.711 / 0.330 / 0.493 | 0.687 | 0.712 |
+| kibana (TS) 10k | 0.276 / 0.110 | 0.486 / 0.290 / 0.358 | 0.253 | 0.246 |
 
 **Symbol-removed ablation** (the edge must be shown alongside its collapse — the
-hybrid's top-1 edge is identifier lookup, not semantic understanding):
+hybrid's top-1 edge is largely identifier lookup, not semantic understanding):
 
 | corpus (scale) | structural h@1 orig→ablated | grep h@1 orig→ablated |
 |---|---|---|
 | django | 0.380 → 0.190 | 0.640 → 0.210 |
-| typescript | 0.330 → 0.120 | 0.460 → 0.410 |
+| typescript compiler | 0.330 → 0.120 | 0.460 → 0.410 |
 | kubernetes | 0.170 → 0.100 | 0.220 → 0.120 |
+| kibana (TS) 1k | 0.300 → 0.250 | 0.330 → 0.270 |
+| kibana (TS) 10k | 0.110 → 0.090 | 0.290 → 0.230 |
+
+(The kibana collapse is smaller — 0.300→0.250 — than django/typescript's: the
+hybrid's kibana edge is somewhat less identifier-dependent, i.e. more semantic.
+Reported honestly, not generalized.)
 
 ## The crossover
 
-- **~0.7k–0.9k files:** grep is competitive (django: tied, CI includes 0) or wins
-  (typescript: grep −11k tokens, and grep beats the hybrid on Recall@10 *and* Hits@1).
-  A genuine agent's lexical search is hard to beat when the corpus is small.
-- **~9k files:** the hybrid wins on tokens-to-first-correct-file (−25.7k tokens, CI
-  excludes 0) and on Recall@10. grep's tokens-to-first-correct-file has inflated
-  ~4× (8.5k→37k) as its ranking dilutes across thousands of distractor files; the
-  hybrid's chunk-level ranking stays focused (~12k).
-- **Where grep wins, honestly:** at small scale grep often has the higher **Hits@1**
-  (it ranks the exact file #1 more often). The hybrid's edge is *token efficiency at
-  scale*, not universally better top-1 localization — which is why the metric is
-  tokens-to-first-correct-file, not Hits@1.
+- **TypeScript (kibana), same corpus at 1k → 10k files:** the hybrid wins on
+  tokens-to-first-correct-file at *both* scales (Δ −7.4k, −13.3k; CIs exclude 0), and
+  the margin grows with scale. This is the claim-language, same-corpus scale axis —
+  grep's cost inflates (16.8k → 32.2k) as its lexical ranking dilutes across
+  distractors while the hybrid's chunk ranking holds (9.4k → 14.8k). 60k pending.
+- **Small / declaration-heavy corpora:** grep is competitive (django: tied) or wins
+  (TypeScript *compiler* corpus, 710 `.d.ts` files: grep −11k tokens, and grep beats
+  the hybrid on Recall@10 *and* Hits@1). The crossover is corpus-dependent, not purely
+  file-count — identifier-dense declaration corpora favor grep's exact-match strength.
+- **Where grep wins, honestly:** even where the hybrid wins tokens-to-first-correct-
+  file, grep often has the higher **Hits@1** (e.g. kibana-10k: grep 0.290 vs hybrid
+  0.110) and sometimes higher Recall@10 (kibana-10k: grep 0.486 vs 0.276) — grep
+  surfaces more gold in its top-10 but at greater token cost. The hybrid's edge is
+  *token efficiency at scale*, which is why the headline metric is tokens-to-first-
+  correct-file, not Hits@1.
 
 ## Honest limitations (read before quoting a number)
 
-- **Scale axis is per-corpus, mixed languages** (django=python, typescript=TS,
-  kubernetes=go). The 9k structural-win is on a Go codebase. Same-language scale
-  isolation (rust 1k→6k) and a true 60k point (kibana, TS) are **optional follow-ons**
-  — kibana is the only 60k corpus but is a depth-1 shallow clone with no commit tasks
-  (`git fetch --unshallow` + regenerate tasks to enable it).
 - **Single seed (42).** GPU runs carry ~±0.02 Hits@1 noise; the crossover call rests
   on the per-scale paired CI. Multi-seed confirmation is the pre-publish follow-on.
-- **n varies** (73–99) — tasks where neither arm surfaced gold are excluded from the
-  paired contrast (null-as-exclude, consistent with `analyze-chunk-sweep.ts`).
+- **60k point pending** (kibana-TS) — the confirmation climax; the ≥10k claim-language
+  crossover (kibana-10k, CI excludes 0) is already established without it.
+- **n varies** (54–99) — tasks where neither arm surfaced gold are excluded from the
+  paired contrast (null-as-exclude, consistent with `analyze-chunk-sweep.ts`); the
+  10k point is harder (more gold unsurfaced → smaller n).
+- **Corpus-dependent within a language:** the TypeScript *compiler* corpus (grep wins)
+  vs kibana (hybrid wins) shows the result is not purely a function of file count or
+  language — codebase structure matters. Generalize to "application codebases at
+  scale," not "all TypeScript."
 - The benchmark-vs-default gap applies: these are **GPU SFR** numbers; the shipped
   frictionless default (bge) does not reproduce them (`MODEL-VERIFICATION.md`).
 
