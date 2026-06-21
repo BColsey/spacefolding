@@ -1,6 +1,16 @@
 # Model Comparison — All Embedding Models Tested
 
-Historical snapshot: this April 2026 model comparison is still useful for provider tradeoffs, but it is not the current acceptance benchmark. Use `benchmarks/RESULTS.md` and `benchmarks/E2E-RESULTS.md` for current verified status.
+> ⚠️ **CONTAMINATED / RETIRED for model-selection. Superseded by
+> [`MODEL-VERIFICATION.md`](./MODEL-VERIFICATION.md).** The numbers below were
+> measured on the **20-task self-corpus** (spacefolding's own code) — the same
+> train-on-test contamination the project retired in WS0.2. The headline
+> "gte-modernbert champion, +7.5% over keyword" does **not** survive on the
+> contamination-free commit-derived benchmark: there, no tested model (gte, bge-m3,
+> bge-small) significantly beats the shipped `SFR-Embedding-Code-400M_R` on the
+> fused `structural` strategy. Do **not** cite the tables below as a model-selection
+> result. Kept only as a historical record of provider/latency tradeoffs.
+
+Historical snapshot: this April 2026 model comparison is still useful for provider tradeoffs, but it is not the current acceptance benchmark. Use `benchmarks/MODEL-VERIFICATION.md` for the honest model-selection result and `benchmarks/COMMIT-DERIVED-FINDINGS.md` / `benchmarks/FROZEN-CLAIM.md` for current verified status.
 
 **Date:** 2026-04-20
 **GPU:** NVIDIA RTX 3080 (10GB VRAM)
