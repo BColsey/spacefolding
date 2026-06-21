@@ -54,6 +54,17 @@ Spacefolding is configured with environment variables. The default Docker setup 
 > The `local` provider's `Xenova/bge-small-en-v1.5` is the lightweight, in-process ONNX
 > fallback (general English, no Python required) used when you want zero extra
 > dependencies.
+>
+> **Regime dependence (read before citing benchmark numbers):** the published
+> retrieval claim — the `structural` hybrid is competitive on recall and beats FTS
+> on top-1 (Hits@1) — holds **only on the `gpu` provider with the SFR code model**.
+> The frictionless `local` `bge` default gives working retrieval but is a *weaker
+> regime*: trusting its vector arm at the calibrated fusion weights actually *lowers*
+> top-1, and the acceptance gate fails on it. To reproduce the published numbers,
+> use `EMBEDDING_PROVIDER=gpu` (CPU is fine). See
+> [`benchmarks/MODEL-VERIFICATION.md`](../benchmarks/MODEL-VERIFICATION.md),
+> [`benchmarks/FROZEN-CLAIM.md`](../benchmarks/FROZEN-CLAIM.md), and
+> [`benchmarks/GPU-REPRODUCTION.md`](../benchmarks/GPU-REPRODUCTION.md).
 
 ### Local Embeddings
 
