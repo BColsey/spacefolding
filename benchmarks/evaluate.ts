@@ -9,7 +9,7 @@
  *   npx tsx benchmarks/evaluate.ts --strategy vector
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -534,6 +534,44 @@ function hashString(value: string): number {
 
 function seededScore(seed: string): number {
   return hashString(seed) / 0xffffffff;
+}
+
+/**
+ * Indexed-DB cache for the benchmark corpus (opt-in via SF_BENCH_CACHE_DIR). The
+ * ablation pass (--symbol-removed) and any same-config re-run share the IDENTICAL
+ * corpus + embeddings — only the query text differs — so re-running the ~0.5s/file
+ * ingest (chunk + FTS5 + structural symbols + GPU embedding) is pure waste. With the
+ * cache, the first run ingests + persists the SQLite DB; subsequent runs (ablation,
+ * re-runs) copy it in and skip ingest entirely. OFF by default (the blocking gate and
+ * normal runs are unaffected). Keyed by the ingested file-path set + embedding config
+ * (model/device/seed) — deliberately NOT by --symbol-removed (ablation reuses) or
+ * retrieval depth (eval-only).
+ */
+function benchCacheDir(): string | null {
+  const dir = process.env.SF_BENCH_CACHE_DIR;
+  if (!dir) return null;
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function benchCacheKey(paths: string[]): string {
+  const embeddingConfig = [
+    process.env.BENCH_EMBEDDING ?? 'deterministic',
+    process.env.GPU_EMBEDDING_MODEL ?? 'default',
+    process.env.GPU_EMBEDDING_DEVICE ?? '',
+    process.env.GPU_EMBEDDING_SEED ?? '',
+  ].join('|');
+  const pathHash = hashString([...paths].sort().join('\n'));
+  const cfgHash = hashString(embeddingConfig);
+  return `${pathHash.toString(16)}-${cfgHash.toString(16)}`;
+}
+
+function copyDbSet(srcBase: string, dstBase: string): void {
+  // Copy the .db plus its WAL/SHM sidecars so a copied DB replays consistently.
+  for (const suffix of ['', '-wal', '-shm']) {
+    const src = `${srcBase}${suffix}`;
+    if (existsSync(src)) copyFileSync(src, `${dstBase}${suffix}`);
+  }
 }
 
 // ── Baseline Strategies ──────────────────────────────────────
@@ -1737,6 +1775,15 @@ async function runEvaluation(options: CliOptions) {
   const log = (...args: unknown[]) => {
     if (!options.json) console.log(...args);
   };
+  // Phase profiling (BENCH_PROFILE=1) — writes to stderr so it shows under --json.
+  // Used to root-cause the ingestion-bound 60k pathology before optimizing the harness.
+  const profiling = process.env.BENCH_PROFILE === '1';
+  const t0 = profiling ? Date.now() : 0;
+  const profile = (label: string) => {
+    if (!profiling) return;
+    const elapsedS = ((Date.now() - t0) / 1000).toFixed(1);
+    console.error(`[profile +${elapsedS}s] ${label}`);
+  };
 
   log(`\n${'═'.repeat(70)}`);
   log(`  SPACEFOLDING RETRIEVAL BENCHMARK`);
@@ -1761,11 +1808,6 @@ async function runEvaluation(options: CliOptions) {
     process.env.MAX_CHUNKS = String(options.maxChunks);
   }
 
-  // Create a test pipeline with the Spacefolding codebase ingested
-  const dbArtifact = createBenchmarkSqliteArtifact('benchmark-eval');
-  const dbPath = dbArtifact.path;
-  const runtime = await createEvaluationRuntime(dbPath);
-
   // The union of every task's gold files — kept verbatim by any --max-files cap so
   // recall stays well-defined while only the distractor count varies with size.
   const goldSet = new Set(dataset.tasks.flatMap((t) => t.relevant_files));
@@ -1775,13 +1817,12 @@ async function runEvaluation(options: CliOptions) {
       (exceeded ? ` [gold alone exceeds the cap — all gold kept for recall integrity]` : ''));
   };
 
-  // The exact {path, content} corpus that was ingested — handed verbatim to the
-  // grep arm so its search target is byte-identical to what the hybrid indexed.
-  const corpusFiles: CorpusSnapshotEntry[] = [];
-
-  // Ingest the corpus. A frozen snapshot (--corpus-snapshot) ingests committed
-  // {path, content} entries verbatim so the gate's reference corpus does not drift
-  // with repo growth; otherwise walk the live corpus tree.
+  // Build the exact {path, content}[] to ingest up front (frozen snapshot verbatim,
+  // or the walked+read tree with the gold-retaining --max-files cap). Resolved before
+  // the pipeline is created so the corpus identity can be hashed for the indexed-DB
+  // cache — the ablation pass + same-config re-runs share the identical corpus +
+  // embeddings and must not pay the ~0.5s/file ingest again.
+  let entries: CorpusSnapshotEntry[];
   if (options.corpusSnapshot) {
     let snapshot = loadCorpusSnapshot(options.corpusSnapshot);
     if (options.maxFiles !== null) {
@@ -1789,11 +1830,8 @@ async function runEvaluation(options: CliOptions) {
       logCap(capped.kept.length, snapshot.length, capped.goldKept, capped.padding, capped.exceededByGold);
       snapshot = capped.kept;
     }
-    log(`Ingesting ${snapshot.length} frozen snapshot files (${relative(benchDir, options.corpusSnapshot)})...`);
-    for (const entry of snapshot) {
-      await runtime.pipeline.ingest('file', entry.content, undefined, entry.path, undefined);
-      corpusFiles.push({ path: entry.path, content: entry.content });
-    }
+    log(`Corpus: ${snapshot.length} frozen snapshot files (${relative(benchDir, options.corpusSnapshot)})`);
+    entries = snapshot.map((e) => ({ path: e.path, content: e.content }));
   } else {
     const projectRoot = join(benchDir, '..');
     let files = walkDir(options.corpus, options.includeTests).map((filePath) => ({
@@ -1805,16 +1843,48 @@ async function runEvaluation(options: CliOptions) {
       logCap(capped.kept.length, files.length, capped.goldKept, capped.padding, capped.exceededByGold);
       files = capped.kept;
     }
-    log(`Ingesting ${files.length} source files...`);
-    for (const { filePath, relativePath } of files) {
-      const content = readFileSync(filePath, 'utf-8');
-      await runtime.pipeline.ingest('file', content, undefined, relativePath, undefined);
-      corpusFiles.push({ path: relativePath, content });
+    log(`Corpus: ${files.length} source files`);
+    entries = files.map((f) => ({ path: f.relativePath, content: readFileSync(f.filePath, 'utf-8') }));
+  }
+
+  // Optional indexed-DB cache (SF_BENCH_CACHE_DIR). Keyed by the ingested file-path
+  // set + embedding config (model/device/seed) — deliberately NOT by --symbol-removed
+  // (ablation reuses) or retrieval depth (eval-only). OFF by default → gate unaffected.
+  const cacheDir = benchCacheDir();
+  const cachePath = cacheDir ? join(cacheDir, `${benchCacheKey(entries.map((e) => e.path))}.db`) : null;
+  const cacheHit = cachePath ? existsSync(cachePath) : false;
+
+  const dbArtifact = createBenchmarkSqliteArtifact('benchmark-eval');
+  const dbPath = dbArtifact.path;
+  if (cachePath && cacheHit) {
+    copyDbSet(cachePath, dbPath);
+    log(`Reusing cached indexed DB — skipping ingest of ${entries.length} files`);
+    profile(`cache HIT — ingest skipped`);
+  }
+  const runtime = await createEvaluationRuntime(dbPath);
+
+  // The exact {path, content} corpus that was ingested — handed verbatim to the grep
+  // arm so its search target is byte-identical to what the hybrid indexed.
+  const corpusFiles: CorpusSnapshotEntry[] = entries;
+
+  if (!cacheHit) {
+    log(`Ingesting ${entries.length} files...`);
+    profile(`ingest start (${entries.length} files)`);
+    let ingested = 0;
+    for (const entry of entries) {
+      await runtime.pipeline.ingest('file', entry.content, undefined, entry.path, undefined);
+      if (profiling && ++ingested % 500 === 0) profile(`  ingested ${ingested}/${entries.length}`);
+    }
+    profile(`ingest done (${entries.length} files)`);
+    if (cachePath) {
+      copyDbSet(dbPath, cachePath);
+      log(`Cached indexed DB for future ablation/re-runs`);
     }
   }
 
   const allChunks = runtime.storage.getAllChunks() as BenchmarkChunk[];
   log(`Ingested ${allChunks.length} chunks\n`);
+  profile(`chunks ready (${allChunks.length})`);
 
   // The grep arm runs real ripgrep over the byte-identical indexed corpus, so
   // materialize the exact {path,content}[] set the pipeline ingested (snapshot
@@ -1822,6 +1892,7 @@ async function runEvaluation(options: CliOptions) {
   const corpusDirArtifact = strategies.includes('grep')
     ? await materializeBenchmarkCorpus(corpusFiles, (text) => runtime.tokenEstimator.estimate(text))
     : null;
+  profile(`materialized corpus for ripgrep`);
   if (corpusDirArtifact) {
     log(`Materialized ${corpusDirArtifact.fileCount}-file corpus for ripgrep\n`);
     runtime.grep = {
@@ -1839,6 +1910,7 @@ async function runEvaluation(options: CliOptions) {
     log(`\n${'─'.repeat(70)}`);
     log(`  Strategy: ${strat.toUpperCase()}`);
     log(`${'─'.repeat(70)}\n`);
+    profile(`strategy start: ${strat}`);
 
     const results = options.workers > 1 && effectiveTasks.length > 1
       ? await evaluateTasksParallel({
