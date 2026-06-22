@@ -20,6 +20,7 @@ import {
   createBenchmarkSqliteArtifact,
   materializeBenchmarkCorpus,
   type BenchmarkCorpusDir,
+  type BenchmarkCorpusSource,
 } from './temp-artifacts.js';
 
 // ── Types ────────────────────────────────────────────────────
@@ -1817,12 +1818,11 @@ async function runEvaluation(options: CliOptions) {
       (exceeded ? ` [gold alone exceeds the cap — all gold kept for recall integrity]` : ''));
   };
 
-  // Build the exact {path, content}[] to ingest up front (frozen snapshot verbatim,
-  // or the walked+read tree with the gold-retaining --max-files cap). Resolved before
-  // the pipeline is created so the corpus identity can be hashed for the indexed-DB
-  // cache — the ablation pass + same-config re-runs share the identical corpus +
-  // embeddings and must not pay the ~0.5s/file ingest again.
-  let entries: CorpusSnapshotEntry[];
+  // Build the corpus as LAZY sources (path + getContent) up front — paths for the
+  // cache key, content read on demand. Content is NEVER all loaded at once: a 60k-file
+  // corpus held in memory is tens of GB of strings (OOM). Resolved before the pipeline
+  // is created so the corpus identity can be hashed for the indexed-DB cache.
+  let sources: BenchmarkCorpusSource[];
   if (options.corpusSnapshot) {
     let snapshot = loadCorpusSnapshot(options.corpusSnapshot);
     if (options.maxFiles !== null) {
@@ -1831,7 +1831,7 @@ async function runEvaluation(options: CliOptions) {
       snapshot = capped.kept;
     }
     log(`Corpus: ${snapshot.length} frozen snapshot files (${relative(benchDir, options.corpusSnapshot)})`);
-    entries = snapshot.map((e) => ({ path: e.path, content: e.content }));
+    sources = snapshot.map((e) => ({ path: e.path, getContent: () => e.content }));
   } else {
     const projectRoot = join(benchDir, '..');
     let files = walkDir(options.corpus, options.includeTests).map((filePath) => ({
@@ -1844,38 +1844,35 @@ async function runEvaluation(options: CliOptions) {
       files = capped.kept;
     }
     log(`Corpus: ${files.length} source files`);
-    entries = files.map((f) => ({ path: f.relativePath, content: readFileSync(f.filePath, 'utf-8') }));
+    sources = files.map((f) => ({ path: f.relativePath, getContent: () => readFileSync(f.filePath, 'utf-8') }));
   }
 
   // Optional indexed-DB cache (SF_BENCH_CACHE_DIR). Keyed by the ingested file-path
   // set + embedding config (model/device/seed) — deliberately NOT by --symbol-removed
   // (ablation reuses) or retrieval depth (eval-only). OFF by default → gate unaffected.
   const cacheDir = benchCacheDir();
-  const cachePath = cacheDir ? join(cacheDir, `${benchCacheKey(entries.map((e) => e.path))}.db`) : null;
+  const cachePath = cacheDir ? join(cacheDir, `${benchCacheKey(sources.map((s) => s.path))}.db`) : null;
   const cacheHit = cachePath ? existsSync(cachePath) : false;
 
   const dbArtifact = createBenchmarkSqliteArtifact('benchmark-eval');
   const dbPath = dbArtifact.path;
   if (cachePath && cacheHit) {
     copyDbSet(cachePath, dbPath);
-    log(`Reusing cached indexed DB — skipping ingest of ${entries.length} files`);
+    log(`Reusing cached indexed DB — skipping ingest of ${sources.length} files`);
     profile(`cache HIT — ingest skipped`);
   }
   const runtime = await createEvaluationRuntime(dbPath);
 
-  // The exact {path, content} corpus that was ingested — handed verbatim to the grep
-  // arm so its search target is byte-identical to what the hybrid indexed.
-  const corpusFiles: CorpusSnapshotEntry[] = entries;
-
   if (!cacheHit) {
-    log(`Ingesting ${entries.length} files...`);
-    profile(`ingest start (${entries.length} files)`);
+    log(`Ingesting ${sources.length} files...`);
+    profile(`ingest start (${sources.length} files)`);
     let ingested = 0;
-    for (const entry of entries) {
-      await runtime.pipeline.ingest('file', entry.content, undefined, entry.path, undefined);
-      if (profiling && ++ingested % 500 === 0) profile(`  ingested ${ingested}/${entries.length}`);
+    for (const source of sources) {
+      const content = source.getContent(); // lazy — one file at a time, GC-able
+      await runtime.pipeline.ingest('file', content, undefined, source.path, undefined);
+      if (profiling && ++ingested % 500 === 0) profile(`  ingested ${ingested}/${sources.length}`);
     }
-    profile(`ingest done (${entries.length} files)`);
+    profile(`ingest done (${sources.length} files)`);
     if (cachePath) {
       copyDbSet(dbPath, cachePath);
       log(`Cached indexed DB for future ablation/re-runs`);
@@ -1887,10 +1884,10 @@ async function runEvaluation(options: CliOptions) {
   profile(`chunks ready (${allChunks.length})`);
 
   // The grep arm runs real ripgrep over the byte-identical indexed corpus, so
-  // materialize the exact {path,content}[] set the pipeline ingested (snapshot
-  // verbatim, or the gold-retaining --max-files cap) to a temp dir + token sidecar.
+  // materialize the exact file set the pipeline ingested to a temp dir + token sidecar.
+  // Sources are lazy — materialization reads one file at a time (never the whole corpus).
   const corpusDirArtifact = strategies.includes('grep')
-    ? await materializeBenchmarkCorpus(corpusFiles, (text) => runtime.tokenEstimator.estimate(text))
+    ? await materializeBenchmarkCorpus(sources, (text) => runtime.tokenEstimator.estimate(text))
     : null;
   profile(`materialized corpus for ripgrep`);
   if (corpusDirArtifact) {

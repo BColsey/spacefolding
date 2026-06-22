@@ -49,6 +49,17 @@ export interface BenchmarkCorpusFile {
   content: string;
 }
 
+/**
+ * Lazy corpus source: path + a getContent() that reads on demand. Used so a 60k-file
+ * corpus is NEVER held entirely in memory (reading all content up front OOMs at scale
+ * — kibana's large TS files are tens of GB of strings). Content is fetched one file
+ * at a time during ingest and grep materialization.
+ */
+export interface BenchmarkCorpusSource {
+  path: string;
+  getContent: () => string;
+}
+
 export interface BenchmarkCorpusDir {
   /** Temp directory holding the materialized corpus files, laid out by `path`. */
   path: string;
@@ -59,25 +70,22 @@ export interface BenchmarkCorpusDir {
 }
 
 /**
- * Materialize an in-memory {path,content}[] corpus to a temp directory so the
- * agentic-grep baseline can run real ripgrep against EXACTLY the files the
- * spacefolding pipeline indexed — byte-identical, whether the corpus came from a
- * frozen snapshot (--corpus-snapshot, verbatim) or the gold-retaining --max-files
- * cap. Without this, grep would search a different file set than the hybrid
- * indexed and the head-to-head would be measuring two different corpora.
+ * Materialize a corpus to a temp directory so the agentic-grep baseline can run real
+ * ripgrep against EXACTLY the files the spacefolding pipeline indexed — byte-identical,
+ * whether the corpus came from a frozen snapshot (--corpus-snapshot, verbatim) or the
+ * gold-retaining --max-files cap. Without this, grep would search a different file set
+ * than the hybrid indexed and the head-to-head would be measuring two different corpora.
  *
- * Also writes a token-count sidecar (`.sf-tokens.json`) computed from the content
- * already in memory, so the grep arm's tokens-to-first-correct-file uses the SAME
- * token estimator (DeterministicTokenEstimator) and units as the hybrid — an
- * apples-to-apples token cost — without re-reading files in every worker.
+ * Accepts LAZY sources (getContent) and reads one file at a time — a 60k-file corpus is
+ * never held in memory (that OOMs; see BenchmarkCorpusSource). Also writes a token-count
+ * sidecar so the grep arm's tokens-to-first-correct-file uses the SAME estimator + units
+ * as the hybrid (apples-to-apples) without re-reading files in every worker.
  *
- * Files are written in bounded concurrent batches (a corpus can be 60k files).
- * Paths must be repo-relative: absolute paths or `..` segments are rejected (the
- * corpus is trusted local source, but a guard beats silently writing outside the
- * temp tree).
+ * Files are written in bounded concurrent batches. Paths must be repo-relative:
+ * absolute paths or `..` segments are rejected.
  */
 export async function materializeBenchmarkCorpus(
-  files: BenchmarkCorpusFile[],
+  files: BenchmarkCorpusSource[],
   estimateTokens: (text: string) => number
 ): Promise<BenchmarkCorpusDir> {
   const dir = mkdtempSync(join(tmpdir(), 'spacefolding-grep-corpus-'));
@@ -93,10 +101,11 @@ export async function materializeBenchmarkCorpus(
       if (isAbsolute(file.path) || file.path.includes('..')) {
         throw new Error(`Refusing to materialize corpus path outside the temp tree: ${file.path}`);
       }
+      const content = file.getContent(); // lazy — one file at a time, never the whole corpus
       const abs = join(dir, file.path);
       mkdirSync(dirname(abs), { recursive: true });
-      await writeFile(abs, file.content);
-      tokens[file.path] = estimateTokens(file.content);
+      await writeFile(abs, content);
+      tokens[file.path] = estimateTokens(content);
     }));
   }
 

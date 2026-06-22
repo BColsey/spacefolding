@@ -472,7 +472,8 @@ describe('agentic-grep baseline (Phase 8 head-to-head)', () => {
       { path: 'src/distractor.ts', content: 'export function unrelatedThing() { return 1; }\n' },
       { path: 'src/other.ts', content: '// misc helpers for the app\n' },
     ];
-    const dir = await materializeBenchmarkCorpus(corpus, (t) => estimator.estimate(t));
+    const sources = corpus.map((f) => ({ path: f.path, getContent: () => f.content }));
+    const dir = await materializeBenchmarkCorpus(sources, (t) => estimator.estimate(t));
     try {
       const base = {
         id: 'g3', task: 'Find the computeTokenCost function', intent: 'feature',
