@@ -95,7 +95,13 @@ grep, chunk-based for structural; whole-file is grep's secondary column):
 | kubernetes (go) | 8.8k | 12,279 | 36,815 | 989,601 | 17,029 | −25663 [−41436..−12802] ★ | 73 |
 | **kibana (TS)** | **1k** | 9,379 | 16,815 | 50,373 | 12,120 | **−7436 [−13716..−2358] ★** | 99 |
 | **kibana (TS)** | **10k** | 14,780 | 32,208 | 137,961 | 16,989 | **−13303 [−27239..−2007] ★** | 54 |
-| kibana (TS) | 60k | _pending_ | | | | | |
+
+> The 60k kibana point was attempted but is **computationally prohibitive on this
+> setup**: ingestion (FTS5 + structural symbols + chunking) is the bottleneck past
+> ~10k files (GPU sat ~10% utilized; the 60k original ran >9h without finishing).
+> The ≥10k claim-language crossover above is established without it. 60k (and
+> multi-seed confirmation) will be re-run on additional compute with a throughput-
+> hardened harness (see *Reproduce / next*).
 
 ★ = paired-bootstrap 95% CI excludes 0. Δ = structural − grep (negative ⇒ structural wins).
 
@@ -145,9 +151,12 @@ Reported honestly, not generalized.)
 ## Honest limitations (read before quoting a number)
 
 - **Single seed (42).** GPU runs carry ~±0.02 Hits@1 noise; the crossover call rests
-  on the per-scale paired CI. Multi-seed confirmation is the pre-publish follow-on.
-- **60k point pending** (kibana-TS) — the confirmation climax; the ≥10k claim-language
-  crossover (kibana-10k, CI excludes 0) is already established without it.
+  on the per-scale paired CI. Multi-seed confirmation is the pre-publish follow-on
+  (pending additional compute).
+- **No 60k point.** kibana-60k was attempted but ingestion-bound (>9h, unfinished) on
+  this setup; the ≥10k claim-language crossover is established without it. Re-runnable
+  on more compute via `run-grep-headtohead.sh` (kibana branch) once a throughput-
+  hardened harness lands.
 - **n varies** (54–99) — tasks where neither arm surfaced gold are excluded from the
   paired contrast (null-as-exclude, consistent with `analyze-chunk-sweep.ts`); the
   10k point is harder (more gold unsurfaced → smaller n).
