@@ -112,4 +112,31 @@ describe('MCP empty-index self-heal hint', () => {
       void dbPath;
     }
   });
+
+  it('iterative_retrieve on an empty index returns an ingest hint', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const result = await callTool(pipeline, 'iterative_retrieve', {
+        query: 'anything relevant',
+      });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed.empty).toBe(true);
+      expect(String(parsed.hint)).toMatch(/ingest/i);
+      expect(Array.isArray(parsed.suggestedTools)).toBe(true);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+});
+
+describe('MCP destructive annotations on mutating tools', () => {
+  it('marks path-ingest and graph-mutating tools destructiveHint=true', () => {
+    const destructive = ['ingest_project', 'ingest_directory', 'update_context_graph'];
+    for (const name of destructive) {
+      const tool = TOOL_DEFINITIONS.find((def) => def.name === name);
+      expect(tool, `tool ${name} should exist`).toBeDefined();
+      expect(tool?.annotations?.destructiveHint).toBe(true);
+    }
+  });
 });

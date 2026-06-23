@@ -117,6 +117,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'ingest_context',
     description: describeTool('Ingest a new context item (text, code, diff, log, etc.)'),
+    annotations: { destructiveHint: false },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -137,6 +138,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'update_context_graph',
     description: describeTool('Add or remove dependency links in the context graph'),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -275,6 +277,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Ingest a project with source code plus README, docs, env examples, config files, and agent instructions'
     ),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -303,6 +306,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Ingest all files in a directory tree. Skips node_modules, .git, dist, and binary files.'
     ),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -528,6 +532,9 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
 
         case 'iterative_retrieve': {
           const query = args!.query as string;
+          if (pipeline.getStats().totalChunks === 0) {
+            return jsonResponse(emptyIndexHint());
+          }
           const maxTokens = (args!.maxTokens as number | undefined) ?? 100_000;
           const rounds = (args!.rounds as number | undefined) ?? 2;
           const strategy = args!.strategy as RetrievalStrategy | undefined;
