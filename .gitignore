@@ -8,6 +8,7 @@ data/
 .env
 .claude/
 ralph-*.log
+*.tgz
 /benchmarks/heldout*.json
 /benchmarks/*heldout*.json
 /NEXT_CONVERSATION_PLAN.md
