@@ -238,6 +238,16 @@ export const TOOL_DEFINITIONS = [
           enum: VALID_RETRIEVE_FORMATS,
           description: 'Response format: json returns structured fields; pack returns an agent-ready Markdown context pack',
         },
+        explain: {
+          type: 'boolean',
+          description:
+            'When true, fold explain_routing into the response: include a routingExplanation object (per-chunk tier/score/reasons + summary) describing why retrieved chunks were routed to their tiers',
+        },
+        score: {
+          type: 'boolean',
+          description:
+            'When true, fold score_context into the response: score+route all chunks into hot/warm/cold tiers for this query and include the routing (hot/warm/cold id lists + scores + reasons) in the response',
+        },
       },
       required: ['query'],
     },
@@ -493,10 +503,33 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           const returnLimit = args!.returnLimit as number | undefined;
           const maxHops = args!.maxHops as number | undefined;
           const format = (args!.format as string | undefined) ?? 'json';
+          const explain = args!.explain === true;
+          const score = args!.score === true;
 
           const result = await pipeline.retrieve(query, maxTokens, { strategy, mode, topK, returnLimit, maxHops });
           if (format === 'pack') {
             return textResponse(formatContextPack({ query, ...result }));
+          }
+          const folded: Record<string, unknown> = {};
+          if (explain) {
+            // Fold explain_routing: per-chunk tier/score/reasons + summary.
+            const explanation = await pipeline.explainRouting({ text: query });
+            folded.routingExplanation = explanation;
+          }
+          if (score) {
+            // Fold score_context: hot/warm/cold id lists + scores + reasons.
+            const scored = await pipeline.processContext(
+              { text: query },
+              undefined,
+              {}
+            );
+            folded.routing = {
+              hot: scored.hot,
+              warm: scored.warm,
+              cold: scored.cold,
+              scores: scored.scores,
+              reasons: scored.reasons,
+            };
           }
           return jsonResponse({
             chunks: result.chunks.map((c) => ({
@@ -527,6 +560,7 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
             })),
             plan: result.plan,
             selectionPolicy: result.selectionPolicy,
+            ...folded,
           });
         }
 

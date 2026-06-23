@@ -140,3 +140,82 @@ describe('MCP destructive annotations on mutating tools', () => {
     }
   });
 });
+
+describe('retrieve_context explain/score flags', () => {
+  it('exposes optional explain and score boolean params in the schema', () => {
+    const retrieve = TOOL_DEFINITIONS.find((def) => def.name === 'retrieve_context');
+    const props = retrieve?.inputSchema.properties as Record<string, { type?: string; description?: string }>;
+    expect(props.explain?.type).toBe('boolean');
+    expect(props.score?.type).toBe('boolean');
+    expect(props.explain?.description).toContain('explain_routing');
+    expect(props.score?.description).toContain('score_context');
+  });
+
+  it('explain=true folds a routingExplanation (per-chunk reasons + summary) into the response', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function explainScoreFlag() { return true; }', 'code', 'src/flags.ts', 'typescript');
+      const result = await callTool(pipeline, 'retrieve_context', {
+        query: 'explain score flag',
+        explain: true,
+      });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      const explanation = parsed.routingExplanation as {
+        routing?: Array<{ chunkId: string; tier: string; reasons: string[] }>;
+        summary?: string;
+      };
+      expect(explanation).toBeDefined();
+      expect(typeof explanation.summary).toBe('string');
+      expect(Array.isArray(explanation.routing)).toBe(true);
+      expect(explanation.routing!.length).toBeGreaterThan(0);
+      expect(explanation.routing![0]).toHaveProperty('tier');
+      expect(explanation.routing![0]).toHaveProperty('reasons');
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('score=true folds hot/warm/cold routing lists + scores into the response', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function scoreFlagHandler() { return "scored"; }', 'code', 'src/score.ts', 'typescript');
+      const result = await callTool(pipeline, 'retrieve_context', {
+        query: 'score flag handler',
+        score: true,
+      });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      const routing = parsed.routing as {
+        hot: string[];
+        warm: string[];
+        cold: string[];
+        scores: Record<string, number>;
+        reasons: Record<string, string[]>;
+      };
+      expect(routing).toBeDefined();
+      expect(Array.isArray(routing.hot)).toBe(true);
+      expect(Array.isArray(routing.warm)).toBe(true);
+      expect(Array.isArray(routing.cold)).toBe(true);
+      expect(typeof routing.scores).toBe('object');
+      expect(typeof routing.reasons).toBe('object');
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('omits routingExplanation/routing when neither flag is set (default shape unchanged)', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function noFlagsDefault() { return 1; }', 'code', 'src/noop.ts', 'typescript');
+      const result = await callTool(pipeline, 'retrieve_context', { query: 'no flags' });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed.routingExplanation).toBeUndefined();
+      expect(parsed.routing).toBeUndefined();
+      expect(Array.isArray(parsed.chunks)).toBe(true);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+});
