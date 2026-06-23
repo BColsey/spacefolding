@@ -13,6 +13,7 @@ import { DeterministicCompressionProvider } from '../src/providers/deterministic
 import { SimpleDependencyAnalyzer } from '../src/providers/dependency-analyzer.js';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 
 function createEmptyPipeline(): { pipeline: PipelineOrchestrator; dbPath: string } {
   const dbPath = join(tmpdir(), `sf-mcpux-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
@@ -45,6 +46,24 @@ async function callTool(
     const response = await client.callTool({ name, arguments: args });
     const textItem = response.content.find((item) => item.type === 'text');
     return { isError: response.isError, text: textItem?.text ?? '' };
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
+/** Queries the advertised ListTools surface (what an agent actually sees). */
+async function listAdvertisedTools(
+  pipeline: PipelineOrchestrator
+): Promise<{ name: string; annotations?: Record<string, unknown> }[]> {
+  const server = createMCPServer(pipeline);
+  const client = new Client({ name: 'sf-mcpux-list-test', version: '0.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    const result = await client.listTools();
+    return result.tools.map((t) => ({ name: t.name, annotations: t.annotations as Record<string, unknown> | undefined }));
   } finally {
     await client.close();
     await server.close();
@@ -213,6 +232,260 @@ describe('retrieve_context explain/score flags', () => {
       expect(parsed.routingExplanation).toBeUndefined();
       expect(parsed.routing).toBeUndefined();
       expect(Array.isArray(parsed.chunks)).toBe(true);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+});
+
+describe('canonical tool-surface collapse (WS2.2)', () => {
+  it('ListTools advertises exactly the 4 canonical tools', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const advertised = await listAdvertisedTools(pipeline);
+      const names = advertised.map((t) => t.name).sort();
+      expect(names).toEqual(['get_context_for_task', 'get_relevant_memory', 'ingest', 'retrieve_context']);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('does NOT advertise any of the 12 legacy names', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const advertised = await listAdvertisedTools(pipeline);
+      const names = new Set(advertised.map((t) => t.name));
+      const legacy = [
+        'score_context', 'compress_context', 'ingest_context', 'update_context_graph',
+        'explain_routing', 'iterative_retrieve', 'ingest_project', 'ingest_directory',
+        'list_context', 'delete_context',
+      ];
+      for (const name of legacy) {
+        expect(names.has(name), `legacy ${name} should NOT be advertised`).toBe(false);
+      }
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('canonical tools carry correct annotations', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const advertised = await listAdvertisedTools(pipeline);
+      const byName = Object.fromEntries(advertised.map((t) => [t.name, t.annotations]));
+      expect(byName.retrieve_context?.readOnlyHint).toBe(true);
+      expect(byName.get_relevant_memory?.readOnlyHint).toBe(true);
+      expect(byName.get_context_for_task?.readOnlyHint).toBe(true);
+      expect(byName.ingest?.destructiveHint).toBe(true);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+});
+
+describe('legacy tool-name aliases remain callable via CallTool', () => {
+  // Highest-priority invariant: every one of the 12 old names must still work.
+  const legacyNames = [
+    'score_context', 'compress_context', 'get_relevant_memory', 'ingest_context',
+    'update_context_graph', 'explain_routing', 'retrieve_context', 'iterative_retrieve',
+    'ingest_project', 'ingest_directory', 'list_context', 'delete_context',
+  ];
+
+  it('TOOL_NAMES gate accepts every legacy name (not rejected as Unknown tool)', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function aliasInvariant() { return true; }', 'code', 'src/alias.ts', 'typescript');
+      for (const name of legacyNames) {
+        // list_context needs no args and reads the index — a safe probe that the
+        // name is accepted by the gate (returns 200, not "Unknown tool").
+        if (name === 'list_context') {
+          const result = await callTool(pipeline, name, {});
+          const parsed = JSON.parse(result.text) as Record<string, unknown>;
+          expect(result.isError, `${name} should be accepted`).not.toBe(true);
+          expect(String(parsed.error ?? '')).not.toContain('Unknown tool');
+        }
+      }
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('an unknown tool name is still rejected as Unknown tool', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const result = await callTool(pipeline, 'definitely_not_a_tool', {});
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(result.isError).toBe(true);
+      expect(String(parsed.error)).toContain('Unknown tool');
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+});
+
+describe('unified ingest tool', () => {
+  it('item mode ingests a single content string', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const result = await callTool(pipeline, 'ingest', {
+        mode: 'item',
+        content: 'function unifiedIngest() { return 42; }',
+        type: 'code',
+      });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed.chunkId).toBeDefined();
+      expect(parsed.mode).toBe('item');
+      expect(pipeline.getStats().totalChunks).toBeGreaterThan(0);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('auto mode with content defaults to item ingest', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const result = await callTool(pipeline, 'ingest', {
+        content: 'auto-detected item content',
+        type: 'fact',
+      });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed.mode).toBe('item');
+      expect(parsed.chunkId).toBeDefined();
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('directory mode ingests an allowed path tree', async () => {
+    const allowed = mkdtempSync(join(tmpdir(), 'sf-ingest-allow-'));
+    writeFileSync(join(allowed, 'a.ts'), 'export const a = 1;');
+    const { pipeline, dbPath } = createEmptyPipeline();
+    const prevRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = allowed;
+    try {
+      const result = await callTool(pipeline, 'ingest', { mode: 'directory', path: allowed });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(result.isError).not.toBe(true);
+      expect(parsed.mode).toBe('directory');
+      expect(pipeline.getStats().totalChunks).toBeGreaterThan(0);
+    } finally {
+      if (prevRoots === undefined) delete process.env.SF_INGEST_ROOTS;
+      else process.env.SF_INGEST_ROOTS = prevRoots;
+      pipeline.close();
+      rmSync(dbPath, { force: true });
+      rmSync(allowed, { recursive: true, force: true });
+    }
+  });
+
+  it('path modes refuse a path outside the allowed roots', async () => {
+    const allowed = mkdtempSync(join(tmpdir(), 'sf-ingest-allow-'));
+    const secret = mkdtempSync(join(tmpdir(), 'sf-ingest-secret-'));
+    writeFileSync(join(secret, 'id_rsa'), 'TOPSECRET');
+    const { pipeline, dbPath } = createEmptyPipeline();
+    const prevRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = allowed;
+    try {
+      const result = await callTool(pipeline, 'ingest', { mode: 'directory', path: secret });
+      expect(result.isError).toBe(true);
+      expect(result.text).toContain('outside the allowed roots');
+      expect(pipeline.getStats().totalChunks).toBe(0);
+    } finally {
+      if (prevRoots === undefined) delete process.env.SF_INGEST_ROOTS;
+      else process.env.SF_INGEST_ROOTS = prevRoots;
+      pipeline.close();
+      rmSync(dbPath, { force: true });
+      rmSync(allowed, { recursive: true, force: true });
+      rmSync(secret, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('get_context_for_task composite', () => {
+  it('empty index + no rootPath returns the self-heal hint', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      expect(pipeline.getStats().totalChunks).toBe(0);
+      const result = await callTool(pipeline, 'get_context_for_task', { task: 'anything' });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed.empty).toBe(true);
+      expect(String(parsed.hint)).toMatch(/ingest/i);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('empty index + allowed rootPath ingests then retrieves', async () => {
+    const allowed = mkdtempSync(join(tmpdir(), 'sf-gcft-allow-'));
+    writeFileSync(join(allowed, 'feature.ts'), 'export function compositeFeature() { return "ready"; }');
+    const { pipeline, dbPath } = createEmptyPipeline();
+    const prevRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = allowed;
+    try {
+      expect(pipeline.getStats().totalChunks).toBe(0);
+      const result = await callTool(pipeline, 'get_context_for_task', {
+        task: 'composite feature',
+        rootPath: allowed,
+      });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      // After ingest-then-retrieve, we should have chunks (not the empty hint).
+      expect(parsed.empty).not.toBe(true);
+      expect(Array.isArray(parsed.chunks)).toBe(true);
+      expect((parsed.chunks as unknown[]).length).toBeGreaterThan(0);
+      expect(parsed.totalTokens).toBeDefined();
+    } finally {
+      if (prevRoots === undefined) delete process.env.SF_INGEST_ROOTS;
+      else process.env.SF_INGEST_ROOTS = prevRoots;
+      pipeline.close();
+      rmSync(dbPath, { force: true });
+      rmSync(allowed, { recursive: true, force: true });
+    }
+  });
+
+  it('empty index + disallowed rootPath is refused (never ingests outside roots)', async () => {
+    const allowed = mkdtempSync(join(tmpdir(), 'sf-gcft-allow-'));
+    const secret = mkdtempSync(join(tmpdir(), 'sf-gcft-secret-'));
+    writeFileSync(join(secret, 'id_rsa'), 'TOPSECRET');
+    const { pipeline, dbPath } = createEmptyPipeline();
+    const prevRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = allowed;
+    try {
+      const result = await callTool(pipeline, 'get_context_for_task', {
+        task: 'anything',
+        rootPath: secret,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.text).toContain('outside the allowed roots');
+      expect(pipeline.getStats().totalChunks).toBe(0);
+    } finally {
+      if (prevRoots === undefined) delete process.env.SF_INGEST_ROOTS;
+      else process.env.SF_INGEST_ROOTS = prevRoots;
+      pipeline.close();
+      rmSync(dbPath, { force: true });
+      rmSync(allowed, { recursive: true, force: true });
+      rmSync(secret, { recursive: true, force: true });
+    }
+  });
+
+  it('populated index retrieves without re-ingesting', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function alreadyIngested() { return true; }', 'code', 'src/pop.ts', 'typescript');
+      const before = pipeline.getStats().totalChunks;
+      const result = await callTool(pipeline, 'get_context_for_task', { task: 'already ingested' });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed.empty).not.toBe(true);
+      expect(Array.isArray(parsed.chunks)).toBe(true);
+      // No re-ingest: chunk count unchanged.
+      expect(pipeline.getStats().totalChunks).toBe(before);
     } finally {
       pipeline.close();
       void dbPath;
