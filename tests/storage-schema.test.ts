@@ -112,21 +112,17 @@ describe('FTS5 external-content integrity (delete + VACUUM)', () => {
 });
 
 describe('SQLiteRepository busy_timeout (hook/server concurrency)', () => {
-  it('sets PRAGMA busy_timeout=5000 at construction so the re-index hook process does not throw SQLITE_BUSY against the live server connection', () => {
+  it('sets PRAGMA busy_timeout=5000 on the repo connection so the re-index hook process does not throw SQLITE_BUSY against the live server connection', () => {
     const dbPath = testDbPath();
-    // The repository constructor runs this exact open sequence. We assert the
-    // chosen value is applied and readable on a connection opened the same way
-    // (busy_timeout is connection-local, not persisted to the file).
     const repo = createRepository(dbPath);
     repo.init();
+    // Assert on the repository's OWN connection. busy_timeout is connection-
+    // local (not persisted to the file), so a separate probe connection could
+    // only ever observe its own value — this assertion is what actually proves
+    // the constructor set it.
+    expect(repo.pragma('busy_timeout')).toBe(5000);
     // Smoke: the repo is fully usable after the pragma (no open-time failure).
     expect(repo.getAllChunks()).toEqual([]);
     repo.close();
-
-    // Directly confirm the value our constructor sets is valid + applied.
-    const probe = new Database(dbPath);
-    probe.pragma('busy_timeout = 5000');
-    expect(probe.pragma('busy_timeout', { simple: true })).toBe(5000);
-    probe.close();
   });
 });

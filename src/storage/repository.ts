@@ -36,6 +36,11 @@ export class SQLiteRepository implements StorageProvider {
     this.db.pragma('busy_timeout = 5000');
   }
 
+  /** Read a connection-level PRAGMA value (e.g. 'busy_timeout'). Diagnostics/tests. */
+  pragma(name: string): unknown {
+    return this.db.pragma(name, { simple: true });
+  }
+
   init(): void {
     const userVersion = this.db.pragma('user_version', { simple: true }) as number;
     for (const migration of MIGRATIONS) {
