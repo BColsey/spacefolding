@@ -18,6 +18,7 @@ import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
 import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
+import { createIngestPolicy } from '../security/ingest-policy.js';
 import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
 import { lstatSync, readFileSync } from 'node:fs';
@@ -253,13 +254,12 @@ function getDownloadModelId(): string {
   return process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
 }
 
-function warnIfOutsideWorkspace(inputPath: string): void {
-  if (inputPath.startsWith('/workspace') || inputPath.startsWith('./workspace')) {
-    return;
+function assertIngestAllowed(inputPath: string, cmd: Command): void {
+  const denied = createIngestPolicy().assertAllowed(inputPath);
+  if (denied) {
+    // Hard stop (exitCode 2) — this is the trust boundary, not an advisory.
+    cmd.error(chalk.red(denied), { exitCode: 2 });
   }
-  console.error(
-    chalk.yellow(`Warning: ingest path "${inputPath}" is outside /workspace`) 
-  );
 }
 
 function registerShutdown(pipeline: PipelineOrchestrator, webServer?: HttpServer): void {
@@ -347,12 +347,11 @@ export function buildCLI(): Command {
     .option('--source <source>', 'Source label', 'file')
     .option('--type <type>', 'Chunk type override')
     .action(async (inputPath, opts, cmd) => {
+      assertIngestAllowed(inputPath, cmd);
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
 
       try {
-        warnIfOutsideWorkspace(inputPath);
-
         const stat = lstatSync(inputPath);
         if (stat.isSymbolicLink()) {
           console.log(chalk.yellow(`Skipped symlink ${inputPath}`));
@@ -385,10 +384,9 @@ export function buildCLI(): Command {
     .option('--include-tests', 'Include test/spec files and test directories', false)
     .option('--include-benchmarks', 'Include benchmark directories', false)
     .action(async (inputPath, opts, cmd) => {
+      assertIngestAllowed(inputPath, cmd);
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
-
-      warnIfOutsideWorkspace(inputPath);
 
       const result = await pipeline.ingestProject(inputPath, {
         includeDocs: opts.docs,

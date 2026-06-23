@@ -8,6 +8,7 @@ import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import type { RetrievalMode, RetrievalStrategy } from '../types/index.js';
 import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
 import { formatContextPack } from '../core/context-pack.js';
+import { createIngestPolicy } from '../security/ingest-policy.js';
 
 const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
@@ -345,6 +346,10 @@ export const TOOL_DEFINITIONS = [
 const TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((tool) => tool.name));
 
 export function createMCPServer(pipeline: PipelineOrchestrator): Server {
+  // Trust boundary: confine ingest paths to the configured roots (cwd +
+  // SF_INGEST_ROOTS). Without this an agent could ingest arbitrary absolute
+  // paths (e.g. ~/.ssh). See src/security/ingest-policy.ts.
+  const ingestPolicy = createIngestPolicy();
   const server = new Server(
     { name: 'spacefolding', version: '0.1.0' },
     { capabilities: { tools: {} } }
@@ -541,6 +546,10 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           if (typeof dirPath !== 'string' || dirPath.length === 0) {
             return errorResponse('path must be a non-empty string');
           }
+          const ingestDenied = ingestPolicy.assertAllowed(dirPath);
+          if (ingestDenied) {
+            return errorResponse(ingestDenied);
+          }
           const result = await pipeline.ingestProject(dirPath, {
             includeDocs: args!.includeDocs as boolean | undefined,
             includeTests: args!.includeTests as boolean | undefined,
@@ -553,6 +562,10 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           const dirPath = args!.path as string;
           if (typeof dirPath !== 'string' || dirPath.length === 0) {
             return errorResponse('path must be a non-empty string');
+          }
+          const ingestDenied = ingestPolicy.assertAllowed(dirPath);
+          if (ingestDenied) {
+            return errorResponse(ingestDenied);
           }
           const result = await pipeline.ingestDirectory(dirPath, args!.type as string | undefined);
           return jsonResponse(result);

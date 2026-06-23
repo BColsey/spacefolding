@@ -44,6 +44,33 @@ Spacefolding is configured with environment variables. The default Docker setup 
 | `PORT` | `3000` | SSE transport port. |
 | `USE_GPU` | `0` | Adds GPU-enabled text to MCP tool descriptions. |
 | `MAX_CHUNKS` | `10000` | Max chunk count before oldest chunks are evicted. |
+| `SF_INGEST_ROOTS` | unset | Colon-separated absolute paths the ingest tools may read from, in addition to the working directory. Security boundary — see [Security: ingest-root allowlist](#security-ingest-root-allowlist). |
+
+## Security: ingest-root allowlist
+
+The ingest entry points (`ingest_project`, `ingest_directory`, and the `ingest` /
+`ingest-project` CLI commands) only read from an explicit set of **allowed roots**.
+This prevents an agent (or injected context) from ingesting arbitrary absolute
+paths such as `~/.ssh` or `/etc`.
+
+Allowed roots:
+
+1. The process working directory (always — the frictionless local default is
+   "ingest the repo you launched from").
+2. Any colon-separated path in `SF_INGEST_ROOTS` (relative entries resolve against
+   the working directory).
+
+The check resolves symlinks (`realpath`) and rejects `..` traversal, so a link or
+relative path that escapes every root is still refused. To index a directory
+outside the working tree, add it explicitly:
+
+```sh
+export SF_INGEST_ROOTS=/path/to/other/repo
+```
+
+Denials exit non-zero (CLI, exit code 2) or return an `isError` response naming the
+allowed roots (MCP). The orchestrator itself remains a trusted internal API and is
+not re-checked by this boundary.
 
 ## Embedding Providers
 

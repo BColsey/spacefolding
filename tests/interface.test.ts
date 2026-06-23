@@ -279,6 +279,8 @@ describe('CLI interface', () => {
     const sourcePath = join(dir, 'pack-target.ts');
     const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
     process.env.EMBEDDING_PROVIDER = 'deterministic';
+    const originalIngestRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = dir;
     writeFileSync(sourcePath, 'export function cliContextPackTarget() { return "pack"; }');
 
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -316,6 +318,11 @@ describe('CLI interface', () => {
       } else {
         process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
       }
+      if (originalIngestRoots === undefined) {
+        delete process.env.SF_INGEST_ROOTS;
+      } else {
+        process.env.SF_INGEST_ROOTS = originalIngestRoots;
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -327,6 +334,10 @@ describe('CLI interface', () => {
     const dbPath = join(dbDir, 'spacefolding.db');
     const originalEmbeddingProvider = process.env.EMBEDDING_PROVIDER;
     process.env.EMBEDDING_PROVIDER = 'deterministic';
+    // Opt the temp ingest root into the allowlist; `external` is intentionally
+    // left out so the symlink-skip + allowlist both keep its contents out.
+    const originalIngestRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = dir;
 
     mkdirSync(join(dir, 'src'), { recursive: true });
     writeFileSync(join(dir, 'src', 'index.ts'), 'export const publicValue = true;');
@@ -356,6 +367,11 @@ describe('CLI interface', () => {
         delete process.env.EMBEDDING_PROVIDER;
       } else {
         process.env.EMBEDDING_PROVIDER = originalEmbeddingProvider;
+      }
+      if (originalIngestRoots === undefined) {
+        delete process.env.SF_INGEST_ROOTS;
+      } else {
+        process.env.SF_INGEST_ROOTS = originalIngestRoots;
       }
       rmSync(dir, { recursive: true, force: true });
       rmSync(dbDir, { recursive: true, force: true });
