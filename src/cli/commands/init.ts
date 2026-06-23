@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
-import { ensureModelCacheDir, getDefaultModelCacheDir } from '../../providers/model-cache.js';
+import { ensureModelCacheDir } from '../../providers/model-cache.js';
 import { getEmbeddingProviderName, getDefaultEmbeddingModel } from '../index.js';
 
 export interface InitOptions {
@@ -67,7 +67,11 @@ export function readExistingMcpJson(mcpJsonPath: string): { parsed: Record<strin
   try {
     parsed = JSON.parse(readFileSync(mcpJsonPath, 'utf-8')) as Record<string, unknown>;
   } catch {
-    // Unparseable: treat as absent so we don't clobber valid JSON silently.
+    // Unparseable: treat as absent so we don't clobber valid JSON silently,
+    // but warn the user their existing .mcp.json is malformed and will be replaced.
+    console.warn(
+      chalk.yellow(`Warning: existing ${mcpJsonPath} is not valid JSON and will be overwritten. Back it up first if it matters.`),
+    );
     return { parsed: null, hasSpacefolding: false };
   }
   const servers = (parsed.mcpServers ?? {}) as Record<string, unknown>;
@@ -172,6 +176,3 @@ async function defaultPrewarmModel(modelId: string): Promise<void> {
   const { downloadModel } = await import('../../providers/local-embedding.js');
   await downloadModel(modelId);
 }
-
-// Re-exported so callers/tests can reference the default resolution.
-export { getDefaultModelCacheDir };

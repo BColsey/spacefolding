@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
 /**
@@ -18,7 +18,9 @@ import { homedir } from 'node:os';
  */
 export function getDefaultModelCacheDir(): string {
   const xdgCache = process.env.XDG_CACHE_HOME;
-  const base = xdgCache && xdgCache.length > 0 ? xdgCache : join(homedir(), '.cache');
+  // resolve() guards against a (spec-violating) relative XDG_CACHE_HOME, which
+  // would otherwise scatter model files relative to the server's cwd.
+  const base = xdgCache && xdgCache.length > 0 ? resolve(xdgCache) : join(homedir(), '.cache');
   return join(base, 'spacefolding', 'models');
 }
 

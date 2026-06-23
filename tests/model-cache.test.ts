@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 import { getDefaultModelCacheDir, ensureModelCacheDir } from '../src/providers/model-cache.js';
 
 describe('model-cache: shared global cache resolution', () => {
@@ -26,6 +26,13 @@ describe('model-cache: shared global cache resolution', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  it('resolves a relative XDG_CACHE_HOME to an absolute path (XDG spec compliance)', () => {
+    process.env.XDG_CACHE_HOME = 'relative/cache/dir';
+    const dir = getDefaultModelCacheDir();
+    expect(isAbsolute(dir)).toBe(true);
+    expect(dir.endsWith(join('relative', 'cache', 'dir', 'spacefolding', 'models'))).toBe(true);
   });
 
   it('falls back to $HOME/.cache/spacefolding/models when XDG_CACHE_HOME is unset', () => {
