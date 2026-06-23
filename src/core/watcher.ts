@@ -1,11 +1,16 @@
 import chokidar, { type FSWatcher } from 'chokidar';
-import { readFileSync, existsSync, lstatSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
-import { normalizeContextPath } from './ingester.js';
+import {
+  DEFAULT_IGNORES,
+  loadGitignorePatterns,
+  shouldIgnorePath,
+  storagePathFor,
+} from './watch-paths.js';
 
-const DEFAULT_IGNORES = ['node_modules', '.git', 'dist'];
-const BINARY_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.ico', '.woff', '.woff2', '.ttf', '.eot'];
+// Re-exported so existing direct imports (if any) keep resolving. The shared
+// module in watch-paths.ts is now the single source of truth.
+export { DEFAULT_IGNORES };
 
 export class FileWatcher {
   private watcher: FSWatcher | null = null;
@@ -16,7 +21,7 @@ export class FileWatcher {
     private watchPath: string,
     private pipeline: PipelineOrchestrator
   ) {
-    this.gitignorePatterns = this.loadGitignorePatterns();
+    this.gitignorePatterns = loadGitignorePatterns(this.watchPath);
   }
 
   start(): void {
@@ -69,7 +74,7 @@ export class FileWatcher {
   private async ingestFile(filePath: string, event: 'add' | 'change'): Promise<void> {
     try {
       if (!existsSync(filePath)) return;
-      if (this.isSymlinkPath(filePath)) return;
+      if (shouldIgnorePath(filePath, this.gitignorePatterns)) return;
       const content = readFileSync(filePath, 'utf-8');
       const storagePath = this.storagePathFor(filePath);
       if (event === 'change') {
@@ -86,61 +91,11 @@ export class FileWatcher {
     }
   }
 
-  private loadGitignorePatterns(): string[] {
-    const gitignorePath = join(this.watchPath, '.gitignore');
-    if (!existsSync(gitignorePath)) return [];
-
-    try {
-      return readFileSync(gitignorePath, 'utf-8')
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0 && !line.startsWith('#'));
-    } catch {
-      return [];
-    }
-  }
-
   private shouldIgnore(filePath: string): boolean {
-    if (this.isSymlinkPath(filePath)) return true;
-
-    if (DEFAULT_IGNORES.some((pattern) => filePath.includes(`/${pattern}/`) || filePath.endsWith(`/${pattern}`))) {
-      return true;
-    }
-
-    if (BINARY_EXTENSIONS.some((extension) => filePath.endsWith(extension))) {
-      return true;
-    }
-
-    return this.gitignorePatterns.some((pattern) => this.matchesPattern(filePath, pattern));
-  }
-
-  private matchesPattern(filePath: string, pattern: string): boolean {
-    const normalized = pattern.replace(/^\//, '').replace(/\/$/, '');
-    if (!normalized) return false;
-    if (normalized.includes('*')) {
-      const regex = new RegExp(
-        normalized
-          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-          .replace(/\*/g, '.*')
-      );
-      return regex.test(filePath);
-    }
-    return filePath.includes(normalized);
-  }
-
-  private isSymlinkPath(filePath: string): boolean {
-    try {
-      return lstatSync(filePath).isSymbolicLink();
-    } catch {
-      return false;
-    }
+    return shouldIgnorePath(filePath, this.gitignorePatterns);
   }
 
   private storagePathFor(filePath: string): string {
-    const relativePath = relative(resolve(this.watchPath), resolve(filePath));
-    if (relativePath && !relativePath.startsWith('..') && !isAbsolute(relativePath)) {
-      return normalizeContextPath(relativePath);
-    }
-    return normalizeContextPath(filePath);
+    return storagePathFor(filePath, this.watchPath);
   }
 }
