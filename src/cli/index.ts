@@ -312,7 +312,7 @@ export function buildCLI(): Command {
 
   program
     .name('spacefolding')
-    .description('Spacefolding — context compression and routing for coding agents')
+    .description('Spacefolding — local codebase context engine for coding agents')
     .version('0.1.0')
     .option('--db <path>', 'Database path', process.env.DB_PATH ?? './data/spacefolding.db')
     .action(async () => {

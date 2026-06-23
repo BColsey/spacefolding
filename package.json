@@ -1,7 +1,7 @@
 {
   "name": "spacefolding",
   "version": "0.1.0",
-  "description": "Spacefolding — intelligent context compression and routing for coding agents",
+  "description": "Spacefolding — local codebase context engine for coding agents",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
@@ -21,7 +21,15 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
-    "docs"
+    "docs/index.md",
+    "docs/integration-guide.md",
+    "docs/configuration.md",
+    "docs/logo.svg",
+    "docs/logo-dark.svg",
+    "docs/concepts",
+    "docs/howto",
+    "docs/reference",
+    "docs/tutorials"
   ],
   "scripts": {
     "build": "tsc",

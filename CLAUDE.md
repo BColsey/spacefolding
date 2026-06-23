@@ -1,6 +1,6 @@
 # Spacefolding — Claude Code Integration
 
-> **Fold infinite context space into what fits in your prompt window.**
+> **Local codebase context engine for coding agents.** Fold infinite context space into what fits in your prompt window.
 
 Spacefolding is an MCP server that manages context for coding agents. It ingests, scores, routes, and compresses context into three tiers: hot (verbatim), warm (compressed), cold (archived). Includes hybrid RAG retrieval (vector + FTS5 + graph) and auto-chunking for oversized files.
 

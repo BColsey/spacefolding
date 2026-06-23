@@ -6,7 +6,7 @@ Current status: this design is the product contract. The acceptance gate's compo
 
 Spacefolding is a local-first context management service for coding agents. It ingests project files and working context, indexes them, retrieves the most relevant pieces for a task, and fits the result into a token budget.
 
-The product goal for this ralph loop is not to add another retrieval mechanism for its own sake. The goal is to make the existing retrieval path measurably better for coding-agent work:
+Its goal is not to add another retrieval mechanism for its own sake, but to make the existing retrieval path measurably better for coding-agent work:
 
 - Find the files a developer actually needs.
 - Rank the most useful files near the top.
@@ -127,7 +127,7 @@ Benchmarks are product tests, not decorative reports.
 - How many tokens were returned?
 - Did focused retrieval improve over current hybrid behavior?
 
-Held-out benchmarks are generated under `/tmp` and must not commit private datasets.
+Held-out benchmarks are generated in a scratch directory outside the repository and must never commit private datasets.
 
 ## User Surfaces
 
@@ -148,11 +148,11 @@ An implemented component that is not reachable from MCP, CLI, web, or benchmarks
 - Retrieval must work without network access.
 - Deterministic embedding mode must remain supported.
 - GPU and local embedding providers may improve quality but cannot be required for tests.
-- Generated benchmark JSON belongs in `/tmp`, not the repository.
+- Generated benchmark JSON belongs in a scratch directory outside the repository, never committed.
 
 ## Non-Goals
 
-This loop does not require:
+Spacefolding does not require:
 
 - A hosted service.
 - Cloud-only retrieval.
