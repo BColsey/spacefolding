@@ -37,6 +37,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Score and route context chunks into hot/warm/cold tiers for a given task'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -65,6 +66,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'compress_context',
     description: describeTool('Compress warm-context chunks into a structured summary'),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -570,20 +572,12 @@ const TOOL_NAMES = new Set([
   ...TOOL_DEFINITIONS.map((tool) => tool.name),
 ]);
 
-/**
- * Maps legacy tool names to the canonical handler they should dispatch to.
- * Names not present here are handled by their own dedicated case (canonical
- * names, plus alias-only tools whose internals are not folded into a canonical
- * tool: compress_context, update_context_graph, delete_context, list_context,
- * iterative_retrieve).
- */
-const ALIAS_TO_HANDLER: Record<string, string> = {
-  ingest_context: 'ingest',
-  ingest_project: 'ingest',
-  ingest_directory: 'ingest',
-  score_context: 'retrieve_context',
-  explain_routing: 'retrieve_context',
-};
+// Legacy tool names are NOT folded through the canonical handlers. Each one
+// keeps its OWN dedicated `case` branch in the dispatch switch below, so its
+// exact output shape (and any pre-D4 behavior clients may depend on) is
+// preserved byte-for-byte. They remain callable via CallTool (all are in the
+// TOOL_NAMES union); they are simply no longer ADVERTISED in ListTools, which
+// only surfaces the 4 canonical tools.
 
 export function createMCPServer(pipeline: PipelineOrchestrator): Server {
   // Trust boundary: confine ingest paths to the configured roots (cwd +
@@ -596,8 +590,8 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
   );
 
   // ListTools advertises ONLY the canonical surface. Legacy names stay callable
-  // via CallTool (see TOOL_NAMES union + ALIAS_TO_HANDLER), they are simply not
-  // advertised — keeping the advertised token cost low.
+  // via CallTool (see TOOL_NAMES union + their dedicated `case` branches), they
+  // are simply not advertised — keeping the advertised token cost low.
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: CANONICAL_TOOL_DEFINITIONS,
   }));

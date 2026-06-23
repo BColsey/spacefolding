@@ -296,22 +296,50 @@ describe('legacy tool-name aliases remain callable via CallTool', () => {
   ];
 
   it('TOOL_NAMES gate accepts every legacy name (not rejected as Unknown tool)', async () => {
+    // Minimal-but-valid args per tool, so each name passes the TOOL_NAMES gate
+    // AND arg validation, reaches its dedicated handler, and is proven
+    // dispatched (response is NOT the "Unknown tool" gate-rejection). Some
+    // handlers succeed, some return arg-validation errors — both are fine; the
+    // invariant under test is gate-acceptance + dispatch, not handler success.
+    const allowed = mkdtempSync(join(tmpdir(), 'sf-alias-allow-'));
+    writeFileSync(join(allowed, 'probe.ts'), 'export const probe = 1;');
+    const prevRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = allowed;
     const { pipeline, dbPath } = createEmptyPipeline();
     try {
       await pipeline.ingest('file', 'function aliasInvariant() { return true; }', 'code', 'src/alias.ts', 'typescript');
+      const minimalArgs: Record<string, Record<string, unknown>> = {
+        retrieve_context: { query: 'alias probe' },
+        iterative_retrieve: { query: 'alias probe' },
+        get_relevant_memory: { task: { text: 'alias probe' } },
+        explain_routing: { task: { text: 'alias probe' } },
+        score_context: { task: { text: 'alias probe' } },
+        ingest_context: { source: 'test', text: 'alias probe content' },
+        ingest_project: { path: allowed },
+        ingest_directory: { path: allowed },
+        list_context: {},
+        delete_context: { chunkIds: ['nonexistent-chunk-id'] },
+        compress_context: { task: { text: 'alias probe' }, chunkIds: ['nonexistent-chunk-id'] },
+        update_context_graph: {
+          chunkId: 'alias-probe-chunk',
+          operation: 'add',
+          dependencies: [{ fromId: 'a', toId: 'b', type: 'references' }],
+        },
+      };
       for (const name of legacyNames) {
-        // list_context needs no args and reads the index — a safe probe that the
-        // name is accepted by the gate (returns 200, not "Unknown tool").
-        if (name === 'list_context') {
-          const result = await callTool(pipeline, name, {});
-          const parsed = JSON.parse(result.text) as Record<string, unknown>;
-          expect(result.isError, `${name} should be accepted`).not.toBe(true);
-          expect(String(parsed.error ?? '')).not.toContain('Unknown tool');
-        }
+        const args = minimalArgs[name];
+        const result = await callTool(pipeline, name, args);
+        const parsed = JSON.parse(result.text) as Record<string, unknown>;
+        // The defining assertion: the name was recognized + dispatched. An
+        // unrecognized name returns { error: "Unknown tool: <name>" }.
+        expect(String(parsed.error ?? ''), `${name} must NOT be rejected as Unknown tool`).not.toContain('Unknown tool');
       }
     } finally {
+      if (prevRoots === undefined) delete process.env.SF_INGEST_ROOTS;
+      else process.env.SF_INGEST_ROOTS = prevRoots;
       pipeline.close();
-      void dbPath;
+      rmSync(dbPath, { force: true });
+      rmSync(allowed, { recursive: true, force: true });
     }
   });
 
