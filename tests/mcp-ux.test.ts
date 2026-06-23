@@ -110,6 +110,11 @@ describe('MCP empty-index self-heal hint', () => {
       expect(parsed.empty).toBe(true);
       expect(String(parsed.hint)).toMatch(/ingest/i);
       expect(Array.isArray(parsed.suggestedTools)).toBe(true);
+      // Post-collapse the agent only sees the 4 canonical tools, so the hint
+      // must steer to the canonical `ingest` tool (not the legacy names).
+      expect((parsed.suggestedTools as unknown[])).toContain('ingest');
+      expect((parsed.suggestedTools as unknown[])).not.toContain('ingest_project');
+      expect((parsed.suggestedTools as unknown[])).not.toContain('ingest_directory');
     } finally {
       pipeline.close();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -517,6 +522,80 @@ describe('get_context_for_task composite', () => {
     } finally {
       pipeline.close();
       void dbPath;
+    }
+  });
+
+  it('returns the same diagnostics fields as retrieve_context (composite parity)', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function compositeParity() { return "diag"; }', 'code', 'src/parity.ts', 'typescript');
+      const result = await callTool(pipeline, 'get_context_for_task', { task: 'composite parity diagnostics' });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      // Flagship composite must mirror retrieve_context's response richness.
+      expect(parsed.task).toBe('composite parity diagnostics');
+      expect(parsed.omittedCount).toBeDefined();
+      expect(Array.isArray(parsed.omitted)).toBe(true);
+      expect(parsed.droppedCount).toBeDefined();
+      expect(Array.isArray(parsed.dropped)).toBe(true);
+      expect(parsed.compressedCount).toBeDefined();
+      expect(Array.isArray(parsed.compressedSummaries)).toBe(true);
+      expect(parsed.selectionPolicy).toBeDefined();
+      // Per-chunk retrieval diagnostics present on each chunk.
+      const chunks = parsed.chunks as Array<Record<string, unknown>>;
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks[0].retrievalSources).toBeDefined();
+      expect(chunks[0].retrievalReasons).toBeDefined();
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+
+  it('passes topK/returnLimit/maxHops through to retrieve (no validation error)', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function parityParams() { return 1; }', 'code', 'src/pp.ts', 'typescript');
+      const result = await callTool(pipeline, 'get_context_for_task', {
+        task: 'parity params',
+        topK: 5,
+        returnLimit: 3,
+        maxHops: 0,
+      });
+      expect(result.isError).not.toBe(true);
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed.empty).not.toBe(true);
+      expect(Array.isArray(parsed.chunks)).toBe(true);
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+});
+
+describe('unified ingest auto-mode empty-string routing', () => {
+  it('content:"" with a valid path routes to directory ingest (not the item error path)', async () => {
+    const allowed = mkdtempSync(join(tmpdir(), 'sf-ingest-empty-allow-'));
+    writeFileSync(join(allowed, 'a.ts'), 'export const a = 1;');
+    const { pipeline, dbPath } = createEmptyPipeline();
+    const prevRoots = process.env.SF_INGEST_ROOTS;
+    process.env.SF_INGEST_ROOTS = allowed;
+    try {
+      const result = await callTool(pipeline, 'ingest', {
+        mode: 'auto',
+        content: '',
+        path: allowed,
+      });
+      expect(result.isError).not.toBe(true);
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      // Routed to directory ingest (empty content did NOT claim the item branch).
+      expect(parsed.mode).toBe('directory');
+      expect(pipeline.getStats().totalChunks).toBeGreaterThan(0);
+    } finally {
+      if (prevRoots === undefined) delete process.env.SF_INGEST_ROOTS;
+      else process.env.SF_INGEST_ROOTS = prevRoots;
+      pipeline.close();
+      rmSync(dbPath, { force: true });
+      rmSync(allowed, { recursive: true, force: true });
     }
   });
 });
