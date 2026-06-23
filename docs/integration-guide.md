@@ -13,32 +13,68 @@ Use this guide to connect Claude Code to Spacefolding through the Model Context 
 
 ## Prerequisites
 
-- Spacefolding is built with `npm run build`.
-- The database and model paths are stable.
+- Spacefolding is installed (`npm install -g spacefolding`, or built from source with `npm run build`).
 - Claude Code can run `node` or `docker` from the configured environment.
 
-## Local Node.js Setup
+## Local Node.js Setup (recommended)
 
-Add Spacefolding to `.mcp.json` (project-scoped), or use `claude mcp add spacefolding -- node /path/to/spacefolding/dist/main.js serve` (user-scoped):
+Run `spacefolding init` from your project root. It pre-warms the embedding
+model into a **shared global cache** (downloaded once per machine, reused across
+all projects) and writes a machine-agnostic per-project `.mcp.json`:
+
+```bash
+spacefolding init
+```
+
+This writes `.mcp.json` in the current directory:
+
+```json
+{
+  "mcpServers": {
+    "spacefolding": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "spacefolding", "serve"]
+    }
+  }
+}
+```
+
+Claude Code auto-loads `.mcp.json` on session start. No separate model-download
+step is required — the model is pre-warmed by `init`, and embed will retry
+lazily on first use if the pre-warm was skipped or failed.
+
+Notes:
+
+- `MODEL_PATH` defaults to `${XDG_CACHE_HOME:-$HOME/.cache}/spacefolding/models`
+  (shared globally). You do **not** need to set it in `.mcp.json`.
+- `DB_PATH` defaults to `./data/spacefolding.db` (per-project). Each project gets
+  its own database, so there is no global DB contention.
+- For pre-publish / from-source use, pass `--local` to write a local dist-path
+  form (`node /abs/path/dist/main.js serve`) instead of the `npx` form.
+
+### Manual configuration (advanced)
+
+You can also add Spacefolding without `init`, via `claude mcp add` (user-scoped)
+or by hand-editing `.mcp.json` (project-scoped):
+
+```bash
+claude mcp add spacefolding -- node /path/to/spacefolding/dist/main.js serve
+```
 
 ```json
 {
   "mcpServers": {
     "spacefolding": {
       "command": "node",
-      "args": ["/path/to/spacefolding/dist/main.js", "serve"],
-      "env": {
-        "DB_PATH": "/path/to/spacefolding/data/spacefolding.db",
-        "MODEL_PATH": "/path/to/spacefolding/data/models",
-        "EMBEDDING_PROVIDER": "local",
-        "EMBEDDING_MODEL": "Xenova/bge-small-en-v1.5"
-      }
+      "args": ["/path/to/spacefolding/dist/main.js", "serve"]
     }
   }
 }
 ```
 
-Before using the tool, download the local model:
+To pre-fetch the model without `init` (e.g. for offline use or GPU priming), the
+`download-model` subcommand is still available:
 
 ```bash
 node dist/main.js download-model

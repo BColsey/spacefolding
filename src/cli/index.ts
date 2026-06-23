@@ -245,15 +245,6 @@ async function runDownloadModel(modelId: string): Promise<void> {
   }
 }
 
-function getDownloadModelId(): string {
-  const rawArgs = process.argv.slice(2);
-  const modelIndex = rawArgs.indexOf('--model');
-  if (modelIndex >= 0 && rawArgs[modelIndex + 1]) {
-    return rawArgs[modelIndex + 1];
-  }
-  return process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
-}
-
 function assertIngestAllowed(inputPath: string, cmd: Command): void {
   const denied = createIngestPolicy().assertAllowed(inputPath);
   if (denied) {
@@ -331,11 +322,6 @@ export function buildCLI(): Command {
     .option('--transport <type>', 'Transport type: stdio or sse', process.env.TRANSPORT ?? 'stdio')
     .option('--port <number>', 'Port for SSE transport', process.env.PORT ?? '3000')
     .action(async (opts, cmd) => {
-      if (process.argv.slice(2)[0] === 'download-model') {
-        await runDownloadModel(getDownloadModelId());
-        return;
-      }
-
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       await startServe(dbPath, opts.transport as 'stdio' | 'sse', parseInt(opts.port, 10));
     });
