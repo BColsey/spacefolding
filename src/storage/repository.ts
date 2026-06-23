@@ -28,6 +28,12 @@ export class SQLiteRepository implements StorageProvider {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
+    // The PostToolUse re-index hook runs in a SEPARATE process that opens this
+    // same per-cwd DB while the MCP server holds it. Without a busy timeout a
+    // colliding write throws SQLITE_BUSY immediately; with it, better-sqlite3
+    // retries for up to 5s before giving up. Set first, before any migration
+    // write, so the very first transaction is already protected.
+    this.db.pragma('busy_timeout = 5000');
   }
 
   init(): void {
