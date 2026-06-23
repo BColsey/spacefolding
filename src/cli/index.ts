@@ -162,13 +162,13 @@ function createCompressionProvider() {
   return new DeterministicCompressionProvider();
 }
 
-function getEmbeddingProviderName(): EmbeddingProviderName {
+export function getEmbeddingProviderName(): EmbeddingProviderName {
   const provider = process.env.EMBEDDING_PROVIDER;
   if (provider === 'gpu' || provider === 'deterministic') return provider;
   return 'local';
 }
 
-function getDefaultEmbeddingModel(providerName: EmbeddingProviderName = getEmbeddingProviderName()): string {
+export function getDefaultEmbeddingModel(providerName: EmbeddingProviderName = getEmbeddingProviderName()): string {
   if (providerName === 'gpu') {
     // Code-specific default for the high-quality path. Open weights, strong on
     // code retrieval, and CPU-feasible (set GPU_EMBEDDING_DEVICE=cpu).
@@ -338,6 +338,15 @@ export function buildCLI(): Command {
 
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       await startServe(dbPath, opts.transport as 'stdio' | 'sse', parseInt(opts.port, 10));
+    });
+
+  program
+    .command('init')
+    .description('Set up Spacefolding for this project: pre-warm the model + write .mcp.json')
+    .option('--local', 'Write the local dist-path .mcp.json form (instead of the npx/published form)')
+    .action(async (opts) => {
+      const { runInit } = await import('./commands/init.js');
+      await runInit({ local: opts.local === true });
     });
 
   program
