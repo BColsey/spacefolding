@@ -28,30 +28,25 @@ First-time: run `node dist/main.js download-model` to get the embedding model.
 
 ## Tool Summary
 
+Spacefolding advertises **4 canonical tools** (token-efficient surface). All 12 legacy tool names (`ingest_context`, `ingest_project`, `score_context`, `explain_routing`, etc.) remain callable as aliases via `CallTool` for backward compatibility — each keeps its own handler and original output shape, they are just not advertised in `ListTools`.
+
 | Tool | What it does |
 |------|-------------|
-| `ingest_context` | Add context (text, code, diffs, logs, constraints) — auto-chunks if oversized |
-| `ingest_project` | Index a whole project tree (preferred bulk ingest entry point) |
-| `ingest_directory` | Bulk-ingest all files in a directory tree |
-| `score_context` | Score + route chunks into hot/warm/cold |
-| `compress_context` | Compress chunks into structured summary |
-| `get_relevant_memory` | Search archived context by relevance |
-| `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget |
-| `iterative_retrieve` | Multi-round retrieval with automatic query expansion |
-| `update_context_graph` | Add/remove dependency links |
-| `explain_routing` | Show why each chunk was routed to its tier |
-| `list_context` | Show what's been ingested: counts, tokens, per-file breakdown |
-| `delete_context` | Delete specific chunks by ID |
+| `get_context_for_task` | **One-call default.** Ensures the index is populated (ingests `rootPath` if empty + allowed), then retrieves + packs task context into the token budget |
+| `retrieve_context` | **Hybrid RAG retrieval** — vector + FTS5 + graph, with token budget. Optional `explain` / `score` flags fold routing explanation and hot/warm/cold scoring into the response |
+| `ingest` | **Unified ingest** — `mode: auto \| item \| project \| directory`. Item ingests one content string; project/directory index a path tree (confined to `SF_INGEST_ROOTS`) |
+| `get_relevant_memory` | Search warm/cold archived context by relevance |
 
 ## Recommended Flow
 
 ```
-1. ingest_directory to index the codebase (or ingest_context for individual items)
-2. list_context to verify what's been ingested
-3. retrieve_context for hybrid RAG retrieval with token budget control
-4. score_context against the current task to route into hot/warm/cold
-5. get_relevant_memory when you need something from cold storage
+1. get_context_for_task(task, rootPath?)  # one-call default; auto-ingests if index empty, then retrieves+packs
+2. retrieve_context(query, ...)            # explicit hybrid RAG with token budget (add explain=true / score=true to fold routing in)
+3. ingest(...)                             # explicit ingest: item content, or project/directory path
+4. get_relevant_memory                     # when you need something from cold/warm storage
 ```
+
+Alias migration cheatsheet: `ingest_context`/`ingest_project`/`ingest_directory` → `ingest` (item/project/directory); `score_context` → `retrieve_context` with `score: true`; `explain_routing` → `retrieve_context` with `explain: true`; `compress_context`, `iterative_retrieve`, `update_context_graph`, `list_context`, `delete_context` keep their dedicated behavior (call by legacy name).
 
 ## Context Types
 
