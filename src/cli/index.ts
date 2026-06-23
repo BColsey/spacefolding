@@ -212,7 +212,7 @@ function createEmbeddingProviderConfig(modelOverride?: string): EmbeddingProvide
   };
 }
 
-function createPipeline(dbPath: string): PipelineOrchestrator {
+export function createPipeline(dbPath: string): PipelineOrchestrator {
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
   const embedding = createEmbeddingProviderConfig();
@@ -629,6 +629,27 @@ export function buildCLI(): Command {
 
       for (const symbol of symbols) {
         console.log(`${symbol.kind}\t${symbol.name}\tline ${symbol.line}`);
+      }
+    });
+
+  program
+    .command('hook')
+    .description('Claude Code hook entry points (SessionStart / PostToolUse / PreCompact)')
+    .argument('<event>', 'Hook event: session-start | reindex | pre-compact')
+    .allowExcessArguments(true)
+    .allowUnknownOption(true)
+    .action(async (event: string) => {
+      const { cliSessionStart, cliReindex, cliPreCompact } = await import('./commands/hooks.js');
+      if (event === 'session-start') {
+        await cliSessionStart();
+      } else if (event === 'reindex') {
+        await cliReindex();
+      } else if (event === 'pre-compact') {
+        await cliPreCompact();
+      } else {
+        console.error(chalk.red(`Unknown hook event: ${event}`));
+        console.error(chalk.gray('Valid events: session-start, reindex, pre-compact'));
+        process.exit(1);
       }
     });
 

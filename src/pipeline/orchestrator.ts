@@ -1123,7 +1123,7 @@ function readTextFileForIngest(filePath: string): string | null {
   }
 }
 
-function walkProjectFiles(
+export function walkProjectFiles(
   dir: string,
   options: Required<ProjectIngestOptions>,
   rootDir: string = dir,
@@ -1172,6 +1172,21 @@ function walkProjectFiles(
     }
   }
   return { files: results, skipped };
+}
+
+/**
+ * Count the project files a {@link PipelineOrchestrator.ingestProject} call
+ * would ingest, WITHOUT ingesting them. Used by the SessionStart hook size
+ * guard to decide whether a full auto-index is safe (cheap) or should be
+ * skipped in favour of a self-heal hint (very large repo).
+ */
+export function countProjectFiles(dirPath: string, options: ProjectIngestOptions = {}): number {
+  const resolved: Required<ProjectIngestOptions> = {
+    includeDocs: options.includeDocs ?? true,
+    includeTests: options.includeTests ?? false,
+    includeBenchmarks: options.includeBenchmarks ?? false,
+  };
+  return walkProjectFiles(dirPath, resolved).files.length;
 }
 
 function isCodePath(filePath: string): boolean {
