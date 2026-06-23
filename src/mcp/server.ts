@@ -87,6 +87,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Retrieve context chunks from warm/cold storage that are relevant to a task'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -170,6 +171,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Explain why context chunks were routed to hot/warm/cold for a given task'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -195,6 +197,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Retrieve relevant context using focused structural/vector/text search with automatic budget control'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -242,6 +245,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Multi-round iterative retrieval: retrieves context, expands query from results, re-retrieves for broader coverage'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -319,6 +323,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Show what context has been ingested: chunk counts, token totals, per-file breakdown'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -329,6 +334,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Delete specific context chunks by ID'
     ),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -411,6 +417,9 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
         }
 
         case 'get_relevant_memory': {
+          if (pipeline.getStats().totalChunks === 0) {
+            return jsonResponse(emptyIndexHint());
+          }
           const filters = args!.filters as Record<string, string> | undefined;
           const typedFilters: import('../types/index.js').ContextFilter | undefined = filters
             ? { ...filters, type: filters.type as import('../types/index.js').ChunkType | undefined }
@@ -470,6 +479,9 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
 
         case 'retrieve_context': {
           const query = args!.query as string;
+          if (pipeline.getStats().totalChunks === 0) {
+            return jsonResponse(emptyIndexHint());
+          }
           const maxTokens = args!.maxTokens as number | undefined;
           const strategy = args!.strategy as RetrievalStrategy | undefined;
           const mode = args!.mode as RetrievalMode | undefined;
@@ -613,6 +625,21 @@ function errorResponse(message: string) {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
     isError: true,
+  };
+}
+
+/**
+ * Self-healing response returned when an agent retrieves against an empty index.
+ * Replaces the bare empty envelope with an actionable hint, so the agent learns
+ * to ingest first instead of treating silence as "nothing matched".
+ */
+function emptyIndexHint() {
+  return {
+    hint:
+      'The Spacefolding index is empty — no context has been ingested yet. Call ingest_project or ingest_directory to index a codebase first; retrieve_context / get_relevant_memory will then return relevant chunks.',
+    empty: true,
+    suggestedTools: ['ingest_project', 'ingest_directory'],
+    chunks: [] as unknown[],
   };
 }
 
