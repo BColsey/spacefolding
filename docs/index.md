@@ -9,6 +9,8 @@ doc_type: reference
 
 # Documentation Index
 
+> **Local codebase context engine for coding agents.** Find the right files, symbols, and snippets before an agent edits.
+
 Start here when you know what you want to do but not which file has the answer.
 
 ## Choose a Path
@@ -64,14 +66,3 @@ Benchmark result snapshots live under `benchmarks/` because they are point-in-ti
 - [GPU ablation](../benchmarks/ABLATION-GPU.md)
 - [Real embeddings ablation](../benchmarks/ABLATION-REAL-EMBEDDINGS.md)
 - [Academic comparison](../benchmarks/ACADEMIC-COMPARISON.md)
-
-## Planning And Research Notes
-
-These files are project planning records. They are linked here for discoverability, but they are not the best first read for users setting up Spacefolding.
-
-- [Context chunking plan](./PLAN-context-chunking.md)
-- [RAG architecture plan](./PLAN-rag-architecture.md)
-- [Compress-on-retrieve plan](./PLAN-compress-on-retrieve.md)
-- [Remaining recommendations](./PLAN-remaining-recommendations.md)
-- [Evaluation research plan](./RESEARCH-PLAN-evaluation.md)
-- [Compress overflow pattern](./PATTERN-compress-overflow.md)

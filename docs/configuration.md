@@ -44,6 +44,33 @@ Spacefolding is configured with environment variables. The default Docker setup 
 | `PORT` | `3000` | SSE transport port. |
 | `USE_GPU` | `0` | Adds GPU-enabled text to MCP tool descriptions. |
 | `MAX_CHUNKS` | `10000` | Max chunk count before oldest chunks are evicted. |
+| `SF_INGEST_ROOTS` | unset | Colon-separated absolute paths the ingest tools may read from, in addition to the working directory. Security boundary — see [Security: ingest-root allowlist](#security-ingest-root-allowlist). |
+
+## Security: ingest-root allowlist
+
+The ingest entry points (`ingest_project`, `ingest_directory`, and the `ingest` /
+`ingest-project` CLI commands) only read from an explicit set of **allowed roots**.
+This prevents an agent (or injected context) from ingesting arbitrary absolute
+paths such as `~/.ssh` or `/etc`.
+
+Allowed roots:
+
+1. The process working directory (always — the frictionless local default is
+   "ingest the repo you launched from").
+2. Any colon-separated path in `SF_INGEST_ROOTS` (relative entries resolve against
+   the working directory).
+
+The check resolves symlinks (`realpath`) and rejects `..` traversal, so a link or
+relative path that escapes every root is still refused. To index a directory
+outside the working tree, add it explicitly:
+
+```sh
+export SF_INGEST_ROOTS=/path/to/other/repo
+```
+
+Denials exit non-zero (CLI, exit code 2) or return an `isError` response naming the
+allowed roots (MCP). The orchestrator itself remains a trusted internal API and is
+not re-checked by this boundary.
 
 ## Embedding Providers
 
@@ -54,6 +81,17 @@ Spacefolding is configured with environment variables. The default Docker setup 
 > The `local` provider's `Xenova/bge-small-en-v1.5` is the lightweight, in-process ONNX
 > fallback (general English, no Python required) used when you want zero extra
 > dependencies.
+>
+> **Regime dependence (read before citing benchmark numbers):** the published
+> retrieval claim — the `structural` hybrid is competitive on recall and beats FTS
+> on top-1 (Hits@1) — holds **only on the `gpu` provider with the SFR code model**.
+> The frictionless `local` `bge` default gives working retrieval but is a *weaker
+> regime*: trusting its vector arm at the calibrated fusion weights actually *lowers*
+> top-1, and the acceptance gate fails on it. To reproduce the published numbers,
+> use `EMBEDDING_PROVIDER=gpu` (CPU is fine). See
+> [`benchmarks/MODEL-VERIFICATION.md`](../benchmarks/MODEL-VERIFICATION.md),
+> [`benchmarks/FROZEN-CLAIM.md`](../benchmarks/FROZEN-CLAIM.md), and
+> [`benchmarks/GPU-REPRODUCTION.md`](../benchmarks/GPU-REPRODUCTION.md).
 
 ### Local Embeddings
 

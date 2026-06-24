@@ -1,4 +1,4 @@
-import type { CodeSymbol, TokenEstimator } from '../types/index.js';
+import type { TokenEstimator } from '../types/index.js';
 import { StructuralIndexer } from '../providers/structural-indexer.js';
 
 /** Tracks lazy initialization state across calls. */
@@ -51,25 +51,9 @@ export async function splitCodeWithTreeSitter(
     const extraction = await indexer.extract(text, language);
     if (extraction.backend !== 'tree-sitter') return null;
 
-    const symbols = extraction.symbols;
-    if (symbols.length === 0) return null;
-
-    const lines = text.split('\n');
-    const importEnd = findImportEnd(lines);
-    const importBlock = lines.slice(0, importEnd).join('\n');
-    const bodyStart = importEnd;
-
-    // Build sorted, non-overlapping symbol ranges
-    const ranges = buildNonOverlappingRanges(symbols, bodyStart);
-
-    // Also capture any code between import end and first symbol, and trailing code
-    const pieces = buildPieces(lines, ranges, bodyStart, maxTokens, tokenEstimator);
-
-    if (pieces.length <= 1) return null;
-
-    const chunked = packPiecesWithPrefix(pieces, importBlock, maxTokens, tokenEstimator);
-
-    return applyOverlap(chunked, overlapTokens);
+    return buildChunksFromSymbolRanges(
+      text, extraction.symbols, maxTokens, overlapTokens, tokenEstimator
+    );
   } catch {
     // Any error means we fall back to regex
     return null;
@@ -97,10 +81,47 @@ function findImportEnd(lines: string[]): number {
   return end;
 }
 
+/** Minimal symbol shape used for AST chunk boundaries — startLine/endLine only.
+ * Both the Python sidecar (CodeSymbol) and the pure-JS web-tree-sitter source
+ * feed boundaries through this so the boundary→chunk machinery is shared. */
+export interface SymbolRange {
+  startLine: number;
+  endLine: number;
+}
+
 interface LineRange {
   start: number; // inclusive, 0-based line index
   end: number;   // exclusive, 0-based line index
-  symbol: CodeSymbol;
+  symbol: SymbolRange;
+}
+
+/**
+ * Build code chunks from AST symbol ranges (startLine/endLine), independent of
+ * how those ranges were produced (Python sidecar or pure-JS web-tree-sitter).
+ * Splits along non-overlapping top-level boundaries, keeps the import block as a
+ * prefix, packs small adjacent nodes together, and recursively splits oversized
+ * nodes. Returns null if it can't produce more than one piece (caller falls back
+ * to regex).
+ */
+export function buildChunksFromSymbolRanges(
+  text: string,
+  symbols: SymbolRange[],
+  maxTokens: number,
+  overlapTokens: number,
+  tokenEstimator: TokenEstimator
+): string[] | null {
+  if (symbols.length === 0) return null;
+  const lines = text.split('\n');
+  const importEnd = findImportEnd(lines);
+  const importBlock = lines.slice(0, importEnd).join('\n');
+  const bodyStart = importEnd;
+
+  const ranges = buildNonOverlappingRanges(symbols, bodyStart);
+  const pieces = buildPieces(lines, ranges, bodyStart, maxTokens, tokenEstimator);
+  if (pieces.length <= 1) return null;
+
+  const chunked = packPiecesWithPrefix(pieces, importBlock, maxTokens, tokenEstimator);
+  return applyOverlap(chunked, overlapTokens);
 }
 
 /**
@@ -109,7 +130,7 @@ interface LineRange {
  * as a single unit unless it exceeds maxTokens.
  */
 function buildNonOverlappingRanges(
-  symbols: CodeSymbol[],
+  symbols: SymbolRange[],
   bodyStart: number
 ): LineRange[] {
   // Sort by startLine, then by size descending (prefer larger containers)

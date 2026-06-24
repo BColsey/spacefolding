@@ -1,5 +1,10 @@
 # Commit-derived benchmark — first honest results (WS0.6 / NEXT-STEPS Step 1)
 
+> **The frozen, publishable claim now lives in
+> [`FROZEN-CLAIM.md`](./FROZEN-CLAIM.md)** — the 3-language GPU table (incl. the
+> previously-never-run rust cell), paired-bootstrap CIs, and the rust-exclusion
+> rationale. This doc is the full empirical narrative + method.
+
 **Status:** preliminary but CI-backed. 3 repos / 3 languages, n=100 commit-derived
 tasks each. Reproducible offline from a clean checkout (after deepening the
 corpora — see `COMMIT-GROUND-TRUTH.md`).
@@ -178,6 +183,54 @@ robustness and held on the disjoint holdout (django structural − max(v,f):
 holdout **+0.066**; typescript holdout ≈ tie). Reproduce with
 `benchmarks/fusion-sweep.ts` → `benchmarks/analyze-sweep.ts`; confirm with
 `evaluate.ts --strategy all` (`BENCH_EMBEDDING=gpu`) → `benchmarks/paired-bootstrap.ts`.
+
+## WS0.3 text-source merge — kept the raw sum (evidence-backed negative)
+
+WS0.3 also proposed replacing the `mergeRawResults` raw score-SUM (which fuses the
+FTS5/BM25 arm with the deterministic lexical fallback) with a "rank-based /
+normalized" merge: the two arms are on different scales (FTS5 negated-BM25 reals
+~5–20; the lexical fallback small integers 2/3/5…), so the sum lets BM25 magnitude
+dominate the order and double-counts a chunk found by both.
+
+We implemented and measured two replacements — weighted Reciprocal Rank Fusion, and
+a max-normalized weighted sum (lexical arm weight swept 0.2–1.0) — against a
+**controlled same-session GPU before/after** (`Salesforce/SFR-Embedding-Code-400M_R`,
+cuda:1, seed 42, depth 200, n=100/repo). The `vector`/`bm25`/`keyword` arms were
+byte-identical before/after on all three corpora (the controlled comparison: only
+the merge-dependent `fts`/`structural` arms can move), so the deltas below are pure
+merge effects, not GPU non-determinism.
+
+**Every replacement regressed the durable GPU `structural` Hits@1 edge** by
+0.01–0.02 on all three corpora (raw sum → max-norm w=1.0):
+
+| corpus | structural R@10 | structural **Hits@1** | fts R@10 | fts Hits@1 |
+|--------|-----------------|-----------------------|----------|------------|
+| django     | 0.868 → 0.872 (+0.004) | 0.400 → **0.390 (−0.010)** | 0.812 → 0.822 | 0.170 → 0.150 |
+| typescript | 0.695 → 0.693 (−0.002) | 0.350 → **0.340 (−0.010)** | 0.662 → 0.669 | 0.240 → 0.230 |
+| rust       | 0.568 → 0.596 (+0.028) | 0.160 → **0.140 (−0.020)** | 0.516 → 0.482 | 0.130 → 0.130 |
+
+(RRF was worse still: on the deterministic gate it pinned `fts` Hits@1 at 0.105 vs
+baseline 0.211 at *every* lexical weight, because rank-only fusion discards the BM25
+magnitude that drives top-1.)
+
+**Root cause — the two regimes want opposite lexical weights.** Deterministic `fts`
+recall wants the lexical arm weighted HIGH (it adds path/substring recall FTS5's
+unindexed-path tokenizer misses); GPU `structural` top-1 wants it weighted LOW (it
+perturbs the top-1 the edge depends on). No single rank-based/normalized merge wins
+both. The raw sum is a **local optimum**: BM25 magnitude dominates the ordering
+(protecting the top-1 edge) while the lexical arm still contributes union members
+(recall).
+
+**Decision (owner-approved): keep the raw sum.** The "double-count / incommensurate
+scale" concern is real but empirically benign on the measured corpora, and the
+project's load-bearing asset is the top-1 edge — so a theoretical fix that
+systematically erodes it is rejected. The other WS0.3 ranking sub-items shipped:
+typed `symbolExact`/`pathExact` fields (decouple the exact-identifier boost from
+reason wording) and the absolute per-source relevance floor wired into
+`retrieval-policy.ts`. A future merge may beat the raw sum only if it preserves BM25
+top-1 dominance without losing lexical recall (e.g. BM25-primary with lexical-only
+chunks appended) and is validated on the GPU harness — the deterministic gate cannot
+see the GPU-regime top-1 shift.
 
 ## WS0.6 — BM25 baseline fix + retrieval-depth fairness fix — LANDED
 

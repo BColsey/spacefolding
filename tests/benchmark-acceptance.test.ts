@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildAcceptanceReport,
   buildAcceptanceReportFromFiles,
+  buildBlockingReport,
   formatTextReport,
   parseArgs,
+  type BaselineSpec,
 } from '../benchmarks/check-acceptance.ts';
 
 function passingGate() {
@@ -330,6 +332,79 @@ describe('acceptance checker report', () => {
     );
     expect(() => parseArgs(['--e2e-json'])).toThrow(
       '--e2e-json requires a JSON path'
+    );
+  });
+});
+
+describe('blocking subset (regime-robust, deterministic non-regression)', () => {
+  const baseline: BaselineSpec = {
+    margin: 0.03,
+    strategies: {
+      structural: { recallAt10: 0.873, hitsAt1: 0.526 },
+      fts: { recallAt10: 0.693, hitsAt1: 0.211 },
+      bm25: { recallAt10: 0.724, hitsAt1: 0.263 },
+      keyword: { recallAt10: 0.838, hitsAt1: 0.368 },
+    },
+  };
+
+  function reportWith(overrides: Record<string, { recallAt10?: number; hitsAt1?: number }> = {}) {
+    const defaults: Record<string, { recallAt10: number; hitsAt1: number }> = {
+      structural: { recallAt10: 0.873, hitsAt1: 0.526 },
+      fts: { recallAt10: 0.693, hitsAt1: 0.211 },
+      bm25: { recallAt10: 0.724, hitsAt1: 0.263 },
+      bm25body: { recallAt10: 0.618, hitsAt1: 0.211 },
+      keyword: { recallAt10: 0.838, hitsAt1: 0.368 },
+      vector: { recallAt10: 0.053, hitsAt1: 0.053 },
+      'symbol-only': { recallAt10: 0.706, hitsAt1: 0.211 },
+      'path-match': { recallAt10: 0.443, hitsAt1: 0.263 },
+    };
+    const merged = { ...defaults, ...overrides };
+    return {
+      strategies: Object.entries(merged).map(([strategy, averages]) => ({ strategy, averages })),
+      successGate: { recallAt10VsBestLexical: { mean: 0.0 }, hitsAt1VsFts: { mean: 0.1 } },
+    };
+  }
+
+  it('passes when all strategies are present and nothing regressed vs baseline', () => {
+    const report = buildBlockingReport({ retrieval: reportWith() }, baseline);
+    expect(report.passed).toBe(true);
+  });
+
+  it('fails when structural recall@10 regresses below baseline − margin', () => {
+    // baseline structural recallAt10 = 0.873, margin 0.03 => threshold 0.843
+    const report = buildBlockingReport(
+      { retrieval: reportWith({ structural: { recallAt10: 0.82, hitsAt1: 0.526 } }) },
+      baseline,
+    );
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({ name: 'blocking.structural_recallAt10_no_regression', passed: false }),
+    );
+  });
+
+  it('fails when a retrieval strategy is missing (harness-health guard)', () => {
+    const data = reportWith();
+    data.strategies = data.strategies.filter((s) => s.strategy !== 'fts');
+    const report = buildBlockingReport({ retrieval: data }, baseline);
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({ name: 'blocking.all_strategies_present', passed: false }),
+    );
+  });
+
+  it('fails when the composite-gate contrasts are not computed (wiring guard)', () => {
+    const data = reportWith();
+    data.successGate = {};
+    const report = buildBlockingReport({ retrieval: data }, baseline);
+    expect(report.passed).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({ name: 'blocking.composite_contrasts_computed', passed: false }),
+    );
+  });
+
+  it('requires --retrieval-json with --blocking-subset', () => {
+    expect(() => parseArgs(['--blocking-subset'])).toThrow(
+      '--blocking-subset requires --retrieval-json',
     );
   });
 });

@@ -116,6 +116,11 @@ function makeStructuralResult(
     structuralScore,
     dependencyBoost,
     reasons,
+    // Mirror the production contract: the typed flag is the authoritative signal
+    // (set alongside the reason). Derived from the reasons here so test fixtures
+    // that express an exact match via a reason also carry the field.
+    symbolExact: reasons.some((r) => r.startsWith('symbol exact match')),
+    pathExact: reasons.some((r) => r.startsWith('path exact match')),
   };
 }
 

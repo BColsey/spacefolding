@@ -5,9 +5,11 @@ import type {
   TaskDescription,
 } from '../types/index.js';
 import { env, pipeline } from '@huggingface/transformers';
+import { ensureModelCacheDir } from './model-cache.js';
 
+// Shared global model cache (see model-cache.ts). Downloads once per machine.
 env.allowLocalModels = true;
-env.localModelPath = process.env.MODEL_PATH ?? './data/models';
+env.localModelPath = ensureModelCacheDir();
 env.useBrowserCache = false;
 
 const STOP_WORDS = new Set([

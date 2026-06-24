@@ -1,0 +1,7 @@
+{
+  "name": "spacefolding",
+  "description": "Spacefolding — local codebase context engine for coding agents. Auto-indexes your repo on session start and keeps the index fresh as you edit, so retrieve_context always has current context.",
+  "version": "0.1.0",
+  "hooks": "./hooks/hooks.json",
+  "skills": "./skills"
+}

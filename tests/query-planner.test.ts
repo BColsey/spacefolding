@@ -288,9 +288,12 @@ describe('getAdaptiveStrategy', () => {
     expect(getAdaptiveStrategy()).toBe('hybrid');
   });
 
-  it('returns vector for gpu provider', () => {
+  it('returns structural (calibrated hybrid) for gpu provider', () => {
+    // The honest commit-derived GPU data shows the calibrated structural hybrid
+    // dominates vector-only on both recall and top-1; the old gpu→vector route
+    // rested on the retired contaminated ablation. See getAdaptiveStrategy.
     process.env.EMBEDDING_PROVIDER = 'gpu';
-    expect(getAdaptiveStrategy()).toBe('vector');
+    expect(getAdaptiveStrategy()).toBe('structural');
   });
 
   it('returns text for deterministic provider', () => {

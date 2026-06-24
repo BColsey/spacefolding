@@ -164,6 +164,12 @@ export interface StructuralSearchResult {
   structuralScore: number;
   dependencyBoost: number;
   reasons: string[];
+  /** True iff a 'symbol exact match' contributed. Set at production, independent of
+   * the reason string (which is capped at 6 entries) — decouples the exact-identifier
+   * boost from reason wording so an indexer reword can't silently destroy Hits@1. */
+  symbolExact?: boolean;
+  /** True iff a 'path exact match' contributed. Set at production, uncapped. */
+  pathExact?: boolean;
 }
 
 export type RetrievalStrategy = 'hybrid' | 'vector' | 'text' | 'graph' | 'structural';

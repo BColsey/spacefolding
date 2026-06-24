@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/License-Free%20Personal%2FEducation%20%7C%20Paid%20Business-blueviolet?style=flat-square" alt="Free personal and education use, paid business license" />
+  <img src="https://img.shields.io/badge/License-FSL--1.1--ALv2-blueviolet?style=flat-square" alt="Functional Source License (FSL-1.1-ALv2): free for non-competing use, converts to Apache-2.0 after 2 years" />
   <img src="https://img.shields.io/github/issues/BColsey/spacefolding?style=flat-square&color=58a6ff" alt="GitHub issues" />
   <img src="https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker ready" />
   <img src="https://img.shields.io/badge/MCP-compatible-6E40C9?style=flat-square" alt="MCP compatible" />
@@ -228,11 +228,15 @@ npm run lint
 npm test
 ```
 
-Benchmark commands and acceptance criteria are documented in [run benchmarks](docs/howto/run-benchmarks.md). Current benchmark snapshots live in [benchmarks/RESULTS.md](benchmarks/RESULTS.md), [benchmarks/E2E-RESULTS.md](benchmarks/E2E-RESULTS.md), and [benchmarks/LARGE-REPO-HELDOUT.md](benchmarks/LARGE-REPO-HELDOUT.md).
+Benchmark commands and acceptance criteria are documented in [run benchmarks](docs/howto/run-benchmarks.md). Current, honest benchmark numbers live in [benchmarks/COMMIT-DERIVED-FINDINGS.md](benchmarks/COMMIT-DERIVED-FINDINGS.md) ([RESULTS.md](benchmarks/RESULTS.md) / [E2E-RESULTS.md](benchmarks/E2E-RESULTS.md) are retired redirects).
 
 ## Contributing, Security, License
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-Spacefolding is free for personal, educational, and noncommercial projects.
-Commercial or business use requires a paid license; see [LICENSE](LICENSE).
+Spacefolding is licensed under the [Functional Source License 1.1, ALv2](LICENSE)
+(FSL-1.1-ALv2): free for internal, educational, research, and non-competing use;
+**a commercial license is required for any Competing Use** (substituting for, or
+offering similar functionality as, a product or service). FSL auto-converts to
+Apache-2.0 two years after each release. See [LICENSING.md](LICENSING.md) for
+details and how to obtain a commercial license.

@@ -8,6 +8,9 @@ import type { PipelineOrchestrator } from '../pipeline/orchestrator.js';
 import type { RetrievalMode, RetrievalStrategy } from '../types/index.js';
 import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
 import { formatContextPack } from '../core/context-pack.js';
+import { createIngestPolicy } from '../security/ingest-policy.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const USE_GPU = process.env.USE_GPU === '1';
 const MAX_TASK_TEXT_LENGTH = 10_000;
@@ -19,6 +22,10 @@ const VALID_MODES: readonly string[] = RETRIEVAL_MODES;
 const VALID_RETRIEVE_FORMATS = ['json', 'pack'] as const;
 const VALID_GRAPH_OPERATIONS = ['add', 'remove'] as const;
 const VALID_DEPENDENCY_TYPES = ['references', 'defines', 'summarizes', 'overrides', 'contains'] as const;
+/** The 9-value chunk-type enum shared by ingest_context (alias) and ingest (canonical). */
+const VALID_INGEST_TYPES = ['fact', 'constraint', 'instruction', 'code', 'log', 'background', 'summary', 'diff', 'reference'] as const;
+/** The 4-value ingest mode enum shared by the canonical `ingest` schema and validateArgs. */
+const VALID_INGEST_MODES = ['auto', 'item', 'project', 'directory'] as const;
 
 function describeTool(description: string): string {
   return USE_GPU
@@ -26,12 +33,106 @@ function describeTool(description: string): string {
     : description;
 }
 
+// ---- Shared input schemas (single-source-of-truth) -------------------------
+// retrieve_context and get_relevant_memory each have ONE canonical schema. The
+// legacy alias entries in TOOL_DEFINITIONS reference these same objects so the
+// two definitions cannot drift. (Legacy retrieve_context gaining the optional
+// explain/score flags is fine — default behavior is unchanged.)
+
+const RETRIEVE_CONTEXT_INPUT_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    query: {
+      type: 'string',
+      description: 'Search query describing what context you need',
+    },
+    maxTokens: {
+      type: 'number',
+      description: 'Maximum token budget for results (default: auto based on query intent)',
+    },
+    strategy: {
+      type: 'string',
+      enum: RETRIEVAL_STRATEGIES,
+      description: 'Retrieval strategy (default: structural when code symbols are indexed, otherwise adaptive based on embedding provider)',
+    },
+    mode: {
+      type: 'string',
+      enum: RETRIEVAL_MODES,
+      description: 'Selection mode: focused returns compact high-confidence context, broad returns more coverage, exhaustive preserves legacy breadth',
+    },
+    topK: {
+      type: 'number',
+      description: 'Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)',
+    },
+    returnLimit: {
+      type: 'number',
+      description: 'Max scored candidates to consider after retrieval and before token budgeting',
+    },
+    maxHops: {
+      type: 'number',
+      description: 'Max dependency graph traversal hops (default: 1 for graph strategy, 0 otherwise; graph traversal is disabled unless requested)',
+    },
+    format: {
+      type: 'string',
+      enum: VALID_RETRIEVE_FORMATS,
+      description: 'Response format: json returns structured fields; pack returns an agent-ready Markdown context pack',
+    },
+    explain: {
+      type: 'boolean',
+      description:
+        'When true, fold explain_routing into the response: include a routingExplanation object (per-chunk tier/score/reasons + summary) describing why retrieved chunks were routed to their tiers',
+    },
+    score: {
+      type: 'boolean',
+      description:
+        'When true, fold score_context into the response: score+route all chunks into hot/warm/cold tiers for this query and include the routing (hot/warm/cold id lists + scores + reasons) in the response',
+    },
+  },
+  required: ['query'],
+};
+
+const GET_RELEVANT_MEMORY_INPUT_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    task: {
+      type: 'object' as const,
+      properties: {
+        text: { type: 'string' },
+        type: { type: 'string' },
+        priority: { type: 'string' },
+      },
+      required: ['text'],
+    },
+    filters: {
+      type: 'object' as const,
+      properties: {
+        source: { type: 'string' },
+        type: { type: 'string' },
+        tier: { type: 'string' },
+        path: { type: 'string' },
+        textContains: { type: 'string' },
+      },
+    },
+  },
+  required: ['task'],
+};
+
+// The ingest `type` property, shared by ingest_context (alias) and ingest
+// (canonical) so the 9-value enum cannot drift from VALID_INGEST_TYPES.
+const INGEST_TYPE_PROPERTY = {
+  type: 'string' as const,
+  enum: VALID_INGEST_TYPES,
+  description:
+    'Chunk type: fact, constraint, instruction, code, log, background, summary, diff, reference',
+};
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'score_context',
     description: describeTool(
       'Score and route context chunks into hot/warm/cold tiers for a given task'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -60,6 +161,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'compress_context',
     description: describeTool('Compress warm-context chunks into a structured summary'),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -86,46 +188,19 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Retrieve context chunks from warm/cold storage that are relevant to a task'
     ),
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        task: {
-          type: 'object' as const,
-          properties: {
-            text: { type: 'string' },
-            type: { type: 'string' },
-            priority: { type: 'string' },
-          },
-          required: ['text'],
-        },
-        filters: {
-          type: 'object' as const,
-          properties: {
-            source: { type: 'string' },
-            type: { type: 'string' },
-            tier: { type: 'string' },
-            path: { type: 'string' },
-            textContains: { type: 'string' },
-          },
-        },
-      },
-      required: ['task'],
-    },
+    annotations: { readOnlyHint: true },
+    inputSchema: GET_RELEVANT_MEMORY_INPUT_SCHEMA,
   },
   {
     name: 'ingest_context',
     description: describeTool('Ingest a new context item (text, code, diff, log, etc.)'),
+    annotations: { destructiveHint: false },
     inputSchema: {
       type: 'object' as const,
       properties: {
         source: { type: 'string', description: 'Where this context came from' },
         text: { type: 'string', description: 'The context text' },
-        type: {
-          type: 'string',
-          enum: ['fact', 'constraint', 'instruction', 'code', 'log', 'background', 'summary', 'diff', 'reference'],
-          description:
-            'Chunk type: fact, constraint, instruction, code, log, background, summary, diff, reference',
-        },
+        type: INGEST_TYPE_PROPERTY,
         path: { type: 'string', description: 'File path if from a file' },
         language: { type: 'string', description: 'Programming language if code' },
       },
@@ -135,6 +210,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'update_context_graph',
     description: describeTool('Add or remove dependency links in the context graph'),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -169,6 +245,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Explain why context chunks were routed to hot/warm/cold for a given task'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -194,53 +271,15 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Retrieve relevant context using focused structural/vector/text search with automatic budget control'
     ),
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        query: {
-          type: 'string',
-          description: 'Search query describing what context you need',
-        },
-        maxTokens: {
-          type: 'number',
-          description: 'Maximum token budget for results (default: auto based on query intent)',
-        },
-        strategy: {
-          type: 'string',
-          enum: RETRIEVAL_STRATEGIES,
-          description: 'Retrieval strategy (default: structural when code symbols are indexed, otherwise adaptive based on embedding provider)',
-        },
-        mode: {
-          type: 'string',
-          enum: RETRIEVAL_MODES,
-          description: 'Selection mode: focused returns compact high-confidence context, broad returns more coverage, exhaustive preserves legacy breadth',
-        },
-        topK: {
-          type: 'number',
-          description: 'Max retrieval candidates before selection and token budgeting (default: adaptive by query intent)',
-        },
-        returnLimit: {
-          type: 'number',
-          description: 'Max scored candidates to consider after retrieval and before token budgeting',
-        },
-        maxHops: {
-          type: 'number',
-          description: 'Max dependency graph traversal hops (default: 1 for graph strategy, 0 otherwise; graph traversal is disabled unless requested)',
-        },
-        format: {
-          type: 'string',
-          enum: VALID_RETRIEVE_FORMATS,
-          description: 'Response format: json returns structured fields; pack returns an agent-ready Markdown context pack',
-        },
-      },
-      required: ['query'],
-    },
+    annotations: { readOnlyHint: true },
+    inputSchema: RETRIEVE_CONTEXT_INPUT_SCHEMA,
   },
   {
     name: 'iterative_retrieve',
     description: describeTool(
       'Multi-round iterative retrieval: retrieves context, expands query from results, re-retrieves for broader coverage'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -270,6 +309,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Ingest a project with source code plus README, docs, env examples, config files, and agent instructions'
     ),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -298,6 +338,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Ingest all files in a directory tree. Skips node_modules, .git, dist, and binary files.'
     ),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -318,6 +359,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Show what context has been ingested: chunk counts, token totals, per-file breakdown'
     ),
+    annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {},
@@ -328,6 +370,7 @@ export const TOOL_DEFINITIONS = [
     description: describeTool(
       'Delete specific context chunks by ID'
     ),
+    annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -342,16 +385,169 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
-const TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((tool) => tool.name));
+/**
+ * Canonical tool surface — what ListTools advertises to agents.
+ *
+ * Goal: a token-cheap surface (4 tools) instead of the historical 12. The full
+ * 12-name set in TOOL_DEFINITIONS is kept for backward compatibility: every old
+ * name remains callable via CallTool through its own dedicated handler (output
+ * shapes preserved); only the 4 canonical tools are advertised in ListTools.
+ *
+ * Canonical tools:
+ *  - retrieve_context: focused retrieval (with optional explain/score folds).
+ *  - ingest: unified ingest (item | project | directory | auto).
+ *  - get_context_for_task: composite (ensure-ingested -> retrieve -> pack).
+ *  - get_relevant_memory: cold/warm memory search (distinct from retrieve).
+ */
+export const CANONICAL_TOOL_DEFINITIONS = [
+  // 1. retrieve_context (canonical copy; mirrors the alias in TOOL_DEFINITIONS).
+  {
+    name: 'retrieve_context',
+    description: describeTool(
+      'Retrieve relevant context using focused structural/vector/text search with automatic budget control. Optional flags fold explain_routing (explain=true) and score_context (score=true) into the response.'
+    ),
+    annotations: { readOnlyHint: true },
+    inputSchema: RETRIEVE_CONTEXT_INPUT_SCHEMA,
+  },
+  // 2. ingest (unified).
+  {
+    name: 'ingest',
+    description: describeTool(
+      'Unified ingest. By default (mode=auto) detects intent: content present -> ingest a single item; else path is a directory or project root to index. Use mode=item|project|directory to be explicit. Path modes are confined to SF_INGEST_ROOTS.'
+    ),
+    annotations: { destructiveHint: true },
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        mode: {
+          type: 'string',
+          enum: VALID_INGEST_MODES,
+          description: 'Ingest mode (default: auto). item ingests a single content string; project/directory index a path tree.',
+        },
+        path: {
+          type: 'string',
+          description: 'Absolute path to ingest (project/directory modes). Must be within SF_INGEST_ROOTS.',
+        },
+        content: {
+          type: 'string',
+          description: 'The context text to ingest (item mode). Alias for the text body.',
+        },
+        source: {
+          type: 'string',
+          description: 'Where this context came from (item mode, e.g. "file", "diff", "log").',
+        },
+        type: {
+          type: 'string',
+          enum: VALID_INGEST_TYPES,
+          description: 'Chunk type for item mode, or an optional override type for directory mode.',
+        },
+        language: {
+          type: 'string',
+          description: 'Programming language if code (item mode).',
+        },
+        includeDocs: { type: 'boolean', description: 'project mode: include docs/**/*.md and README files (default: true)' },
+        includeTests: { type: 'boolean', description: 'project mode: include test/spec files and test directories (default: false)' },
+        includeBenchmarks: { type: 'boolean', description: 'project mode: include benchmark directories (default: false)' },
+      },
+    },
+  },
+  // 3. get_context_for_task (composite).
+  {
+    name: 'get_context_for_task',
+    description: describeTool(
+      'One-shot composite: if the index is empty and rootPath is within SF_INGEST_ROOTS, ingest that project first; then retrieve context for the task and pack it into the token budget. Returns ready-to-use context in a single call.'
+    ),
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        task: {
+          type: 'string',
+          description: 'The task to gather context for (used as the retrieval query).',
+        },
+        rootPath: {
+          type: 'string',
+          description: 'Optional project root to ingest first if the index is empty. Must be within SF_INGEST_ROOTS.',
+        },
+        maxTokens: {
+          type: 'number',
+          description: 'Maximum token budget for the packed context (default: auto).',
+        },
+        strategy: {
+          type: 'string',
+          enum: RETRIEVAL_STRATEGIES,
+          description: 'Retrieval strategy pass-through (default: structural when code symbols are indexed, otherwise adaptive).',
+        },
+        mode: {
+          type: 'string',
+          enum: RETRIEVAL_MODES,
+          description: 'Selection mode pass-through.',
+        },
+        topK: {
+          type: 'number',
+          description: 'Max retrieval candidates before selection and token budgeting (default: adaptive by query intent).',
+        },
+        returnLimit: {
+          type: 'number',
+          description: 'Max scored candidates to consider after retrieval and before token budgeting.',
+        },
+        maxHops: {
+          type: 'number',
+          description: 'Max dependency graph traversal hops (default: 1 for graph strategy, 0 otherwise; graph traversal is disabled unless requested).',
+        },
+      },
+      required: ['task'],
+    },
+  },
+  // 4. get_relevant_memory.
+  {
+    name: 'get_relevant_memory',
+    description: describeTool(
+      'Retrieve context chunks from warm/cold storage that are relevant to a task'
+    ),
+    annotations: { readOnlyHint: true },
+    inputSchema: GET_RELEVANT_MEMORY_INPUT_SCHEMA,
+  },
+];
+
+/**
+ * Canonical names advertised by ListTools.
+ */
+export const CANONICAL_TOOL_NAMES = new Set(
+  CANONICAL_TOOL_DEFINITIONS.map((tool) => tool.name)
+);
+
+/**
+ * Gate set for CallTool: the union of canonical names AND all legacy aliases.
+ * Every old tool name remains callable (backward compatibility invariant).
+ */
+const TOOL_NAMES = new Set([
+  ...CANONICAL_TOOL_NAMES,
+  ...TOOL_DEFINITIONS.map((tool) => tool.name),
+]);
+
+// Legacy tool names are NOT folded through the canonical handlers. Each one
+// keeps its OWN dedicated `case` branch in the dispatch switch below, so its
+// exact output shape (and any pre-D4 behavior clients may depend on) is
+// preserved byte-for-byte. They remain callable via CallTool (all are in the
+// TOOL_NAMES union); they are simply no longer ADVERTISED in ListTools, which
+// only surfaces the 4 canonical tools.
 
 export function createMCPServer(pipeline: PipelineOrchestrator): Server {
+  // Trust boundary: confine ingest paths to the configured roots (cwd +
+  // SF_INGEST_ROOTS). Without this an agent could ingest arbitrary absolute
+  // paths (e.g. ~/.ssh). See src/security/ingest-policy.ts.
+  const ingestPolicy = createIngestPolicy();
   const server = new Server(
     { name: 'spacefolding', version: '0.1.0' },
     { capabilities: { tools: {} } }
   );
 
+  // ListTools advertises ONLY the canonical surface. Legacy names stay callable
+  // via CallTool (see TOOL_NAMES union + their dedicated `case` branches), they
+  // are simply not advertised — keeping the advertised token cost low.
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DEFINITIONS,
+    tools: CANONICAL_TOOL_DEFINITIONS,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -406,6 +602,9 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
         }
 
         case 'get_relevant_memory': {
+          if (pipeline.getStats().totalChunks === 0) {
+            return jsonResponse(emptyIndexHint());
+          }
           const filters = args!.filters as Record<string, string> | undefined;
           const typedFilters: import('../types/index.js').ContextFilter | undefined = filters
             ? { ...filters, type: filters.type as import('../types/index.js').ChunkType | undefined }
@@ -465,6 +664,9 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
 
         case 'retrieve_context': {
           const query = args!.query as string;
+          if (pipeline.getStats().totalChunks === 0) {
+            return jsonResponse(emptyIndexHint());
+          }
           const maxTokens = args!.maxTokens as number | undefined;
           const strategy = args!.strategy as RetrievalStrategy | undefined;
           const mode = args!.mode as RetrievalMode | undefined;
@@ -472,45 +674,48 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           const returnLimit = args!.returnLimit as number | undefined;
           const maxHops = args!.maxHops as number | undefined;
           const format = (args!.format as string | undefined) ?? 'json';
+          const explain = args!.explain === true;
+          const score = args!.score === true;
 
           const result = await pipeline.retrieve(query, maxTokens, { strategy, mode, topK, returnLimit, maxHops });
           if (format === 'pack') {
             return textResponse(formatContextPack({ query, ...result }));
           }
+          const folded: Record<string, unknown> = {};
+          if (explain) {
+            // Fold explain_routing: per-chunk tier/score/reasons + summary.
+            const explanation = await pipeline.explainRouting({ text: query });
+            folded.routingExplanation = explanation;
+          }
+          if (score) {
+            // Fold score_context: hot/warm/cold id lists + scores + reasons.
+            // Pass maxTokens so a caller setting maxTokens + score:true has the
+            // hot-tier budget honored. (Options otherwise left empty to match
+            // legacy score_context behavior.)
+            const scored = await pipeline.processContext(
+              { text: query, ...(maxTokens !== undefined ? { maxTokens } : {}) },
+              undefined,
+              {}
+            );
+            folded.routing = {
+              hot: scored.hot,
+              warm: scored.warm,
+              cold: scored.cold,
+              scores: scored.scores,
+              reasons: scored.reasons,
+            };
+          }
           return jsonResponse({
-            chunks: result.chunks.map((c) => ({
-              id: c.id,
-              type: c.type,
-              text: c.text,
-              path: c.path,
-              tokensEstimate: c.tokensEstimate,
-              tier: result.tiers.get(c.id) ?? 'warm',
-              compressedFrom: c.metadata?.compressedFrom ?? undefined,
-              retrievalSources: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.sources ?? [],
-              retrievalScores: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.sourceScores ?? undefined,
-              retrievalReasons: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.reasons ?? [],
-            })),
-            totalTokens: result.totalTokens,
-            budget: result.budget,
-            hardBudget: result.hardBudget,
-            targetBudget: result.targetBudget,
-            utilization: result.utilization,
-            omittedCount: result.omitted.length,
-            omitted: result.omitted,
-            droppedCount: result.dropped.length,
-            dropped: result.dropped,
-            compressedCount: result.compressed.length,
-            compressedSummaries: result.compressed.map((c) => ({
-              originalChunkId: c.chunkId,
-              tokensEstimate: c.tokensEstimate,
-            })),
-            plan: result.plan,
-            selectionPolicy: result.selectionPolicy,
+            ...buildRetrieveResponseBody(result),
+            ...folded,
           });
         }
 
         case 'iterative_retrieve': {
           const query = args!.query as string;
+          if (pipeline.getStats().totalChunks === 0) {
+            return jsonResponse(emptyIndexHint());
+          }
           const maxTokens = (args!.maxTokens as number | undefined) ?? 100_000;
           const rounds = (args!.rounds as number | undefined) ?? 2;
           const strategy = args!.strategy as RetrievalStrategy | undefined;
@@ -541,6 +746,10 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           if (typeof dirPath !== 'string' || dirPath.length === 0) {
             return errorResponse('path must be a non-empty string');
           }
+          const ingestDenied = ingestPolicy.assertAllowed(dirPath);
+          if (ingestDenied) {
+            return errorResponse(ingestDenied);
+          }
           const result = await pipeline.ingestProject(dirPath, {
             includeDocs: args!.includeDocs as boolean | undefined,
             includeTests: args!.includeTests as boolean | undefined,
@@ -553,6 +762,10 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           const dirPath = args!.path as string;
           if (typeof dirPath !== 'string' || dirPath.length === 0) {
             return errorResponse('path must be a non-empty string');
+          }
+          const ingestDenied = ingestPolicy.assertAllowed(dirPath);
+          if (ingestDenied) {
+            return errorResponse(ingestDenied);
           }
           const result = await pipeline.ingestDirectory(dirPath, args!.type as string | undefined);
           return jsonResponse(result);
@@ -570,6 +783,105 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           }
           const deleted = pipeline.deleteChunks(chunkIds);
           return jsonResponse({ deleted });
+        }
+
+        // --- Canonical handlers (new in WS2.2 tool-surface collapse) ---
+
+        case 'ingest': {
+          const mode = (args!.mode as string | undefined) ?? 'auto';
+          const content = args!.content as string | undefined;
+          const pathArg = args!.path as string | undefined;
+          // Content counts as "present" only when it's a non-empty string. An
+          // empty string (content: "") with a valid path must route to
+          // directory/project ingest, not the item branch.
+          const hasContent = typeof content === 'string' && content.length > 0;
+
+          if (mode === 'item' || (mode === 'auto' && hasContent)) {
+            // Single-item ingest (folds ingest_context). content or text both
+            // accepted; source defaults to 'inline'.
+            const text = content ?? (args!.text as string | undefined);
+            if (typeof text !== 'string' || text.length === 0) {
+              return errorResponse('content (or text) must be a non-empty string for item ingest');
+            }
+            const source = (args!.source as string | undefined) ?? 'inline';
+            const chunk = await pipeline.ingest(
+              source,
+              text,
+              args!.type as string | undefined,
+              args!.path as string | undefined,
+              args!.language as string | undefined
+            );
+            const result: { chunkId: string; mode: string; split?: { childCount: number; childIds: string[] } } = {
+              chunkId: chunk.id,
+              mode: 'item',
+            };
+            if (chunk.childrenIds.length > 0) {
+              result.split = { childCount: chunk.childrenIds.length, childIds: chunk.childrenIds };
+            }
+            return jsonResponse(result);
+          }
+
+          // Path modes (project | directory | auto-with-path).
+          if (typeof pathArg !== 'string' || pathArg.length === 0) {
+            return errorResponse('path must be a non-empty string for project/directory ingest');
+          }
+          const ingestDenied = ingestPolicy.assertAllowed(pathArg);
+          if (ingestDenied) {
+            return errorResponse(ingestDenied);
+          }
+          const looksLikeProject = mode === 'project'
+            || (mode === 'auto' && hasProjectMarker(pathArg));
+          if (looksLikeProject) {
+            const result = await pipeline.ingestProject(pathArg, {
+              includeDocs: args!.includeDocs as boolean | undefined,
+              includeTests: args!.includeTests as boolean | undefined,
+              includeBenchmarks: args!.includeBenchmarks as boolean | undefined,
+            });
+            return jsonResponse({ ...result, mode: 'project' });
+          }
+          const result = await pipeline.ingestDirectory(pathArg, args!.type as string | undefined);
+          return jsonResponse({ ...result, mode: 'directory' });
+        }
+
+        case 'get_context_for_task': {
+          const task = args!.task as string;
+          const rootPath = args!.rootPath as string | undefined;
+
+          // Self-heal: if the index is empty, ingest first (only if a rootPath is
+          // supplied AND it is within the allowed ingest roots). Never ingest
+          // outside allowed roots.
+          if (pipeline.getStats().totalChunks === 0) {
+            if (typeof rootPath === 'string' && rootPath.length > 0) {
+              const ingestDenied = ingestPolicy.assertAllowed(rootPath);
+              if (ingestDenied) {
+                return errorResponse(ingestDenied);
+              }
+              await pipeline.ingestProject(rootPath, {});
+              // If ingest still left the index empty (e.g. empty dir), fall
+              // through to the hint below rather than retrieving against 0.
+              if (pipeline.getStats().totalChunks === 0) {
+                return jsonResponse(emptyIndexHint());
+              }
+            } else {
+              return jsonResponse(emptyIndexHint());
+            }
+          }
+
+          const maxTokens = args!.maxTokens as number | undefined;
+          const strategy = args!.strategy as RetrievalStrategy | undefined;
+          const mode = args!.mode as RetrievalMode | undefined;
+          const topK = args!.topK as number | undefined;
+          const returnLimit = args!.returnLimit as number | undefined;
+          const maxHops = args!.maxHops as number | undefined;
+          const result = await pipeline.retrieve(task, maxTokens, { strategy, mode, topK, returnLimit, maxHops });
+          // The composite is the "ready-to-use context in one call" flagship —
+          // it mirrors retrieve_context's response richness (omitted/dropped/
+          // compressed diagnostics + per-chunk retrievalSources/Scores/Reasons)
+          // via the shared buildRetrieveResponseBody helper, then adds `task`.
+          return jsonResponse({
+            task,
+            ...buildRetrieveResponseBody(result),
+          });
         }
 
         default:
@@ -600,6 +912,96 @@ function errorResponse(message: string) {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
     isError: true,
+  };
+}
+
+/**
+ * The shape returned by `pipeline.retrieve(...)`. Declared once here (derived
+ * from the orchestrator method so it cannot drift) and shared by the
+ * retrieve_context and get_context_for_task handlers when building responses.
+ */
+type RetrieveResult = Awaited<ReturnType<PipelineOrchestrator['retrieve']>>;
+
+/**
+ * Builds the per-chunk mapped array + retrieval diagnostics object that both
+ * `retrieve_context` and `get_context_for_task` return. Extracted so the
+ * composite flagship mirrors retrieve_context's response richness exactly
+ * (omitted/dropped/compressed lists + per-chunk retrievalSources/Scores/Reasons
+ * + compressedFrom). retrieve_context's output shape is unchanged — the
+ * composite GAINS parity.
+ */
+function buildRetrieveResponseBody(result: RetrieveResult) {
+  return {
+    chunks: result.chunks.map((c) => ({
+      id: c.id,
+      type: c.type,
+      text: c.text,
+      path: c.path,
+      tokensEstimate: c.tokensEstimate,
+      tier: result.tiers.get(c.id) ?? 'warm',
+      compressedFrom: c.metadata?.compressedFrom ?? undefined,
+      retrievalSources: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.sources ?? [],
+      retrievalScores: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.sourceScores ?? undefined,
+      retrievalReasons: result.retrieval.find((r) => r.chunkId === c.id.split('__compressed')[0])?.reasons ?? [],
+    })),
+    totalTokens: result.totalTokens,
+    budget: result.budget,
+    hardBudget: result.hardBudget,
+    targetBudget: result.targetBudget,
+    utilization: result.utilization,
+    omittedCount: result.omitted.length,
+    omitted: result.omitted,
+    droppedCount: result.dropped.length,
+    dropped: result.dropped,
+    compressedCount: result.compressed.length,
+    compressedSummaries: result.compressed.map((c) => ({
+      originalChunkId: c.chunkId,
+      tokensEstimate: c.tokensEstimate,
+    })),
+    plan: result.plan,
+    selectionPolicy: result.selectionPolicy,
+  };
+}
+
+/**
+ * Conservative heuristic used by the unified `ingest` tool in auto mode to
+ * decide whether a directory should be ingested as a project (with docs/agent
+ * instructions/context files) or as a plain directory tree. Only consulted in
+ * auto mode; explicit mode=item|project|directory always wins.
+ */
+function hasProjectMarker(dirPath: string): boolean {
+  // A directory containing any of these is treated as a project root. Note this
+  // intentionally includes CLAUDE.md and similar agent-instruction files: a dir
+  // that carries agent instructions is a project root, not a plain data tree.
+  const markers = [
+    'package.json',
+    '.git',
+    'pyproject.toml',
+    'Cargo.toml',
+    'go.mod',
+    'pom.xml',
+    'tsconfig.json',
+    'CLAUDE.md',
+  ];
+  return markers.some((marker) => existsSync(join(dirPath, marker)));
+}
+
+/**
+ * Self-healing response returned when an agent retrieves against an empty index.
+ * Replaces the bare empty envelope with an actionable hint, so the agent learns
+ * to ingest first instead of treating silence as "nothing matched".
+ *
+ * The hint names the canonical `ingest` tool (the only ingest tool an agent
+ * sees post-collapse) in path mode, since ListTools advertises just the 4
+ * canonical tools.
+ */
+function emptyIndexHint() {
+  return {
+    hint:
+      'The Spacefolding index is empty — no context has been ingested yet. Call the ingest tool (path mode, e.g. ingest with a project/directory path) to index a codebase first; retrieve_context / get_relevant_memory will then return relevant chunks.',
+    empty: true,
+    suggestedTools: ['ingest'],
+    chunks: [] as unknown[],
   };
 }
 
@@ -641,11 +1043,49 @@ export function validateArgs(args: Record<string, unknown> | undefined, toolName
     if (typeof args.text !== 'string' || args.text.length === 0) {
       return 'text must be a non-empty string';
     }
+    if (args.type !== undefined && !VALID_INGEST_TYPES.includes(args.type as typeof VALID_INGEST_TYPES[number])) {
+      return `type must be one of: ${VALID_INGEST_TYPES.join(', ')}`;
+    }
   }
 
   if (toolName === 'ingest_project' || toolName === 'ingest_directory') {
     if (typeof args.path !== 'string' || args.path.trim().length === 0) {
       return 'path must be a non-empty string';
+    }
+  }
+
+  // Canonical tools (WS2.2).
+  if (toolName === 'ingest') {
+    if (args.mode !== undefined && !VALID_INGEST_MODES.includes(args.mode as typeof VALID_INGEST_MODES[number])) {
+      return `mode must be one of: ${VALID_INGEST_MODES.join(', ')}`;
+    }
+    const mode = (args.mode as string | undefined) ?? 'auto';
+    // Content counts as "present" only when it's a non-empty string (mirrors the
+    // handler). An empty string with a valid path routes to directory/project.
+    const hasContent =
+      (typeof args.content === 'string' && args.content.length > 0) ||
+      (typeof args.text === 'string' && args.text.length > 0);
+    // item/auto-with-content needs content; project/directory/auto-with-path needs path.
+    if (mode === 'item' && !hasContent) {
+      return 'content (or text) must be a non-empty string for item ingest';
+    }
+    if ((mode === 'project' || mode === 'directory') && typeof args.path !== 'string') {
+      return 'path must be a non-empty string for project/directory ingest';
+    }
+    if (mode === 'auto' && !hasContent && typeof args.path !== 'string') {
+      return 'ingest requires either content (item) or path (project/directory)';
+    }
+    if (args.type !== undefined && !VALID_INGEST_TYPES.includes(args.type as typeof VALID_INGEST_TYPES[number])) {
+      return `type must be one of: ${VALID_INGEST_TYPES.join(', ')}`;
+    }
+  }
+
+  if (toolName === 'get_context_for_task') {
+    if (typeof args.task !== 'string' || args.task.trim().length === 0) {
+      return 'task must be a non-empty string';
+    }
+    if (args.task.length > MAX_TASK_TEXT_LENGTH) {
+      return `task exceeds ${MAX_TASK_TEXT_LENGTH} characters`;
     }
   }
 
@@ -758,7 +1198,10 @@ export function validateArgs(args: Record<string, unknown> | undefined, toolName
     }
   }
 
-  if (args.mode !== undefined) {
+  if (args.mode !== undefined && toolName !== 'ingest') {
+    // Note: `ingest` has its own `mode` param (auto/item/project/directory),
+    // validated above against VALID_INGEST_MODES. The retrieval-mode enum here
+    // applies to retrieve_context / iterative_retrieve / get_context_for_task.
     if (!VALID_MODES.includes(args.mode as string)) {
       return `mode must be one of: ${VALID_MODES.join(', ')}`;
     }

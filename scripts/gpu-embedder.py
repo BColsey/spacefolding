@@ -33,6 +33,13 @@ def main():
     parser.add_argument('--model', default='all-mpnet-base-v2', help='Sentence-transformer model name')
     parser.add_argument('--device', default='cuda', help='Device: cuda, cpu')
     parser.add_argument('--max-seq-length', type=int, default=None, help='Override max sequence length')
+    parser.add_argument(
+        '--seed',
+        type=int,
+        default=int(os.environ['GPU_EMBEDDING_SEED']) if os.environ.get('GPU_EMBEDDING_SEED') else None,
+        help='Best-effort determinism seed (torch/cuda/cudnn). GPU inference still has residual '
+             'non-determinism, so publishable claims must report mean+/-CI over multiple runs.',
+    )
     # The recommended default (Salesforce/SFR-Embedding-Code-400M_R) ships custom
     # modeling code and fails to load without this. Defaults ON because the
     # documented default requires it; set GPU_EMBEDDING_TRUST_REMOTE_CODE=0 to opt
@@ -44,6 +51,20 @@ def main():
         help='Allow models that ship custom code (required by e.g. SFR-Embedding-Code).',
     )
     args = parser.parse_args()
+
+    # Best-effort determinism. GPU inference (cudnn autotuning, floating-point
+    # atomics) is NOT bit-exact even with this set, so this only narrows run-to-run
+    # variance. Publishable claims must still report mean+/-CI over several runs,
+    # never a single seeded number.
+    if args.seed is not None:
+        try:
+            import torch
+            torch.manual_seed(args.seed)
+            torch.cuda.manual_seed_all(args.seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        except ImportError:
+            pass
 
     # Load model
     try:

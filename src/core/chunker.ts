@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { ChunkType, ContextChunk, TokenEstimator } from '../types/index.js';
 import { classifyChunk } from './classifier.js';
 import { splitCodeWithTreeSitter } from './tree-sitter-chunker.js';
+import { splitCodeWithWebTreeSitter } from './web-tree-sitter-chunker.js';
 
 export interface ChunkingConfig {
   maxTokens: number;
@@ -43,8 +44,10 @@ export function maybeSplit(
 
 /**
  * Async version that tries tree-sitter structural splitting when
- * CHUNK_TREE_SITTER=1 is set. Falls back to regex if unavailable.
- * Returns null if the text doesn't need splitting.
+ * CHUNK_TREE_SITTER is set: `1` uses the Python structural-indexer sidecar,
+ * `js` uses the pure-JS web-tree-sitter (WASM) source with no subprocess. Either
+ * falls back to the regex code splitter if unavailable. Returns null if the text
+ * doesn't need splitting.
  */
 export async function maybeSplitAsync(
   text: string,
@@ -64,15 +67,22 @@ export async function maybeSplitAsync(
     ? detectStrategy(overrides.path, overrides.language, text)
     : config.strategy;
 
-  // Try tree-sitter for code when enabled
-  if (strategy === 'code' && process.env.CHUNK_TREE_SITTER === '1') {
-    const treeSitterPieces = await splitCodeWithTreeSitter(
-      text, config.maxTokens, config.overlapTokens, tokenEstimator, overrides.language
-    );
-    if (treeSitterPieces && treeSitterPieces.length > 1) {
-      return buildSplitResult(text, treeSitterPieces, config, tokenEstimator, overrides, 'tree-sitter');
+  // Try AST-boundary splitting for code when enabled. CHUNK_TREE_SITTER=1 uses
+  // the Python sidecar; CHUNK_TREE_SITTER=js uses pure-JS web-tree-sitter (WASM,
+  // no subprocess). Both fall through to the regex splitter on any failure.
+  const astMode = process.env.CHUNK_TREE_SITTER;
+  if (strategy === 'code' && (astMode === '1' || astMode === 'js')) {
+    const astPieces = astMode === 'js'
+      ? await splitCodeWithWebTreeSitter(
+          text, config.maxTokens, config.overlapTokens, tokenEstimator, overrides.language
+        )
+      : await splitCodeWithTreeSitter(
+          text, config.maxTokens, config.overlapTokens, tokenEstimator, overrides.language
+        );
+    if (astPieces && astPieces.length > 1) {
+      return buildSplitResult(text, astPieces, config, tokenEstimator, overrides, 'tree-sitter');
     }
-    // Fall through to regex if tree-sitter returns null or only 1 piece
+    // Fall through to regex if the AST source returns null or only 1 piece
   }
 
   return doSplit(text, config, tokenEstimator, overrides);

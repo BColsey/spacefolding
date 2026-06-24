@@ -17,7 +17,7 @@ import { dirname } from 'node:path';
 import { MIGRATIONS, CURRENT_VERSION } from './schema.js';
 import { cosineSimilarity } from '../providers/deterministic-embedding.js';
 import type { VectorIndex } from './vector-index.js';
-import { BruteForceVectorIndex, tryCreateSqliteVecIndex } from './vector-index.js';
+import { BruteForceVectorIndex, tryCreateSqliteVecIndex, VEC_META_TABLE } from './vector-index.js';
 
 export class SQLiteRepository implements StorageProvider {
   private db: Database.Database;
@@ -28,6 +28,17 @@ export class SQLiteRepository implements StorageProvider {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
+    // The PostToolUse re-index hook runs in a SEPARATE process that opens this
+    // same per-cwd DB while the MCP server holds it. Without a busy timeout a
+    // colliding write throws SQLITE_BUSY immediately; with it, better-sqlite3
+    // retries for up to 5s before giving up. Set first, before any migration
+    // write, so the very first transaction is already protected.
+    this.db.pragma('busy_timeout = 5000');
+  }
+
+  /** Read a connection-level PRAGMA value (e.g. 'busy_timeout'). Diagnostics/tests. */
+  pragma(name: string): unknown {
+    return this.db.pragma(name, { simple: true });
   }
 
   init(): void {
@@ -418,7 +429,8 @@ export class SQLiteRepository implements StorageProvider {
       chunkId: string,
       structuralScore: number,
       dependencyBoost: number,
-      reason: string
+      reason: string,
+      flags?: { symbolExact?: boolean; pathExact?: boolean }
     ) => {
       if (structuralScore <= 0 && dependencyBoost <= 0) return;
       const existing = scores.get(chunkId) ?? {
@@ -427,9 +439,15 @@ export class SQLiteRepository implements StorageProvider {
         structuralScore: 0,
         dependencyBoost: 0,
         reasons: [],
+        symbolExact: false,
+        pathExact: false,
       };
       existing.structuralScore += structuralScore;
       existing.dependencyBoost = Math.min(0.12, existing.dependencyBoost + dependencyBoost);
+      // Typed match flags are set independently of the reason string, which is
+      // capped at 6 entries — so an exact match is never silently lost to the cap.
+      if (flags?.symbolExact) existing.symbolExact = true;
+      if (flags?.pathExact) existing.pathExact = true;
       if (!existing.reasons.includes(reason) && existing.reasons.length < 6) {
         existing.reasons.push(reason);
       }
@@ -450,7 +468,7 @@ export class SQLiteRepository implements StorageProvider {
       for (const fragment of query.pathFragments) {
         const lowerFragment = fragment.toLowerCase();
         if (lowerPath === lowerFragment || lowerPath.endsWith(`/${lowerFragment}`)) {
-          addScore(row.id, 3.2, 0, `path exact match: ${fragment}`);
+          addScore(row.id, 3.2, 0, `path exact match: ${fragment}`, { pathExact: true });
         } else if (lowerPathStem === lowerFragment || lowerPathStem.endsWith(`/${lowerFragment}`)) {
           addScore(row.id, 2.6, 0, `path stem exact match: ${fragment}`);
         } else if (basenameStem === lowerFragment || basename === lowerFragment) {
@@ -498,7 +516,7 @@ export class SQLiteRepository implements StorageProvider {
       }
       if (exactIdentifiers.has(normalizedName) || quotedTerms.has(normalizedName)) {
         const contractBoost = row.kind === 'interface' || row.kind === 'type' ? 0.4 : 0;
-        addScore(row.chunkId, (row.isExported ? 3.4 : 3.1) + contractBoost, 0, `symbol exact match: ${row.name}`);
+        addScore(row.chunkId, (row.isExported ? 3.4 : 3.1) + contractBoost, 0, `symbol exact match: ${row.name}`, { symbolExact: true });
         continue;
       }
 
@@ -645,6 +663,23 @@ export class SQLiteRepository implements StorageProvider {
       )
       .all(model) as Array<{ id: string }>;
     return rows.map((r) => r.id);
+  }
+
+  /**
+   * Number of times the derived vec0 cache has been (re)built. Used by tests and
+   * ops to confirm the index is reused — not rebuilt — across reopenings at a
+   * constant dimension. Returns 0 when sqlite-vec is unavailable (the in-memory
+   * brute-force fallback has no persistence to reuse).
+   */
+  getVectorIndexRebuildCount(): number {
+    try {
+      const row = this.db
+        .prepare(`SELECT value FROM ${VEC_META_TABLE} WHERE key = 'rebuildCount'`)
+        .get() as { value: string } | undefined;
+      return row ? Number(row.value) : 0;
+    } catch {
+      return 0;
+    }
   }
 
   // ── Full-Text Search ───────────────────────────────────────

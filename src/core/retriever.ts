@@ -247,9 +247,11 @@ export class HybridRetriever {
           // score is normally in [0,1]; multiplying by ~3 top-rank contributions
           // lets a confident reranker move a chunk a few ranks. An exact
           // structural match adds ~2 top-rank contributions on top.
-          const exactStructuralBoost = data.reasons.some((reason) =>
-            reason.startsWith('symbol exact match') || reason.startsWith('path exact match')
-          ) ? RRF_TOP_CONTRIBUTION * 2 : 0;
+          // Typed exact-match flag (uncapped) replaces reason-string prefix matching,
+          // so the exact-identifier boost survives a structural-indexer reason reword
+          // or the 6/8-entry reason cap.
+          const exactStructuralBoost = (data.symbolExact || data.pathExact)
+            ? RRF_TOP_CONTRIBUTION * 2 : 0;
           const rerankReasons = [];
           if (rerank) rerankReasons.push(`reranker ${rerank.reason}: ${rerankerScore.toFixed(3)}`);
           if (exactStructuralBoost > 0) {
@@ -367,9 +369,7 @@ export class HybridRetriever {
       const exactIdentifier = result.reasons.some((reason) =>
         isExactIdentifierSeedReason(reason, strongIdentifiers)
       );
-      const exactPath = structuralQuery.pathFragments.length > 0 && result.reasons.some((reason) =>
-        reason.startsWith('path exact match')
-      );
+      const exactPath = structuralQuery.pathFragments.length > 0 && !!result.pathExact;
       const boost = exactIdentifier
         ? 12 + result.structuralScore
         : exactPath
@@ -385,6 +385,9 @@ export class HybridRetriever {
       existing.fusedScore += boost;
       existing.sources.add('structural');
       existing.sourceScores.structural = (existing.sourceScores.structural ?? 0) + boost;
+      // Propagate the typed exact-match flags (uncapped) into the fused candidate.
+      if (result.symbolExact) existing.symbolExact = true;
+      if (result.pathExact) existing.pathExact = true;
       for (const reason of result.reasons) {
         if (!existing.reasons.includes(reason) && existing.reasons.length < 8) existing.reasons.push(reason);
       }
@@ -643,6 +646,8 @@ interface FusedCandidate {
   sourceScores: Partial<Record<RetrievalSource, number>>;
   reasons: string[];
   rerankReasons?: string[];
+  symbolExact?: boolean;
+  pathExact?: boolean;
 }
 
 const STRONG_IDENTIFIER_STOP_WORDS = new Set([
@@ -1303,6 +1308,32 @@ function isSingularPluralMatch(term: string, fieldPart: string): boolean {
   return false;
 }
 
+/**
+ * Merge text-source result sets (FTS5/BM25 + the deterministic lexical fallback)
+ * by summing scores per chunk, then sorting descending.
+ *
+ * WS0.3 proposed replacing this raw sum with a rank-based / normalized merge: the
+ * two arms are on different scales (FTS5 negated-BM25 reals ~5–20, the lexical
+ * fallback small integers 2/3/5…), so the sum lets BM25 magnitude dominate the
+ * order and double-counts a chunk present in both. We tried both replacements
+ * (weighted RRF; max-normalized weighted sum, lexical weight swept 0.2–1.0) and a
+ * controlled same-session GPU before/after on django/typescript/rust. EVERY
+ * replacement regressed the durable GPU structural Hits@1 edge by 0.01–0.02 on all
+ * three corpora, because the two regimes want opposite things from the lexical
+ * arm: deterministic `fts` recall wants it weighted HIGH (it adds path/substring
+ * recall FTS5's unindexed-path tokenizer misses), while GPU `structural` top-1
+ * wants it weighted LOW (it perturbs the top-1 the edge depends on). The raw sum
+ * is a local optimum — BM25 magnitude dominates the ordering (protecting top-1)
+ * while the lexical arm still contributes union members (recall) — so it is KEPT
+ * by an evidence-backed decision. See benchmarks/COMMIT-DERIVED-FINDINGS.md
+ * ("WS0.3 text-source merge"). A future merge may beat it only if it preserves
+ * BM25 top-1 dominance without losing lexical recall (e.g. BM25-primary with
+ * lexical-only chunks appended), validated on the GPU harness — not on the
+ * deterministic gate alone, which cannot see the GPU-regime top-1 shift.
+ *
+ * Only the output ORDER is consumed downstream (`addSource` re-ranks by score),
+ * so the summed magnitude is a ranking key, not a calibrated score.
+ */
 function mergeRawResults(resultSets: Array<Array<{ chunkId: string; score: number }>>): { chunkId: string; score: number }[] {
   const merged = new Map<string, number>();
   for (const results of resultSets) {

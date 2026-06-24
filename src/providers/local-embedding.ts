@@ -1,9 +1,12 @@
 import type { EmbeddingProvider } from '../types/index.js';
 import { pipeline, env } from '@huggingface/transformers';
+import { ensureModelCacheDir } from './model-cache.js';
 
-// Configure local model caching
+// Configure local model caching. The default is a SHARED GLOBAL cache
+// ($XDG_CACHE_HOME/spacefolding/models) so the ~100MB embedding model downloads
+// once per machine and is reused across projects. MODEL_PATH still overrides.
 env.allowLocalModels = true;
-env.localModelPath = process.env.MODEL_PATH ?? './data/models';
+env.localModelPath = ensureModelCacheDir();
 env.useBrowserCache = false;
 
 type EmbeddingPipeline = Awaited<ReturnType<typeof pipeline<'feature-extraction'>>>;

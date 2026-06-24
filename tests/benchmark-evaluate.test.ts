@@ -8,9 +8,14 @@ import {
   bm25Baseline,
   bm25BodyBaseline,
   buildEvaluationReport,
+  computeGrepTokenCost,
+  extractGrepRounds,
+  grepBaseline,
+  grepProseTerms,
   loadBenchmarkDataset,
   parseBenchmarkDataset,
   parseArgs,
+  recallAtBudget,
   resolveStrategies,
   scoreBm25f,
   walkDir,
@@ -18,7 +23,11 @@ import {
   type EvalResult,
   type Metrics,
   type StrategySummary,
+  type TokenCost,
 } from '../benchmarks/evaluate.ts';
+import { parseStructuralQuery } from '../src/core/query-planner.ts';
+import { DeterministicTokenEstimator } from '../src/providers/token-estimator.ts';
+import { materializeBenchmarkCorpus } from '../benchmarks/temp-artifacts.ts';
 
 type Chunk = { id: string; text: string; path?: string };
 
@@ -159,10 +168,12 @@ describe('retrieval benchmark report', () => {
       'bm25body',
       'path-match',
       'fts',
+      'grep',
       'vector',
       'symbol-only',
       'structural',
     ]);
+    expect(resolveStrategies('grep')).toEqual(['grep']);
     expect(resolveStrategies('structural')).toEqual(['structural']);
     expect(() => resolveStrategies('bogus')).toThrow(
       'Unknown benchmark strategy "bogus"'
@@ -383,4 +394,116 @@ describe('file-level BM25F baseline', () => {
     const direct = scoreBm25f(bmTask('needle'), corpus, BM25F_PARAMS);
     expect(direct).toEqual(['a.ts']);
   });
+});
+
+describe('agentic-grep baseline (Phase 8 head-to-head)', () => {
+  it('extracts distinctive prose terms and drops stopwords/short words', () => {
+    const terms = grepProseTerms('Find the token verification logic for the user session');
+    expect(terms).toContain('token');
+    expect(terms).toContain('verification');
+    // stopwords ('the', 'for') and len<=3 words ('user' is 4, kept; 'the' dropped) excluded
+    expect(terms).not.toContain('the');
+    expect(terms).not.toContain('for');
+  });
+
+  it('builds the identifier → subtoken → prose round ladder, capped by maxRounds', () => {
+    const task: BenchmarkTask = {
+      id: 'g1', task: 'Refactor the computeTokenCost helper for retrieval',
+      intent: 'feature', relevant_files: [], relevant_types: [], relevant_keywords: [], irrelevant_files: [],
+    };
+    const full = extractGrepRounds(task, parseStructuralQuery, 3);
+    expect(full.length).toBeGreaterThanOrEqual(1);
+    expect(full[0].label).toBe('identifier'); // strongest signal first
+    // capping to 1 round keeps only the identifier round
+    const one = extractGrepRounds(task, parseStructuralQuery, 1);
+    expect(one).toHaveLength(1);
+    expect(one[0].label).toBe('identifier');
+  });
+
+  it('is gold-blind: the round plan is invariant to relevant_files', () => {
+    const base = {
+      id: 'g2', task: 'Fix the retrieveContext method', intent: 'debug',
+      relevant_types: [], relevant_keywords: [], irrelevant_files: [],
+    } as BenchmarkTask;
+    const withGold: BenchmarkTask = { ...base, relevant_files: ['src/retrieve.ts'] };
+    const noGold: BenchmarkTask = { ...base, relevant_files: ['src/other.ts'] };
+    // The query plan must depend ONLY on the task text, never on which file is gold.
+    expect(extractGrepRounds(withGold, parseStructuralQuery, 3))
+      .toEqual(extractGrepRounds(noGold, parseStructuralQuery, 3));
+  });
+
+  it('computes tokensToFirstHit under the matched-context model + whole-file secondary', () => {
+    const whole = new Map([['a.ts', 1000], ['b.ts', 2000], ['c.ts', 3000]]);
+    const ctx = new Map([['a.ts', 60], ['b.ts', 120], ['c.ts', 180]]);
+    const ranked = ['a.ts', 'b.ts', 'c.ts'];
+    // gold at rank 2 (b.ts): context cumulative = 60+120 = 180; whole-file = 1000+2000 = 3000
+    const hit = computeGrepTokenCost(ranked, whole, ctx, new Set(['b.ts']));
+    // headline = matched-context model (what an agent skimming rg output reads)
+    expect(hit.tokensToFirstHit).toBe(180);
+    expect(hit.tokensByRank).toEqual([60, 180, 360]);
+    expect(hit.totalTokens).toBe(360);
+    expect(hit.chunksReturned).toBe(3);
+    // secondary = whole-file model (the chunk-isolation framing, kept for comparison)
+    expect(hit.wholeFileTokensToFirstHit).toBe(3000);
+    expect(hit.wholeFileTokensByRank).toEqual([1000, 3000, 6000]);
+    expect(hit.wholeFileTotalTokens).toBe(6000);
+    // no gold surfaced → both models null
+    const miss = computeGrepTokenCost(ranked, whole, ctx, new Set(['zzz.ts']));
+    expect(miss.tokensToFirstHit).toBeNull();
+    expect(miss.wholeFileTokensToFirstHit).toBeNull();
+  });
+
+  it('computes recall@budget from the cumulative token curve', () => {
+    const tokenCost: TokenCost = {
+      chunksReturned: 3, totalTokens: 600, tokensToFirstHit: 300,
+      avgChunkTokens: 200, tokensByRank: [100, 300, 600],
+    };
+    // gold at ranks 1 and 3 (relevantCount=2): at budget 100 only rank1 (≤100); at
+    // 600 both; at 350 ranks 1,2 region but only gold ranks 1,3 → rank3(600)>350 miss.
+    expect(recallAtBudget(tokenCost, [1, 3], 2, 100)).toBe(0.5);  // only rank1 within
+    expect(recallAtBudget(tokenCost, [1, 3], 2, 600)).toBe(1);    // both within
+    expect(recallAtBudget(tokenCost, [1, 3], 2, 350)).toBe(0.5);  // rank3(600) over
+  });
+
+  it('runs real ripgrep end-to-end: surfaces the gold file, gold-blind + deterministic', async () => {
+    const estimator = new DeterministicTokenEstimator();
+    const corpus = [
+      { path: 'src/gold.ts', content: 'export function computeTokenCost(ranked, relevant) { return 0; }\n' },
+      { path: 'src/distractor.ts', content: 'export function unrelatedThing() { return 1; }\n' },
+      { path: 'src/other.ts', content: '// misc helpers for the app\n' },
+    ];
+    const sources = corpus.map((f) => ({ path: f.path, getContent: () => f.content }));
+    const dir = await materializeBenchmarkCorpus(sources, (t) => estimator.estimate(t));
+    try {
+      const base = {
+        id: 'g3', task: 'Find the computeTokenCost function', intent: 'feature',
+        relevant_types: [], relevant_keywords: [], irrelevant_files: [],
+      } as BenchmarkTask;
+      const ctx = (relevant_files: string[]) => ({
+        corpusDir: dir.path,
+        tokensPath: dir.tokensPath,
+        parseStructuralQuery,
+        rounds: 3,
+        budget: 8000,
+        relevantSet: new Set(relevant_files),
+      });
+      // Correct gold → the file is surfaced and tokensToFirstHit is finite.
+      const correct = await grepBaseline({ ...base, relevant_files: ['src/gold.ts'] }, ctx(['src/gold.ts']));
+      expect(correct.paths).toContain('src/gold.ts');
+      expect(correct.tokenCost.tokensToFirstHit).not.toBeNull();
+      expect(correct.tokenCost.tokensByRank?.length).toBe(correct.paths.length);
+
+      // GOLD-BLINDNESS: a different (wrong) gold label must not change the ranking.
+      const wrongGold = await grepBaseline({ ...base, relevant_files: ['src/distractor.ts'] }, ctx(['src/distractor.ts']));
+      expect(wrongGold.paths).toEqual(correct.paths);
+      // ...but it DOES change tokensToFirstHit (gold now at a different rank, or null).
+      expect(wrongGold.tokenCost.tokensToFirstHit).not.toBe(correct.tokenCost.tokensToFirstHit);
+
+      // DETERMINISM: identical inputs reproduce the ranking exactly.
+      const again = await grepBaseline({ ...base, relevant_files: ['src/gold.ts'] }, ctx(['src/gold.ts']));
+      expect(again.paths).toEqual(correct.paths);
+    } finally {
+      dir.cleanup();
+    }
+  }, 30_000);
 });

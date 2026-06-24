@@ -26,21 +26,16 @@ jobs:
   acceptance-benchmark:
     name: Retrieval acceptance gate (informational)
     runs-on: ubuntu-latest
-    # STILL NON-BLOCKING — but now for an honest, documented reason (WS0.6/Task 2).
-    # The gate itself is fixed: the retrieval gate is the composite condition
-    # (structural hybrid non-inferior to the strongest lexical baseline — BM25F /
-    # FTS / keyword — on recall@10 AND strictly beating FTS on hits@1, via paired
-    # bootstrap CIs), replacing the old `structural beats keyword` strawman; the
-    # E2E thresholds are recalibrated off the contaminated 0.95/0.35 to honest
-    # floors. It CANNOT be flipped to blocking on this (deterministic, CPU) runner:
-    # the composite claim depends on the GPU code-specific embedding model and is
-    # validated there (django/typescript) — see benchmarks/COMMIT-DERIVED-FINDINGS.md.
-    # With deterministic (hash) embeddings the vector arm ≈ random, so the gate
-    # fails honestly on most commit-derived corpora; with the general `local` bge
-    # model it fails too (over-trusting a weak vector arm lowers top-1). Blocking
-    # requires either a GPU-code-model CI runner or narrowing the blocking claim to
-    # the regime-robust subset. Do NOT set continue-on-error:false by lowering the
-    # bar. Until then it runs for visibility only.
+    # INFORMATIONAL (non-blocking) — the FULL composite gate, for visibility.
+    # The retrieval gate is the composite condition (structural hybrid non-inferior
+    # to the strongest lexical baseline — BM25F / FTS / keyword — on recall@10 AND
+    # strictly beating FTS on hits@1, via paired bootstrap CIs); the E2E thresholds
+    # are the honest 0.70/0.25 floors. This composite claim is regime-dependent —
+    # it holds on the GPU code-embedding model (django/typescript) and FAILS on the
+    # deterministic provider used here, so it cannot be the blocking gate on this
+    # CPU runner. The regime-robust BLOCKING subset (non-regression vs the pinned
+    # deterministic baseline + harness health) runs in the acceptance-blocking job
+    # below; see docs/decisions/adr-001-regime-robust-blocking-gate.md.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -63,3 +58,40 @@ jobs:
           path: |
             eval.json
             e2e.json
+
+  acceptance-blocking:
+    name: Retrieval non-regression gate (BLOCKING, deterministic)
+    runs-on: ubuntu-latest
+    # BLOCKING — the regime-robust subset of the acceptance gate that holds on the
+    # deterministic provider (no GPU, no superiority claim). It is a NON-REGRESSION
+    # guard against the pinned deterministic baseline
+    # (benchmarks/baselines/deterministic-baseline.json): all 8 retrieval strategies
+    # reported, composite contrasts computed, and structural/fts/bm25/keyword
+    # recall@10 & hits@1 not below baseline − margin. This is NOT the composite
+    # superiority claim — that is regime-dependent (holds on the GPU code-embedding
+    # model only) and stays informational in the acceptance-benchmark job above.
+    # Deterministic hash embeddings make the baseline exact, so this guard is
+    # non-flaky. The self-corpus is a FROZEN snapshot (benchmarks/fixtures/self-corpus.json,
+    # via --corpus-snapshot) so the BM25F/FTS reference does not drift as the repo
+    # grows — only a deliberate re-freeze (benchmarks/freeze-self-corpus.ts) + re-pin
+    # changes it. See docs/decisions/adr-001-regime-robust-blocking-gate.md.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Deterministic retrieval eval (frozen self-corpus, depth 200, matches the pinned baseline)
+        run: |
+          BENCHMARK_RETRIEVAL_DEPTH=200 npx tsx benchmarks/evaluate.ts --corpus-snapshot benchmarks/fixtures/self-corpus.json --strategy all --json > eval.json
+      - name: Blocking non-regression gate
+        run: |
+          npx tsx benchmarks/check-acceptance.ts --blocking-subset --retrieval-json eval.json
+      - name: Upload blocking-gate eval JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blocking-gate-results
+          path: eval.json

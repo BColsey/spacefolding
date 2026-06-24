@@ -62,3 +62,67 @@ describe('storage schema migrations', () => {
     repo.close();
   });
 });
+
+describe('FTS5 external-content integrity (delete + VACUUM)', () => {
+  // Regression for the rowid/content_rowid corruption class: chunks_fts is an
+  // external-content table (content='chunks', content_rowid='rowid'), and the
+  // chunks rowid is implicit (id is TEXT PRIMARY KEY, not an INTEGER PRIMARY KEY
+  // alias). A VACUUM that renumbers implicit rowids would detach FTS rows from
+  // their chunks. This asserts FTS stays correct across a delete + VACUUM cycle.
+  it('keeps FTS results correct after deleting a chunk and vacuuming', () => {
+    const dbPath = testDbPath();
+    const repo = createRepository(dbPath);
+    const store = (id: string, text: string, path: string) =>
+      repo.storeChunk({
+        id,
+        source: 'test',
+        type: 'code',
+        text,
+        timestamp: Date.now(),
+        path,
+        tokensEstimate: 4,
+        childrenIds: [],
+        metadata: {},
+      });
+
+    store('alpha', 'export function alphaNeedle() { return 1; }', 'src/alpha.ts');
+    store('beta', 'export function betaNeedle() { return 2; }', 'src/beta.ts');
+    store('gamma', 'export function gammaNeedle() { return 3; }', 'src/gamma.ts');
+
+    expect(repo.searchByText('alphaNeedle', 5).map((r) => r.chunkId)).toContain('alpha');
+    expect(repo.searchByText('betaNeedle', 5).map((r) => r.chunkId)).toContain('beta');
+    expect(repo.searchByText('gammaNeedle', 5).map((r) => r.chunkId)).toContain('gamma');
+
+    // Delete through the repo (fires the FTS delete trigger), then VACUUM on a
+    // separate connection to simulate a maintenance compaction.
+    repo.deleteChunk('beta');
+    repo.close();
+
+    const db = new Database(dbPath);
+    db.pragma('foreign_keys = ON');
+    db.exec('VACUUM');
+    db.close();
+
+    const reopened = createRepository(dbPath);
+    expect(reopened.searchByText('betaNeedle', 5).map((r) => r.chunkId)).not.toContain('beta');
+    expect(reopened.searchByText('alphaNeedle', 5).map((r) => r.chunkId)).toContain('alpha');
+    expect(reopened.searchByText('gammaNeedle', 5).map((r) => r.chunkId)).toContain('gamma');
+    reopened.close();
+  });
+});
+
+describe('SQLiteRepository busy_timeout (hook/server concurrency)', () => {
+  it('sets PRAGMA busy_timeout=5000 on the repo connection so the re-index hook process does not throw SQLITE_BUSY against the live server connection', () => {
+    const dbPath = testDbPath();
+    const repo = createRepository(dbPath);
+    repo.init();
+    // Assert on the repository's OWN connection. busy_timeout is connection-
+    // local (not persisted to the file), so a separate probe connection could
+    // only ever observe its own value — this assertion is what actually proves
+    // the constructor set it.
+    expect(repo.pragma('busy_timeout')).toBe(5000);
+    // Smoke: the repo is fully usable after the pragma (no open-time failure).
+    expect(repo.getAllChunks()).toEqual([]);
+    repo.close();
+  });
+});

@@ -18,6 +18,7 @@ import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
 import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
 import { startMCPServer } from '../mcp/server.js';
+import { createIngestPolicy } from '../security/ingest-policy.js';
 import { startWebServer } from '../web/server.js';
 import { exportState, importState } from './commands/export-import.js';
 import { lstatSync, readFileSync } from 'node:fs';
@@ -161,13 +162,13 @@ function createCompressionProvider() {
   return new DeterministicCompressionProvider();
 }
 
-function getEmbeddingProviderName(): EmbeddingProviderName {
+export function getEmbeddingProviderName(): EmbeddingProviderName {
   const provider = process.env.EMBEDDING_PROVIDER;
   if (provider === 'gpu' || provider === 'deterministic') return provider;
   return 'local';
 }
 
-function getDefaultEmbeddingModel(providerName: EmbeddingProviderName = getEmbeddingProviderName()): string {
+export function getDefaultEmbeddingModel(providerName: EmbeddingProviderName = getEmbeddingProviderName()): string {
   if (providerName === 'gpu') {
     // Code-specific default for the high-quality path. Open weights, strong on
     // code retrieval, and CPU-feasible (set GPU_EMBEDDING_DEVICE=cpu).
@@ -211,7 +212,7 @@ function createEmbeddingProviderConfig(modelOverride?: string): EmbeddingProvide
   };
 }
 
-function createPipeline(dbPath: string): PipelineOrchestrator {
+export function createPipeline(dbPath: string): PipelineOrchestrator {
   const storage = createRepository(dbPath);
   const tokenEstimator = new DeterministicTokenEstimator();
   const embedding = createEmbeddingProviderConfig();
@@ -244,22 +245,12 @@ async function runDownloadModel(modelId: string): Promise<void> {
   }
 }
 
-function getDownloadModelId(): string {
-  const rawArgs = process.argv.slice(2);
-  const modelIndex = rawArgs.indexOf('--model');
-  if (modelIndex >= 0 && rawArgs[modelIndex + 1]) {
-    return rawArgs[modelIndex + 1];
+function assertIngestAllowed(inputPath: string, cmd: Command): void {
+  const denied = createIngestPolicy().assertAllowed(inputPath);
+  if (denied) {
+    // Hard stop (exitCode 2) — this is the trust boundary, not an advisory.
+    cmd.error(chalk.red(denied), { exitCode: 2 });
   }
-  return process.env.EMBEDDING_MODEL ?? 'Xenova/bge-small-en-v1.5';
-}
-
-function warnIfOutsideWorkspace(inputPath: string): void {
-  if (inputPath.startsWith('/workspace') || inputPath.startsWith('./workspace')) {
-    return;
-  }
-  console.error(
-    chalk.yellow(`Warning: ingest path "${inputPath}" is outside /workspace`) 
-  );
 }
 
 function registerShutdown(pipeline: PipelineOrchestrator, webServer?: HttpServer): void {
@@ -312,7 +303,7 @@ export function buildCLI(): Command {
 
   program
     .name('spacefolding')
-    .description('Spacefolding — context compression and routing for coding agents')
+    .description('Spacefolding — local codebase context engine for coding agents')
     .version('0.1.0')
     .option('--db <path>', 'Database path', process.env.DB_PATH ?? './data/spacefolding.db')
     .action(async () => {
@@ -331,13 +322,17 @@ export function buildCLI(): Command {
     .option('--transport <type>', 'Transport type: stdio or sse', process.env.TRANSPORT ?? 'stdio')
     .option('--port <number>', 'Port for SSE transport', process.env.PORT ?? '3000')
     .action(async (opts, cmd) => {
-      if (process.argv.slice(2)[0] === 'download-model') {
-        await runDownloadModel(getDownloadModelId());
-        return;
-      }
-
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       await startServe(dbPath, opts.transport as 'stdio' | 'sse', parseInt(opts.port, 10));
+    });
+
+  program
+    .command('init')
+    .description('Set up Spacefolding for this project: pre-warm the model + write .mcp.json')
+    .option('--local', 'Write the local dist-path .mcp.json form (instead of the npx/published form)')
+    .action(async (opts) => {
+      const { runInit } = await import('./commands/init.js');
+      await runInit({ local: opts.local === true });
     });
 
   program
@@ -347,12 +342,11 @@ export function buildCLI(): Command {
     .option('--source <source>', 'Source label', 'file')
     .option('--type <type>', 'Chunk type override')
     .action(async (inputPath, opts, cmd) => {
+      assertIngestAllowed(inputPath, cmd);
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
 
       try {
-        warnIfOutsideWorkspace(inputPath);
-
         const stat = lstatSync(inputPath);
         if (stat.isSymbolicLink()) {
           console.log(chalk.yellow(`Skipped symlink ${inputPath}`));
@@ -385,10 +379,9 @@ export function buildCLI(): Command {
     .option('--include-tests', 'Include test/spec files and test directories', false)
     .option('--include-benchmarks', 'Include benchmark directories', false)
     .action(async (inputPath, opts, cmd) => {
+      assertIngestAllowed(inputPath, cmd);
       const dbPath = cmd.parent?.opts().db ?? process.env.DB_PATH ?? './data/spacefolding.db';
       const pipeline = createPipeline(dbPath);
-
-      warnIfOutsideWorkspace(inputPath);
 
       const result = await pipeline.ingestProject(inputPath, {
         includeDocs: opts.docs,
@@ -636,6 +629,27 @@ export function buildCLI(): Command {
 
       for (const symbol of symbols) {
         console.log(`${symbol.kind}\t${symbol.name}\tline ${symbol.line}`);
+      }
+    });
+
+  program
+    .command('hook')
+    .description('Claude Code hook entry points (SessionStart / PostToolUse / PreCompact)')
+    .argument('<event>', 'Hook event: session-start | reindex | pre-compact')
+    .allowExcessArguments(true)
+    .allowUnknownOption(true)
+    .action(async (event: string) => {
+      const { cliSessionStart, cliReindex, cliPreCompact } = await import('./commands/hooks.js');
+      if (event === 'session-start') {
+        await cliSessionStart();
+      } else if (event === 'reindex') {
+        await cliReindex();
+      } else if (event === 'pre-compact') {
+        await cliPreCompact();
+      } else {
+        console.error(chalk.red(`Unknown hook event: ${event}`));
+        console.error(chalk.gray('Valid events: session-start, reindex, pre-compact'));
+        process.exit(1);
       }
     });
 
