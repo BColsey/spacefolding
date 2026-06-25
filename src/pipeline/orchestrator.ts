@@ -9,6 +9,7 @@ import type {
   DependencyLink,
   EmbeddingProvider,
   RoutingDecision,
+  RerankerProvider,
   ScoreResult,
   TaskDescription,
 } from '../types/index.js';
@@ -82,14 +83,15 @@ export class PipelineOrchestrator {
     private dependencyAnalyzer: DependencyAnalyzer,
     private ingester: ContextIngester,
     private embeddingProvider?: EmbeddingProvider,
-    embeddingModel?: string
+    embeddingModel?: string,
+    reranker?: RerankerProvider,
   ) {
     this.embeddingModel = embeddingModel ?? defaultEmbeddingModelForProvider(embeddingProvider);
     this.structuralIndexer = new StructuralIndexer();
     this.retriever = new HybridRetriever(storage, embeddingProvider ?? {
       embed: async () => [],
       embedBatch: async () => [],
-    }, new DeterministicRerankerProvider());
+    }, reranker ?? new DeterministicRerankerProvider());
   }
 
   /** Run the full pipeline: score, route, compress, persist */
