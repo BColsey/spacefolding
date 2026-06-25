@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createMCPServer, TOOL_DEFINITIONS } from '../src/mcp/server.js';
+import { createMCPServer, TOOL_DEFINITIONS, validateArgs } from '../src/mcp/server.js';
 import { createRepository } from '../src/storage/repository.js';
 import { PipelineOrchestrator } from '../src/pipeline/orchestrator.js';
 import { ContextScorer } from '../src/core/scorer.js';
@@ -629,5 +629,39 @@ describe('Q3 structuredContent capability advertisement', () => {
       pipeline.close();
       void dbPath;
     }
+  });
+});
+
+describe('Q3 response_format (concise/detailed)', () => {
+  it('rejects an invalid response_format', () => {
+    const err = validateArgs({ query: 'x', response_format: 'verbose' }, 'retrieve_context');
+    expect(err).toMatch(/response_format must be one of/);
+  });
+
+  it('detailed (default) returns the full legacy body including diagnostics', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function detailedShape() { return 1; }', 'code', 'src/d.ts', 'typescript');
+      const result = await callTool(pipeline, 'retrieve_context', { query: 'detailed shape' });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(Array.isArray(parsed.chunks)).toBe(true);
+      expect(parsed).toHaveProperty('totalTokens');
+      expect(parsed).toHaveProperty('selectionPolicy');
+    } finally { pipeline.close(); void dbPath; }
+  });
+
+  it('concise drops heavy diagnostics from the model-visible text', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function conciseShape() { return 2; }', 'code', 'src/c.ts', 'typescript');
+      const result = await callTool(pipeline, 'retrieve_context', { query: 'concise shape', response_format: 'concise' });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(Array.isArray(parsed.chunks)).toBe(true);
+      const chunk = (parsed.chunks as Array<Record<string, unknown>>)[0];
+      expect(chunk).toHaveProperty('id');
+      expect(chunk).toHaveProperty('path');
+      expect(chunk).toHaveProperty('text');
+      expect(parsed).not.toHaveProperty('selectionPolicy');
+    } finally { pipeline.close(); void dbPath; }
   });
 });

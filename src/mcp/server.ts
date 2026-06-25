@@ -20,6 +20,7 @@ const MAX_CHUNK_IDS = 1_000;
 const VALID_STRATEGIES: readonly string[] = RETRIEVAL_STRATEGIES;
 const VALID_MODES: readonly string[] = RETRIEVAL_MODES;
 const VALID_RETRIEVE_FORMATS = ['json', 'pack'] as const;
+const VALID_RESPONSE_FORMATS = ['concise', 'detailed'] as const;
 const VALID_GRAPH_OPERATIONS = ['add', 'remove'] as const;
 const VALID_DEPENDENCY_TYPES = ['references', 'defines', 'summarizes', 'overrides', 'contains'] as const;
 /** The 9-value chunk-type enum shared by ingest_context (alias) and ingest (canonical). */
@@ -86,6 +87,11 @@ const RETRIEVE_CONTEXT_INPUT_SCHEMA = {
       type: 'boolean',
       description:
         'When true, fold score_context into the response: score+route all chunks into hot/warm/cold tiers for this query and include the routing (hot/warm/cold id lists + scores + reasons) in the response',
+    },
+    response_format: {
+      type: 'string',
+      enum: VALID_RESPONSE_FORMATS,
+      description: 'Model-visible text verbosity. detailed (default) returns the full legacy body. concise returns only id/path/type/text/tier per chunk and moves scores/diagnostics into structuredContent to cut tokens.',
     },
   },
   required: ['query'],
@@ -692,6 +698,7 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           const returnLimit = args!.returnLimit as number | undefined;
           const maxHops = args!.maxHops as number | undefined;
           const format = (args!.format as string | undefined) ?? 'json';
+          const responseFormat = (args!.response_format as string | undefined) ?? 'detailed';
           const explain = args!.explain === true;
           const score = args!.score === true;
 
@@ -1040,6 +1047,12 @@ export function validateArgs(args: Record<string, unknown> | undefined, toolName
   if (toolName === 'retrieve_context' && args.format !== undefined) {
     if (!VALID_RETRIEVE_FORMATS.includes(args.format as typeof VALID_RETRIEVE_FORMATS[number])) {
       return `format must be one of: ${VALID_RETRIEVE_FORMATS.join(', ')}`;
+    }
+  }
+
+  if (toolName === 'retrieve_context' && args.response_format !== undefined) {
+    if (!VALID_RESPONSE_FORMATS.includes(args.response_format as typeof VALID_RESPONSE_FORMATS[number])) {
+      return `response_format must be one of: ${VALID_RESPONSE_FORMATS.join(', ')}`;
     }
   }
 
