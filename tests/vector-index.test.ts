@@ -151,3 +151,105 @@ describe('SQLiteRepository vector index', () => {
     cleanupDb(path);
   });
 });
+
+import { BruteForceVectorIndex } from '../src/storage/vector-index.js';
+
+describe('VectorIndex.addMany interface', () => {
+  it('BruteForceVectorIndex.addMany inserts all items and keeps size() correct', () => {
+    const idx = new BruteForceVectorIndex(2);
+    const items = [
+      { chunkId: 'a', embedding: [1, 0] },
+      { chunkId: 'b', embedding: [0, 1] },
+      { chunkId: 'c', embedding: [1, 1] },
+    ];
+    idx.addMany(items);
+    expect(idx.size()).toBe(3);
+    expect(idx.search([0, 1], 3).map((r) => r.chunkId)).toEqual(['b', 'c', 'a']);
+    idx.add('d', [0, 0]);
+    expect(idx.size()).toBe(4);
+  });
+});
+
+import { tryCreateSqliteVecIndex } from '../src/storage/vector-index.js';
+import Database from 'better-sqlite3';
+
+// SqliteVecIndex hydrates from chunk_embeddings on first build (ensureTable()
+// returns true). A bare :memory: db lacks that table, so the constructor would
+// throw and tryCreateSqliteVecIndex would return null. Create the prerequisite
+// schema so the index can be constructed directly and its SQL spied on.
+function ensureChunkEmbeddingsTable(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chunk_embeddings (
+      chunkId TEXT PRIMARY KEY,
+      embedding BLOB NOT NULL,
+      model TEXT NOT NULL,
+      dimensions INTEGER NOT NULL,
+      timestamp INTEGER NOT NULL
+    )
+  `);
+}
+
+describe('SqliteVecIndex.addMany batched inserts', () => {
+  it('addMany of N items issues zero COUNT(*) scans and keeps size() correct', () => {
+    const db = new Database(':memory:');
+    ensureChunkEmbeddingsTable(db);
+    const index = tryCreateSqliteVecIndex(db, 2);
+    expect(index).not.toBeNull();
+
+    const counts = { countStar: 0 };
+    const realPrepare = db.prepare.bind(db);
+    db.prepare = ((sql: string) => {
+      if (/COUNT\(\*\)/i.test(sql)) counts.countStar += 1;
+      return realPrepare(sql);
+    }) as typeof db.prepare;
+
+    const items = [
+      { chunkId: 'a', embedding: [1, 0] },
+      { chunkId: 'b', embedding: [0, 1] },
+      { chunkId: 'c', embedding: [1, 1] },
+    ];
+    index!.addMany(items);
+
+    expect(counts.countStar).toBe(0);
+    expect(index!.size()).toBe(3);
+    expect(index!.search([0, 1], 3).map((r) => r.chunkId)).toEqual(['b', 'c', 'a']);
+    db.close();
+  });
+
+  it('addMany runs all inserts atomically — a mid-batch throw rolls back every row', () => {
+    // better-sqlite3's db.transaction() does not route BEGIN through db.exec,
+    // so a BEGIN spy cannot observe it. The load-bearing single-transaction
+    // contract is atomicity: if any item in the batch throws, NO item persists.
+    const db = new Database(':memory:');
+    ensureChunkEmbeddingsTable(db);
+    const index = tryCreateSqliteVecIndex(db, 2)!;
+    expect(() =>
+      index.addMany([
+        { chunkId: 'a', embedding: [1, 0] },
+        { chunkId: 'b', embedding: [0, 1, 0] }, // wrong dimension — throws mid-batch
+        { chunkId: 'c', embedding: [1, 1] },
+      ]),
+    ).toThrow();
+    // Whole batch rolled back: 'a' must NOT be in the index.
+    expect(index.size()).toBe(0);
+    expect(index.search([1, 0], 5).map((r) => r.chunkId)).toEqual([]);
+    db.close();
+  });
+
+  it('add() (single) issues zero COUNT(*) scans after refactor', () => {
+    const db = new Database(':memory:');
+    ensureChunkEmbeddingsTable(db);
+    const index = tryCreateSqliteVecIndex(db, 2)!;
+    const counts = { countStar: 0 };
+    const realPrepare = db.prepare.bind(db);
+    db.prepare = ((sql: string) => {
+      if (/COUNT\(\*\)/i.test(sql)) counts.countStar += 1;
+      return realPrepare(sql);
+    }) as typeof db.prepare;
+    index.add('a', [1, 0]);
+    index.add('b', [0, 1]);
+    expect(counts.countStar).toBe(0);
+    expect(index.size()).toBe(2);
+    db.close();
+  });
+});

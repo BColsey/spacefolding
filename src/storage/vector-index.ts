@@ -22,6 +22,7 @@ export interface VectorSearchResult {
 
 export interface VectorIndex {
   add(chunkId: string, embedding: number[]): void;
+  addMany(items: Array<{ chunkId: string; embedding: number[] }>): void;
   remove(chunkId: string): void;
   search(queryEmbedding: number[], topK: number): VectorSearchResult[];
   size(): number;
@@ -56,6 +57,8 @@ const VEC_TABLE = 'vec_chunk_embeddings';
 // and skip the O(n) reload.
 export const VEC_META_TABLE = 'spacefolding_vec_meta';
 
+const COUNT_META_KEY = 'count';
+
 class SqliteVecIndex implements VectorIndex {
   private db: Database.Database;
   private dimensionCount: number;
@@ -74,7 +77,9 @@ class SqliteVecIndex implements VectorIndex {
       // in sync with chunk_embeddings during normal operation, so skip the O(n)
       // reload — the scale fix: reopening a 60k-vector index no longer re-inserts
       // every vector on every startup.
-      this.count = this.loadCount();
+      const mirrored = this.readMeta(COUNT_META_KEY);
+      this.count = mirrored !== null ? Number(mirrored) : this.loadCount();
+      if (mirrored === null) this.setCount(this.count);
     }
   }
 
@@ -146,6 +151,11 @@ class SqliteVecIndex implements VectorIndex {
     return row?.cnt ?? 0;
   }
 
+  private setCount(n: number): void {
+    this.count = n;
+    this.writeMeta(COUNT_META_KEY, String(n));
+  }
+
   loadFromDb(): void {
     const rows = this.db
       .prepare('SELECT chunkId, embedding, dimensions FROM chunk_embeddings WHERE dimensions = ?')
@@ -160,7 +170,7 @@ class SqliteVecIndex implements VectorIndex {
       }
     });
     tx();
-    this.count = this.loadCount();
+    this.setCount(rows.length);
   }
 
   add(chunkId: string, embedding: number[]): void {
@@ -169,20 +179,47 @@ class SqliteVecIndex implements VectorIndex {
         `Embedding dimensions ${embedding.length} do not match vector index dimensions ${this.dimensionCount}`
       );
     }
+    const existed = this.db
+      .prepare(`SELECT 1 AS ok FROM ${VEC_TABLE} WHERE chunkId = ?`)
+      .get(chunkId) as { ok: number } | undefined;
     const buf = new Float32Array(embedding);
     this.db
-      .prepare(
-        `INSERT OR REPLACE INTO ${VEC_TABLE}(chunkId, embedding) VALUES (?, ?)`
-      )
+      .prepare(`INSERT OR REPLACE INTO ${VEC_TABLE}(chunkId, embedding) VALUES (?, ?)`)
       .run(chunkId, Buffer.from(buf.buffer));
-    this.count = this.loadCount();
+    this.setCount(this.count + (existed ? 0 : 1));
+  }
+
+  addMany(items: Array<{ chunkId: string; embedding: number[] }>): void {
+    if (items.length === 0) return;
+    const insert = this.db.prepare(
+      `INSERT OR REPLACE INTO ${VEC_TABLE}(chunkId, embedding) VALUES (?, ?)`
+    );
+    const exists = this.db.prepare(
+      `SELECT 1 AS ok FROM ${VEC_TABLE} WHERE chunkId = ?`
+    );
+    let added = 0;
+    const tx = this.db.transaction(() => {
+      for (const { chunkId, embedding } of items) {
+        if (embedding.length !== this.dimensionCount) {
+          throw new Error(
+            `Embedding dimensions ${embedding.length} do not match vector index dimensions ${this.dimensionCount}`
+          );
+        }
+        const existed = exists.get(chunkId) as { ok: number } | undefined;
+        const buf = new Float32Array(embedding);
+        insert.run(chunkId, Buffer.from(buf.buffer));
+        if (!existed) added += 1;
+      }
+    });
+    tx();
+    this.setCount(this.count + added);
   }
 
   remove(chunkId: string): void {
-    this.db
+    const info = this.db
       .prepare(`DELETE FROM ${VEC_TABLE} WHERE chunkId = ?`)
       .run(chunkId);
-    this.count = this.loadCount();
+    this.setCount(Math.max(0, this.count - info.changes));
   }
 
   search(queryEmbedding: number[], topK: number): VectorSearchResult[] {
@@ -236,6 +273,12 @@ export class BruteForceVectorIndex implements VectorIndex {
       );
     }
     this.entries.set(chunkId, embedding);
+  }
+
+  addMany(items: Array<{ chunkId: string; embedding: number[] }>): void {
+    for (const { chunkId, embedding } of items) {
+      this.add(chunkId, embedding);
+    }
   }
 
   remove(chunkId: string): void {
