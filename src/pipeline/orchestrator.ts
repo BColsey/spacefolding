@@ -704,12 +704,25 @@ export class PipelineOrchestrator {
       }
     }
 
+    const batch: Array<{ chunkId: string; embedding: number[] }> = [];
     for (const chunk of chunks) {
       if (chunk.metadata?.split) continue;
-      await this.storeChunkWithEmbedding(chunk);
+      this.storage.storeChunk(chunk);
+      await this.storeChunkStructure(chunk);
       if (chunk.parentId) {
         addContainsLink(chunk.parentId, chunk.id);
       }
+      if (this.embeddingProvider) {
+        try {
+          const embedding = await this.embeddingProvider.embed(chunk.text);
+          if (embedding.length > 0) batch.push({ chunkId: chunk.id, embedding });
+        } catch {
+          // Embedding failure is non-fatal — chunk already stored
+        }
+      }
+    }
+    if (batch.length > 0) {
+      this.storage.storeEmbeddingsMany(batch, this.embeddingModel);
     }
 
     for (const [fromId, toIds] of containsLinks) {
