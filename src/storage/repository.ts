@@ -598,6 +598,37 @@ export class SQLiteRepository implements StorageProvider {
     }
   }
 
+  storeEmbeddingsMany(
+    items: Array<{ chunkId: string; embedding: number[] }>,
+    model: string,
+  ): void {
+    if (items.length === 0) return;
+    const dim = items[0].embedding.length;
+    if (this.vectorIndex && this.vectorIndex.dimensions() !== dim) {
+      this.initVectorIndex(dim);
+    }
+    const insertEmb = this.db.prepare(
+      `INSERT OR REPLACE INTO chunk_embeddings (chunkId, embedding, model, dimensions, timestamp)
+       VALUES (?, ?, ?, ?, ?)`
+    );
+    const insertManyEmb = this.db.transaction((rows: Array<[string, Buffer, string, number, number]>) => {
+      for (const r of rows) insertEmb.run(...r);
+    });
+    const now = Date.now();
+    insertManyEmb(
+      items.map((it) => [
+        it.chunkId,
+        Buffer.from(new Float32Array(it.embedding).buffer),
+        model,
+        it.embedding.length,
+        now,
+      ]),
+    );
+    if (this.vectorIndex) {
+      this.vectorIndex.addMany(items);
+    }
+  }
+
   private deleteEmbedding(chunkId: string): void {
     this.db.prepare('DELETE FROM chunk_embeddings WHERE chunkId = ?').run(chunkId);
     if (this.vectorIndex) {

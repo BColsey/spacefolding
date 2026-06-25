@@ -253,3 +253,24 @@ describe('SqliteVecIndex.addMany batched inserts', () => {
     db.close();
   });
 });
+
+describe('SQLiteRepository storeEmbeddingsMany', () => {
+  it('storeEmbeddingsMany batches embeddings into the vector index', () => {
+    const repo = createRepository(testDbPath());
+    storeTestChunk(repo, 'a'); storeTestChunk(repo, 'b'); storeTestChunk(repo, 'c');
+    repo.initVectorIndex(2);
+    repo.storeEmbeddingsMany(
+      [
+        { chunkId: 'a', embedding: [1, 0] },
+        { chunkId: 'b', embedding: [0, 1] },
+        { chunkId: 'c', embedding: [1, 1] },
+      ],
+      'test-2d',
+    );
+    expect(repo.searchByVector([0, 1], 3).map((r) => r.chunkId)).toEqual(['b', 'c', 'a']);
+    storeTestChunk(repo, 'd');
+    repo.storeEmbedding('d', [0, 0], 'test-2d');
+    expect(repo.searchByVector([0, 0], 4).map((r) => r.chunkId)).toContain('d');
+    repo.close();
+  });
+});
