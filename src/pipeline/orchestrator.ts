@@ -467,6 +467,20 @@ export class PipelineOrchestrator {
     return this.storage.getAllChunks();
   }
 
+  /**
+   * Resolves a chunk id to its code symbols (name/kind/path) for human-readable
+   * file:symbol naming in MCP responses. Returns [] for unknown ids or chunks
+   * without stored structure. Used by the Q3 structuredContent/resource_link
+   * surface to turn opaque chunk IDs into agent-legible names.
+   */
+  getSymbolsForChunk(chunkId: string): import('../types/index.js').CodeSymbol[] {
+    try {
+      return this.storage.getCodeSymbols(chunkId);
+    } catch {
+      return [];
+    }
+  }
+
   /** Ingest all files in a directory tree */
   async ingestDirectory(
     dirPath: string,
