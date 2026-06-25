@@ -27,23 +27,14 @@ export interface ContextPackInput {
   };
 }
 
+const QUERY_METADATA_HEADING = '## Query Metadata';
+
 export function formatContextPack(input: ContextPackInput): string {
   const retrievalByChunk = new Map(input.retrieval.map((result) => [result.chunkId, result]));
   const lines: string[] = [];
 
+  // --- STABLE PREFIX (byte-identical across calls that share the same chunks) ---
   lines.push('# Spacefolding Context Pack');
-  lines.push('');
-  lines.push(`Query: ${input.query}`);
-  lines.push(
-    `Intent: ${input.plan.intent} | Strategy: ${input.plan.strategy} | Mode: ${input.selectionPolicy.mode}`
-  );
-  if (typeof input.plan.maxHops === 'number') {
-    lines.push(`Graph hops: ${input.plan.maxHops}`);
-  }
-  lines.push(
-    `Tokens: ${input.totalTokens}/${input.targetBudget} target (${input.hardBudget} hard cap, ${formatPercent(input.utilization)} used)`
-  );
-  lines.push(`Candidates: ${input.selectionPolicy.selectedCandidates} selected, ${input.selectionPolicy.droppedCandidates} dropped`);
   lines.push('');
   lines.push('## How To Use This Pack');
   lines.push('');
@@ -59,6 +50,10 @@ export function formatContextPack(input: ContextPackInput): string {
     lines.push('');
   }
 
+  // Per-chunk retrieval metadata (Sources/Scores/Why) is volatile per query;
+  // collect it here, emit it in the trailer so it never enters the stable prefix.
+  const perChunkRetrieval: string[] = [];
+
   input.chunks.forEach((chunk, index) => {
     const baseChunkId = baseRetrievalId(chunk);
     const retrieval = retrievalByChunk.get(baseChunkId);
@@ -72,17 +67,44 @@ export function formatContextPack(input: ContextPackInput): string {
     if (baseChunkId !== chunk.id) lines.push(`- Original chunk: \`${safeInlineCode(baseChunkId)}\``);
     lines.push(`- Type: ${chunk.type}`);
     lines.push(`- Tokens: ${chunk.tokensEstimate}`);
-    if (retrieval) {
-      lines.push(`- Sources: ${retrieval.sources.join('+') || 'unknown'}`);
-      if (retrieval.sourceScores) lines.push(`- Scores: ${formatScores(retrieval.sourceScores)}`);
-      if (reasons.length > 0) lines.push(`- Why: ${reasons.map(oneLine).join('; ')}`);
-    }
     lines.push('');
     lines.push(`~~~${languageHint(chunk)}`);
     lines.push(chunk.text.trimEnd());
     lines.push('~~~');
     lines.push('');
+
+    // Volatile per-query retrieval signals -> trailer.
+    if (retrieval) {
+      perChunkRetrieval.push(`### ${index + 1}. ${title}`);
+      perChunkRetrieval.push('');
+      perChunkRetrieval.push(`- Sources: ${retrieval.sources.join('+') || 'unknown'}`);
+      if (retrieval.sourceScores) perChunkRetrieval.push(`- Scores: ${formatScores(retrieval.sourceScores)}`);
+      if (reasons.length > 0) perChunkRetrieval.push(`- Why: ${reasons.map(oneLine).join('; ')}`);
+      perChunkRetrieval.push('');
+    }
   });
+
+  // --- VOLATILE TRAILER ---
+  lines.push(QUERY_METADATA_HEADING);
+  lines.push('');
+  lines.push(`Query: ${input.query}`);
+  lines.push(
+    `Intent: ${input.plan.intent} | Strategy: ${input.plan.strategy} | Mode: ${input.selectionPolicy.mode}`
+  );
+  if (typeof input.plan.maxHops === 'number') {
+    lines.push(`Graph hops: ${input.plan.maxHops}`);
+  }
+  lines.push(
+    `Tokens: ${input.totalTokens}/${input.targetBudget} target (${input.hardBudget} hard cap, ${formatPercent(input.utilization)} used)`
+  );
+  lines.push(`Candidates: ${input.selectionPolicy.selectedCandidates} selected, ${input.selectionPolicy.droppedCandidates} dropped`);
+  lines.push('');
+
+  if (perChunkRetrieval.length > 0) {
+    lines.push('## Per-Chunk Retrieval');
+    lines.push('');
+    lines.push(...perChunkRetrieval);
+  }
 
   if (input.omitted.length > 0) {
     lines.push('## Omitted By Budget');
