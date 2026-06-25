@@ -9,7 +9,7 @@ doc_type: reference
 
 # Documentation Index
 
-> **Local codebase context engine for coding agents.** Find the right files, symbols, and snippets before an agent edits.
+> **The local-first context-engineering engine for coding agents.**
 
 Start here when you know what you want to do but not which file has the answer.
 

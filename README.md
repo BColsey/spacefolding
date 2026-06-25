@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <strong>Local codebase context engine for coding agents.</strong><br />
+  <strong>The local-first context-engineering engine for coding agents.</strong><br />
   Find the right files, symbols, and snippets before an agent edits.
 </p>
 
