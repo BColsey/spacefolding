@@ -26,9 +26,10 @@ release becomes fully permissive two years after it ships.
 For a commercial license permitting a Competing Use (e.g. embedding Spacefolding
 in a commercial product or hosted service), contact the copyright holder:
 
-> **TODO(owner):** set the commercial-license contact + pricing — e.g. a
-> `commercial@<domain>` address, a `https://<domain>/pricing` page, and/or a
-> self-serve purchase link. This must be filled in before monetization operates.
+> **Commercial licensing contact is pending at first publish; until set, reach
+> the copyright holder via the repository** — https://github.com/BColsey/spacefolding
+> (open an issue or use the Security contact). A `commercial@<domain>` address
+> and/or a self-serve purchase link will be added when monetization operates.
 
 Until then, reach the copyright holder via the repository:
 https://github.com/BColsey/spacefolding

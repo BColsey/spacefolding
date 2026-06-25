@@ -15,6 +15,10 @@
 </p>
 
 <p align="center">
+  <em>Source-available under FSL-1.1-ALv2 (free for internal, research, and non-competing use; commercial license for Competing Use; auto-converts to Apache-2.0 two years after each release). Modeled on sqlite-vec v0.1.0.</em>
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick Start</a> |
   <a href="#how-it-works">How It Works</a> |
   <a href="#core-surfaces">Surfaces</a> |
@@ -270,9 +274,11 @@ Benchmark commands and acceptance criteria are documented in [run benchmarks](do
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow and [SECURITY.md](SECURITY.md) for vulnerability reporting.
 
-Spacefolding is licensed under the [Functional Source License 1.1, ALv2](LICENSE)
-(FSL-1.1-ALv2): free for internal, educational, research, and non-competing use;
-**a commercial license is required for any Competing Use** (substituting for, or
-offering similar functionality as, a product or service). FSL auto-converts to
-Apache-2.0 two years after each release. See [LICENSING.md](LICENSING.md) for
-details and how to obtain a commercial license.
+Spacefolding is **source-available (not open source)** under the
+[Functional Source License 1.1, ALv2](LICENSE) (FSL-1.1-ALv2): free for
+internal, educational, research, and non-competing use; **a commercial license
+is required for any Competing Use** (substituting for, or offering similar
+functionality as, a product or service). FSL auto-converts to Apache-2.0 two
+years after each release. The vector-store layer is modeled on
+[sqlite-vec v0.1.0](https://github.com/asg017/sqlite-vec). See
+[LICENSING.md](LICENSING.md) for details and how to obtain a commercial license.
