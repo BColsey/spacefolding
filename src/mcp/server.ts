@@ -730,10 +730,12 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
               reasons: scored.reasons,
             };
           }
-          return jsonResponse({
-            ...buildRetrieveResponseBody(result),
-            ...folded,
-          });
+          const body = { ...buildRetrieveResponseBody(result), ...folded };
+          const { structuredContent, resourceLinks } = buildStructuredSurface(result, pipeline);
+          if (responseFormat === 'concise') {
+            return jsonResponseStructured(buildConciseText(result, pipeline), structuredContent, resourceLinks);
+          }
+          return jsonResponseStructured(body, structuredContent, resourceLinks);
         }
 
         case 'iterative_retrieve': {
@@ -903,10 +905,8 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           // it mirrors retrieve_context's response richness (omitted/dropped/
           // compressed diagnostics + per-chunk retrievalSources/Scores/Reasons)
           // via the shared buildRetrieveResponseBody helper, then adds `task`.
-          return jsonResponse({
-            task,
-            ...buildRetrieveResponseBody(result),
-          });
+          const { structuredContent: sc, resourceLinks: rl } = buildStructuredSurface(result, pipeline);
+          return jsonResponseStructured({ task, ...buildRetrieveResponseBody(result) }, sc, rl);
         }
 
         default:
@@ -937,6 +937,73 @@ function errorResponse(message: string) {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
     isError: true,
+  };
+}
+
+function chunkDisplayName(
+  chunk: { id: string; path?: string; source: string; type: string },
+  symbols: Array<{ name: string }>
+): string {
+  const loc = chunk.path ?? chunk.source;
+  if (symbols.length > 0) return `${loc}:${symbols[0]!.name}`;
+  return loc || chunk.type;
+}
+
+function buildStructuredSurface(
+  result: RetrieveResult,
+  pipeline: PipelineOrchestrator
+): { structuredContent: Record<string, unknown>; resourceLinks: Array<Record<string, unknown>> } {
+  const entries = result.chunks.map((c) => {
+    const baseId = c.id.split('__compressed')[0];
+    const retrieval = result.retrieval.find((r) => r.chunkId === baseId);
+    const symbols = pipeline.getSymbolsForChunk(c.id);
+    return { chunk: c, retrieval, symbols, name: chunkDisplayName(c, symbols), tier: result.tiers.get(c.id) ?? 'warm' };
+  });
+  const scores: Record<string, unknown> = {};
+  const sources: Record<string, unknown> = {};
+  for (const e of entries) {
+    if (e.retrieval?.sourceScores) scores[e.chunk.id] = e.retrieval.sourceScores;
+    if (e.retrieval?.sources) sources[e.chunk.id] = e.retrieval.sources;
+  }
+  const structuredContent = {
+    scores,
+    sources,
+    chunks: entries.map((e) => ({ id: e.chunk.id, path: e.chunk.path, symbol: e.symbols[0]?.name ?? null, tier: e.tier, tokens: e.chunk.tokensEstimate })),
+  };
+  const resourceLinks = entries.map((e) => ({
+    type: 'resource_link' as const,
+    uri: `sf://chunk/${encodeURIComponent(e.chunk.id)}`,
+    name: e.name,
+    description: `${e.chunk.type} chunk (${e.tier})`,
+  }));
+  return { structuredContent, resourceLinks };
+}
+
+function buildConciseText(result: RetrieveResult, pipeline: PipelineOrchestrator): unknown {
+  return {
+    chunks: result.chunks.map((c) => ({
+      id: c.id,
+      path: c.path,
+      type: c.type,
+      text: c.text,
+      tier: result.tiers.get(c.id) ?? 'warm',
+      name: chunkDisplayName(c, pipeline.getSymbolsForChunk(c.id)),
+    })),
+    totalTokens: result.totalTokens,
+    budget: result.budget,
+    hardBudget: result.hardBudget,
+    utilization: result.utilization,
+    note: 'Concise view. Full scores/sources/diagnostics are in structuredContent (out of context). If results are too broad, narrow your query with a specific identifier (function/type name).',
+  };
+}
+
+function jsonResponseStructured(data: unknown, structuredContent: Record<string, unknown>, resourceLinks: Array<Record<string, unknown>>) {
+  return {
+    content: [
+      { type: 'text' as const, text: JSON.stringify(data, null, 2) },
+      ...(resourceLinks.map((link) => ({ ...link }) as object)),
+    ],
+    structuredContent,
   };
 }
 

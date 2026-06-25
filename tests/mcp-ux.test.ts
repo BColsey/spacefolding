@@ -36,7 +36,7 @@ async function callTool(
   pipeline: PipelineOrchestrator,
   name: string,
   args: Record<string, unknown>
-): Promise<{ isError?: boolean; text: string }> {
+): Promise<{ isError?: boolean; text: string; structuredContent?: Record<string, unknown>; content: Array<Record<string, unknown>> }> {
   const server = createMCPServer(pipeline);
   const client = new Client({ name: 'sf-mcpux-test', version: '0.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -44,8 +44,13 @@ async function callTool(
   await client.connect(clientTransport);
   try {
     const response = await client.callTool({ name, arguments: args });
-    const textItem = response.content.find((item) => item.type === 'text');
-    return { isError: response.isError, text: textItem?.text ?? '' };
+    const textItem = response.content.find((item) => (item as { type?: string }).type === 'text');
+    return {
+      isError: response.isError,
+      text: (textItem as { text?: string })?.text ?? '',
+      structuredContent: response.structuredContent as Record<string, unknown> | undefined,
+      content: response.content as Array<Record<string, unknown>>,
+    };
   } finally {
     await client.close();
     await server.close();
@@ -662,6 +667,43 @@ describe('Q3 response_format (concise/detailed)', () => {
       expect(chunk).toHaveProperty('path');
       expect(chunk).toHaveProperty('text');
       expect(parsed).not.toHaveProperty('selectionPolicy');
+    } finally { pipeline.close(); void dbPath; }
+  });
+});
+
+describe('Q3 structuredContent + resource_link surface', () => {
+  it('retrieve_context concise returns structuredContent with scores and a resource_link per chunk', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function structMe() { return true; }', 'code', 'src/struct.ts', 'typescript');
+      const result = await callTool(pipeline, 'retrieve_context', { query: 'struct me', response_format: 'concise' });
+      expect(result.structuredContent).toBeDefined();
+      const sc = result.structuredContent!;
+      expect(sc).toHaveProperty('scores');
+      expect(sc).toHaveProperty('chunks');
+      const links = result.content.filter((b) => b.type === 'resource_link');
+      expect(links.length).toBeGreaterThan(0);
+      for (const link of links) {
+        expect(String(link.uri)).toMatch(/^sf:\/\/chunk\//);
+        expect(typeof link.name).toBe('string');
+        expect(link.name.length).toBeGreaterThan(0);
+      }
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(Array.isArray(parsed.chunks)).toBe(true);
+      expect(parsed).not.toHaveProperty('selectionPolicy');
+    } finally { pipeline.close(); void dbPath; }
+  });
+
+  it('retrieve_context default (detailed) ALSO carries structuredContent + resource_links without changing legacy keys', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      await pipeline.ingest('file', 'function detailedStruct() { return 1; }', 'code', 'src/d2.ts', 'typescript');
+      const result = await callTool(pipeline, 'retrieve_context', { query: 'detailed struct' });
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      expect(parsed).toHaveProperty('selectionPolicy');
+      expect(parsed).toHaveProperty('totalTokens');
+      expect(result.structuredContent).toBeDefined();
+      expect(result.content.some((b) => b.type === 'resource_link')).toBe(true);
     } finally { pipeline.close(); void dbPath; }
   });
 });
