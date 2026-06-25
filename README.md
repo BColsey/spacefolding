@@ -27,10 +27,22 @@
 
 ## What Spacefolding Does
 
-Spacefolding helps coding agents start with the right local repository context.
-Before an agent edits code, it ranks the files, symbols, and snippets most
-likely to matter for the task, then returns a prompt-sized bundle the agent can
-read immediately.
+Spacefolding's proven edge is **top-1 localization (Hits@1) over lexical search
+on django and typescript** — putting the exact owning file at rank 1 before an
+agent guesses — using **structural signals** (paths, symbols, references) with
+**no compiler index**.
+
+Long context degrades non-linearly (**context rot** — see Chroma, *Context
+Rot*), so the engine narrows to the few right files instead of dumping the
+whole repository into the prompt. Before an agent edits, Spacefolding ranks the
+files, symbols, and snippets most likely to matter for the task, then returns a
+prompt-sized bundle the agent can read immediately.
+
+Spacefolding is **local-first × invisible-plugin (4 advertised MCP tools) ×
+structural + vector hybrid**: it runs on your machine (no data leaves the repo),
+plugs into Claude Code or any MCP client as a small tool surface, and combines
+paths, symbols, references, FTS5, vectors, and dependency signals instead of
+relying on one search signal alone.
 
 Use it when the repository is too large for an agent to scan reliably, when
 keyword search is too brittle, or when you want an MCP/local workflow that keeps
@@ -169,6 +181,32 @@ The benchmark is designed around the workflow Spacefolding is meant to improve:
 before a coding agent edits, can the context engine put the file it will need in
 the first few results?
 
+### The scoped, ablation-honest claim
+
+Spacefolding's durable, genuine edge is **top-1 localization (Hits@1) over
+FTS5**: on commit-derived held-out tasks (n=100 per repo, GPU code-embedding
+model, retrieval depth 200), the `structural` hybrid beats FTS5 on Hits@1 by
+**+0.230 on django** and **+0.110 on typescript** (paired-bootstrap 95% CIs
+exclude 0), and is **not significant on rust (+0.030)**. There is **no universal
+winner**: a correctly-implemented BM25F beats the hybrid on Hits@1 on django
+(−0.150) and rust (−0.180). The composite acceptance gate (non-inferior
+recall@10 AND strictly beats FTS5 on Hits@1) therefore **passes on django +
+typescript and fails on rust** — the claim is scoped to django + typescript.
+
+The full claim, the 3-language R@10 / Hits@1 table, the paired-bootstrap CIs,
+and the rust-exclusion reason live in [`benchmarks/FROZEN-CLAIM.md`](benchmarks/FROZEN-CLAIM.md).
+
+> **Honest scope.** Spacefolding is not a universal retrieval winner. On
+> commit-derived held-out tasks, a correctly-implemented BM25F beats it on
+> top-1 (Hits@1) on django and rust. Its one durable, genuine edge is top-1
+> localization over FTS, which holds on django and typescript and FAILS on
+> rust. That edge is exact-identifier matching, not learned semantics: it
+> collapses under the symbol-removed ablation (django 0.875 to 0.524,
+> typescript 0.604 to 0.320). The full claim, CIs, and the rust-exclusion
+> reason live in benchmarks/FROZEN-CLAIM.md.
+
+### Structural vs keyword recall (secondary signal)
+
 Held-out tasks are generated from real files in large repositories outside this
 project. Each task has a known target file. Retrieval methods are scored by how
 early that target appears in the ranked list:
@@ -179,9 +217,10 @@ early that target appears in the ranked list:
 | NDCG@10 | The needed file appears high in the first 10, not buried near the bottom. |
 | MRR | The first correct hit appears early. A score near 1 means rank 1. |
 
-The large-repository snapshot captured on May 27, 2026 showed Spacefolding's
-structural retrieval finding the target file in the top 10 much more often than
-simple methods on completed 60-task held-out runs:
+As a secondary structural-vs-keyword recall signal (not the headline — the
+scoped top-1 claim above is the headline), the large-repository snapshot
+captured on May 27, 2026 showed structural retrieval finding the target file in
+the top 10 more often than keyword search on completed 60-task held-out runs:
 
 - Combined: 139 / 180 with structural retrieval, compared with 35 / 180 for
   keyword search.
@@ -192,11 +231,8 @@ simple methods on completed 60-task held-out runs:
 - Rust: 38 / 60 with structural retrieval, compared with 5 / 60 for keyword
   search.
 
-That is the main benchmark claim: Spacefolding is better at getting the likely
-target files in front of the agent before the agent spends tokens on the wrong
-part of the repository. Structural retrieval does this by combining paths,
-symbols, references, FTS, vectors, and dependency signals instead of relying on
-one search signal alone.
+Structural retrieval does this by combining paths, symbols, references, FTS,
+vectors, and dependency signals instead of relying on one search signal alone.
 
 A larger Kibana retry tested a 1.8 GB checkout with 63,399 supported source
 files and 222,701 extracted symbols. In that 20-task structural run, every
