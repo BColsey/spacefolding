@@ -5,6 +5,10 @@ All notable changes to Spacefolding are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Publish positioning (D5)
+
+- **Launch positioning (D5).** README now leads with the durable top-1-localization edge (not grep efficiency), names context rot, states the local-first x invisible-plugin x structural+vector triple, frames the license as source-available FSL-1.1-ALv2 (converts to Apache-2.0 in 2y, modeled on sqlite-vec v0.1.0), and pins the honest no-universal-winner caveat. Taglines converged across README, CLAUDE.md, docs/index.md, package.json.
+
 ### Retrieval credibility & correctness (Phase 0)
 
 - **Removed benchmark contamination.** Deleted the hardcoded `TERM_EXPANSIONS` /
