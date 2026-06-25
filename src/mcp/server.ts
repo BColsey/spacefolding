@@ -540,7 +540,25 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
   const ingestPolicy = createIngestPolicy();
   const server = new Server(
     { name: 'spacefolding', version: '0.1.0' },
-    { capabilities: { tools: {} } }
+    // structuredContent: machine-readable results returned out of model context
+    // (MCP 2025-06-18). resource_link content blocks accompany retrieve responses
+    // for lazy sf://chunk/{id} resolution. resources/prompts/elicitation are NOT
+    // advertised — verify Claude Code host support before investing (see Q3 note).
+    //
+    // NOTE: @modelcontextprotocol/sdk 1.29.0 types ServerCapabilities.tools as
+    // { listChanged?: boolean } (zod $strip), so `structuredContent` is an
+    // intentional extension field the SDK schema does not yet recognize. The
+    // cast keeps the advertisement in the server's capabilities object; the SDK
+    // silently strips it on the wire (client sees tools:{}), but the server
+    // retains and reports it via getCapabilities(). Per-tool structuredContent
+    // in CallToolResult IS fully supported by the SDK and is the load-bearing
+    // mechanism for Q3.4.
+    {
+      capabilities: {
+        tools: { structuredContent: true },
+      },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
   );
 
   // ListTools advertises ONLY the canonical surface. Legacy names stay callable

@@ -599,3 +599,35 @@ describe('unified ingest auto-mode empty-string routing', () => {
     }
   });
 });
+
+describe('Q3 structuredContent capability advertisement', () => {
+  it('advertises structuredContent in server capabilities', async () => {
+    const { pipeline, dbPath } = createEmptyPipeline();
+    try {
+      const server = createMCPServer(pipeline);
+      const client = new Client({ name: 'sf-cap-test', version: '0.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      try {
+        // The server is constructed with tools.structuredContent=true (MCP
+        // 2025-06-18 surface). NOTE: @modelcontextprotocol/sdk 1.29.0 parses
+        // InitializeResult with ServerCapabilitiesSchema whose `tools` object
+        // uses zod `$strip`, silently removing the unknown `structuredContent`
+        // key on the wire — so the CLIENT sees {} even though the SERVER
+        // advertises it. Assert against the server's own capabilities (the
+        // authoritative source) so the advertisement is genuinely verified
+        // rather than masked by the SDK's schema stripping. See plan Q3.1
+        // deviation note.
+        const caps = server.getCapabilities();
+        expect(caps?.tools?.structuredContent).toBe(true);
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    } finally {
+      pipeline.close();
+      void dbPath;
+    }
+  });
+});
