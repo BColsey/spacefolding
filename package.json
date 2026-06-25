@@ -1,7 +1,7 @@
 {
   "name": "spacefolding",
   "version": "0.1.0",
-  "description": "Spacefolding — local codebase context engine for coding agents",
+  "description": "Spacefolding — the local-first context-engineering engine for coding agents",
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
