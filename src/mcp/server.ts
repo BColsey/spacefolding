@@ -20,6 +20,7 @@ const MAX_CHUNK_IDS = 1_000;
 const VALID_STRATEGIES: readonly string[] = RETRIEVAL_STRATEGIES;
 const VALID_MODES: readonly string[] = RETRIEVAL_MODES;
 const VALID_RETRIEVE_FORMATS = ['json', 'pack'] as const;
+const VALID_RESPONSE_FORMATS = ['concise', 'detailed'] as const;
 const VALID_GRAPH_OPERATIONS = ['add', 'remove'] as const;
 const VALID_DEPENDENCY_TYPES = ['references', 'defines', 'summarizes', 'overrides', 'contains'] as const;
 /** The 9-value chunk-type enum shared by ingest_context (alias) and ingest (canonical). */
@@ -86,6 +87,11 @@ const RETRIEVE_CONTEXT_INPUT_SCHEMA = {
       type: 'boolean',
       description:
         'When true, fold score_context into the response: score+route all chunks into hot/warm/cold tiers for this query and include the routing (hot/warm/cold id lists + scores + reasons) in the response',
+    },
+    response_format: {
+      type: 'string',
+      enum: VALID_RESPONSE_FORMATS,
+      description: 'Model-visible text verbosity. detailed (default) returns the full legacy body. concise returns only id/path/type/text/tier per chunk and moves scores/diagnostics into structuredContent to cut tokens.',
     },
   },
   required: ['query'],
@@ -540,7 +546,25 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
   const ingestPolicy = createIngestPolicy();
   const server = new Server(
     { name: 'spacefolding', version: '0.1.0' },
-    { capabilities: { tools: {} } }
+    // structuredContent: machine-readable results returned out of model context
+    // (MCP 2025-06-18). resource_link content blocks accompany retrieve responses
+    // for lazy sf://chunk/{id} resolution. resources/prompts/elicitation are NOT
+    // advertised — verify Claude Code host support before investing (see Q3 note).
+    //
+    // NOTE: @modelcontextprotocol/sdk 1.29.0 types ServerCapabilities.tools as
+    // { listChanged?: boolean } (zod $strip), so `structuredContent` is an
+    // intentional extension field the SDK schema does not yet recognize. The
+    // cast keeps the advertisement in the server's capabilities object; the SDK
+    // silently strips it on the wire (client sees tools:{}), but the server
+    // retains and reports it via getCapabilities(). Per-tool structuredContent
+    // in CallToolResult IS fully supported by the SDK and is the load-bearing
+    // mechanism for Q3.4.
+    {
+      capabilities: {
+        tools: { structuredContent: true },
+      },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
   );
 
   // ListTools advertises ONLY the canonical surface. Legacy names stay callable
@@ -674,6 +698,7 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           const returnLimit = args!.returnLimit as number | undefined;
           const maxHops = args!.maxHops as number | undefined;
           const format = (args!.format as string | undefined) ?? 'json';
+          const responseFormat = (args!.response_format as string | undefined) ?? 'detailed';
           const explain = args!.explain === true;
           const score = args!.score === true;
 
@@ -705,10 +730,12 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
               reasons: scored.reasons,
             };
           }
-          return jsonResponse({
-            ...buildRetrieveResponseBody(result),
-            ...folded,
-          });
+          const body = { ...buildRetrieveResponseBody(result), ...folded };
+          const { structuredContent, resourceLinks } = buildStructuredSurface(result, pipeline);
+          if (responseFormat === 'concise') {
+            return jsonResponseStructured(buildConciseText(result, pipeline), structuredContent, resourceLinks);
+          }
+          return jsonResponseStructured(body, structuredContent, resourceLinks);
         }
 
         case 'iterative_retrieve': {
@@ -878,10 +905,8 @@ export function createMCPServer(pipeline: PipelineOrchestrator): Server {
           // it mirrors retrieve_context's response richness (omitted/dropped/
           // compressed diagnostics + per-chunk retrievalSources/Scores/Reasons)
           // via the shared buildRetrieveResponseBody helper, then adds `task`.
-          return jsonResponse({
-            task,
-            ...buildRetrieveResponseBody(result),
-          });
+          const { structuredContent: sc, resourceLinks: rl } = buildStructuredSurface(result, pipeline);
+          return jsonResponseStructured({ task, ...buildRetrieveResponseBody(result) }, sc, rl);
         }
 
         default:
@@ -912,6 +937,73 @@ function errorResponse(message: string) {
   return {
     content: [{ type: 'text' as const, text: JSON.stringify({ error: message }) }],
     isError: true,
+  };
+}
+
+function chunkDisplayName(
+  chunk: { id: string; path?: string; source: string; type: string },
+  symbols: Array<{ name: string }>
+): string {
+  const loc = chunk.path ?? chunk.source;
+  if (symbols.length > 0) return `${loc}:${symbols[0]!.name}`;
+  return loc || chunk.type;
+}
+
+function buildStructuredSurface(
+  result: RetrieveResult,
+  pipeline: PipelineOrchestrator
+): { structuredContent: Record<string, unknown>; resourceLinks: Array<Record<string, unknown>> } {
+  const entries = result.chunks.map((c) => {
+    const baseId = c.id.split('__compressed')[0];
+    const retrieval = result.retrieval.find((r) => r.chunkId === baseId);
+    const symbols = pipeline.getSymbolsForChunk(c.id);
+    return { chunk: c, retrieval, symbols, name: chunkDisplayName(c, symbols), tier: result.tiers.get(c.id) ?? 'warm' };
+  });
+  const scores: Record<string, unknown> = {};
+  const sources: Record<string, unknown> = {};
+  for (const e of entries) {
+    if (e.retrieval?.sourceScores) scores[e.chunk.id] = e.retrieval.sourceScores;
+    if (e.retrieval?.sources) sources[e.chunk.id] = e.retrieval.sources;
+  }
+  const structuredContent = {
+    scores,
+    sources,
+    chunks: entries.map((e) => ({ id: e.chunk.id, path: e.chunk.path, symbol: e.symbols[0]?.name ?? null, tier: e.tier, tokens: e.chunk.tokensEstimate })),
+  };
+  const resourceLinks = entries.map((e) => ({
+    type: 'resource_link' as const,
+    uri: `sf://chunk/${encodeURIComponent(e.chunk.id)}`,
+    name: e.name,
+    description: `${e.chunk.type} chunk (${e.tier})`,
+  }));
+  return { structuredContent, resourceLinks };
+}
+
+function buildConciseText(result: RetrieveResult, pipeline: PipelineOrchestrator): unknown {
+  return {
+    chunks: result.chunks.map((c) => ({
+      id: c.id,
+      path: c.path,
+      type: c.type,
+      text: c.text,
+      tier: result.tiers.get(c.id) ?? 'warm',
+      name: chunkDisplayName(c, pipeline.getSymbolsForChunk(c.id)),
+    })),
+    totalTokens: result.totalTokens,
+    budget: result.budget,
+    hardBudget: result.hardBudget,
+    utilization: result.utilization,
+    note: 'Concise view. Full scores/sources/diagnostics are in structuredContent (out of context). If results are too broad, narrow your query with a specific identifier (function/type name).',
+  };
+}
+
+function jsonResponseStructured(data: unknown, structuredContent: Record<string, unknown>, resourceLinks: Array<Record<string, unknown>>) {
+  return {
+    content: [
+      { type: 'text' as const, text: JSON.stringify(data, null, 2) },
+      ...(resourceLinks.map((link) => ({ ...link }) as object)),
+    ],
+    structuredContent,
   };
 }
 
@@ -1022,6 +1114,12 @@ export function validateArgs(args: Record<string, unknown> | undefined, toolName
   if (toolName === 'retrieve_context' && args.format !== undefined) {
     if (!VALID_RETRIEVE_FORMATS.includes(args.format as typeof VALID_RETRIEVE_FORMATS[number])) {
       return `format must be one of: ${VALID_RETRIEVE_FORMATS.join(', ')}`;
+    }
+  }
+
+  if (toolName === 'retrieve_context' && args.response_format !== undefined) {
+    if (!VALID_RESPONSE_FORMATS.includes(args.response_format as typeof VALID_RESPONSE_FORMATS[number])) {
+      return `response_format must be one of: ${VALID_RESPONSE_FORMATS.join(', ')}`;
     }
   }
 

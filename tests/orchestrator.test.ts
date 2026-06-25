@@ -109,6 +109,29 @@ describe('PipelineOrchestrator', () => {
     pipeline.close();
   });
 
+  it('getSymbolsForChunk resolves a chunk id to its code symbols', async () => {
+    const { pipeline } = createTestPipeline();
+    try {
+      const chunk = await pipeline.ingest('file', 'function resolveMe() { return 1; }', 'code', 'src/resolve.ts', 'typescript');
+      const symbols = pipeline.getSymbolsForChunk(chunk.id);
+      expect(Array.isArray(symbols)).toBe(true);
+      for (const s of symbols) {
+        expect(typeof s.name).toBe('string');
+      }
+    } finally {
+      pipeline.close();
+    }
+  });
+
+  it('getSymbolsForChunk returns [] for an unknown chunk id', () => {
+    const { pipeline } = createTestPipeline();
+    try {
+      expect(pipeline.getSymbolsForChunk('does-not-exist')).toEqual([]);
+    } finally {
+      pipeline.close();
+    }
+  });
+
   it('preserves explicit type override when ingesting a file path', async () => {
     const { pipeline } = createTestPipeline();
 
