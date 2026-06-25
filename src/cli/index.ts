@@ -17,6 +17,8 @@ import { SimpleDependencyAnalyzer } from '../providers/dependency-analyzer.js';
 import { extractSymbols } from '../providers/symbol-extractor.js';
 import { LocalEmbeddingProvider, downloadModel } from '../providers/local-embedding.js';
 import { GpuEmbeddingProvider } from '../providers/gpu-embedding.js';
+import { CrossEncoderRerankerProvider } from '../providers/cross-encoder-reranker.js';
+import { DeterministicRerankerProvider } from '../providers/deterministic-reranker.js';
 import { startMCPServer } from '../mcp/server.js';
 import { createIngestPolicy } from '../security/ingest-policy.js';
 import { startWebServer } from '../web/server.js';
@@ -25,10 +27,11 @@ import { lstatSync, readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import { formatSourceScoreBreakdown } from '../core/retriever.js';
 import { formatContextPack } from '../core/context-pack.js';
-import type { EmbeddingProvider, RetrievalMode, RetrievalStrategy } from '../types/index.js';
+import type { EmbeddingProvider, RetrievalMode, RetrievalStrategy, RerankerProvider } from '../types/index.js';
 import { RETRIEVAL_MODES, RETRIEVAL_STRATEGIES } from '../types/index.js';
 
 type EmbeddingProviderName = 'local' | 'gpu' | 'deterministic';
+type RerankerProviderName = 'cross-encoder' | 'deterministic';
 type RetrieveOutputFormat = 'summary' | 'pack';
 const VALID_RETRIEVAL_MODES = RETRIEVAL_MODES;
 const VALID_RETRIEVAL_STRATEGIES = RETRIEVAL_STRATEGIES;
@@ -168,6 +171,21 @@ export function getEmbeddingProviderName(): EmbeddingProviderName {
   return 'local';
 }
 
+export function getRerankerProviderName(): RerankerProviderName {
+  const provider = process.env.RERANKER_PROVIDER;
+  if (provider === 'cross-encoder') return 'cross-encoder';
+  return 'deterministic';
+}
+
+function createRerankerProvider(): RerankerProvider {
+  if (getRerankerProviderName() === 'cross-encoder') {
+    return new CrossEncoderRerankerProvider({
+      modelId: process.env.RERANKER_MODEL ?? 'Xenova/bge-reranker-v2-m3',
+    });
+  }
+  return new DeterministicRerankerProvider();
+}
+
 export function getDefaultEmbeddingModel(providerName: EmbeddingProviderName = getEmbeddingProviderName()): string {
   if (providerName === 'gpu') {
     // Code-specific default for the high-quality path. Open weights, strong on
@@ -231,7 +249,8 @@ export function createPipeline(dbPath: string): PipelineOrchestrator {
     dependencyAnalyzer,
     ingester,
     embedding.provider,
-    embedding.model
+    embedding.model,
+    createRerankerProvider(),
   );
 }
 
