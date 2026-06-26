@@ -63,3 +63,27 @@ The localization-flip harm-potential thesis **did not survive realism validation
 adversarial-bound + code-search-quality contribution (graph legitimacy); (b) pivot to the **v2 task-success
 verifier** to test realistic harm at the edit level (the real test); (c) treat as an honest negative result
 and return to the other novel survivors (non-existence-as-failure-cause; negative-context/non-interference).
+
+## Legitimacy-as-quality-feature (2026-06-26) — also NULL (option-a salvage tested + rejected)
+
+`legitimacy-eval.ts`: does demoting zero-inbound-reference (isolated) exported symbols improve REAL Hits@1
+(no confusers)? The graph-legitimacy feature from L, retested as a standalone quality signal.
+
+- **structural:** baseline Hits@1 0.904 → hard-demote-isolated **0.860** (Δ **−0.044**, CI [−0.072, −0.020],
+  **significantly HURTS** — real gold files sometimes have isolated entrypoint/exported symbols, so demoting
+  them removes correct answers). Soft `score + λ·log1p(legit)` ≈ 0 across λ.
+- **hybrid:** baseline 0.268 → hard-demote 0.288 (Δ +0.020, CI [−0.016, 0.056], n.s.); soft ≈ 0.
+
+**Conclusion:** graph-legitimacy does **not** improve real retrieval quality. It only detected the
+*synthetic-confuser* signature (an isolated symbol engineered to match a query), which is not a general
+quality signal. The "salvageable code-search-quality feature" thread (option a) does **not** hold up under
+realism either.
+
+### Net state of the harm-potential direction
+
+Every strong claim has collapsed under rigorous validation: E0/E1 harm = synthetic artifact (R); structural
+harm = small-corpus artifact (M); the learned predictor + legitimacy feature solve only the synthetic
+problem (L + this eval). Remaining value is limited to (i) the harm meter as an **adversarial worst-case
+bound** (niche/security framing) and (ii) the **honest negative result** itself (realistic context noise
+does not flip localization — contra the field's assumption). The "novel defensible advantage" goal has not
+been met by this direction.
