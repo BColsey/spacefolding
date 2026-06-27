@@ -123,26 +123,44 @@ docker compose exec spacefolding node dist/main.js download-model
 sequenceDiagram
   participant Claude
   participant Spacefolding
-  Claude->>Spacefolding: ingest_project(path)
-  Claude->>Spacefolding: ingest_context(user request)
-  Claude->>Spacefolding: score_context(task)
-  Spacefolding-->>Claude: hot, warm, cold
+  Claude->>Spacefolding: get_context_for_task(task, rootPath)
+  note over Spacefolding: empty index + allowed rootPath -> ingest project
+  Spacefolding-->>Claude: packed task context + diagnostics
   Claude->>Spacefolding: retrieve_context(query, mode=focused)
-  Spacefolding-->>Claude: selected chunks
+  Spacefolding-->>Claude: focused follow-up context
 ```
 
-1. Use `ingest_project` at the start of work on a repository.
-2. Use `ingest_context` for the user request, important constraints, logs, and diffs.
-3. Use `score_context` when the agent needs tiered hot/warm/cold context.
-4. Use `retrieve_context` for focused task context during implementation.
-5. Use `explain_routing` when a routing result looks surprising.
+1. Use `get_context_for_task` as the one-call default. It ingests an allowed
+   `rootPath` when the index is empty, then returns packed task context.
+2. Use `ingest` when you want explicit control over project, directory, or
+   single-item ingestion.
+3. Use `retrieve_context` for focused follow-up context during implementation.
+   Set `explain: true` or `score: true` when routing diagnostics are needed.
+4. Use `get_relevant_memory` for warm/cold archived context searches.
+
+The older tool names (`ingest_project`, `ingest_context`, `score_context`,
+`explain_routing`, and others) remain callable for compatibility, but they are
+not advertised as the primary MCP surface.
 
 ## First Tool Calls
 
-Ingest a project:
+One-call default:
 
 ```json
 {
+  "task": "Fix retrieval budget overflow in the focused pipeline",
+  "rootPath": "/path/to/project",
+  "maxTokens": 50000,
+  "strategy": "structural",
+  "mode": "focused"
+}
+```
+
+Explicit project ingest:
+
+```json
+{
+  "mode": "project",
   "path": "/path/to/project",
   "includeDocs": true,
   "includeTests": false,
@@ -185,7 +203,7 @@ Open `http://127.0.0.1:8080` to inspect chunks and routing state.
 | --- | --- |
 | Claude Code cannot start the server. | Confirm the `args` path points to `dist/main.js` and run `npm run build`. |
 | The model is missing. | Run `node dist/main.js download-model` or the Docker equivalent. |
-| The database is empty. | Call `ingest_project` or run `node dist/main.js ingest-project /path/to/project`. |
+| The database is empty. | Call `get_context_for_task` with an allowed `rootPath`, call `ingest` with `mode: "project"`, or run `node dist/main.js ingest-project /path/to/project`. |
 | Docker command fails. | Confirm the container is running with `docker compose ps`. |
 | Web UI is unreachable. | Set `WEB_PORT` and ensure `WEB_HOST=0.0.0.0` when accessing through Docker. |
 

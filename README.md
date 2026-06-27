@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <strong>The local-first context-engineering engine for coding agents.</strong><br />
-  Find the right files, symbols, and snippets before an agent edits.
+  <strong>The local-first context-engineering engine and evaluation harness for coding agents.</strong><br />
+  Find the right files before an agent edits, then test context-management claims without fooling yourself.
 </p>
 
 <p align="center">
@@ -30,6 +30,23 @@
 ---
 
 ## What Spacefolding Does
+
+Spacefolding has two roles:
+
+- As a **tool**, it is a local-first context engine that indexes a repository and
+  returns prompt-ready files, symbols, and snippets through CLI, MCP, and an
+  optional web inspector.
+- As a **research instrument**, it is a realism-gated evaluation harness for
+  agent-context claims: commit-derived tasks, paired-bootstrap CIs,
+  symbol-removed ablations, positive controls, and explicit kill criteria.
+
+The current strategic direction is research-first. The engine remains useful
+local infrastructure, but the defensible contribution is the methodology for
+stress-testing claims such as "rerankers reliably improve code localization" or
+"long context obviates retrieval." Read
+[`docs/RESEARCH-HANDOFF.md`](docs/RESEARCH-HANDOFF.md) and
+[`docs/plans/2026-06-26-meta-evaluation-program.md`](docs/plans/2026-06-26-meta-evaluation-program.md)
+before treating any benchmark result as a product claim.
 
 Spacefolding's proven edge is **top-1 localization (Hits@1) over lexical search
 on django and typescript** — putting the exact owning file at rank 1 before an
@@ -166,7 +183,7 @@ flowchart TB
 | CLI | You want local ingestion, retrieval, exports, or benchmarks. | [CLI reference](docs/reference/cli.md) |
 | MCP server | You want Claude Code or another MCP client to call Spacefolding as tools. | [Claude Code integration](docs/integration-guide.md) |
 | Web UI | You want to inspect chunks and routing state in a browser. | [Configuration](docs/configuration.md#web-ui) |
-| Benchmarks | You want to evaluate retrieval quality and token efficiency. | [Run benchmarks](docs/howto/run-benchmarks.md) |
+| Benchmarks | You want to evaluate retrieval quality, token efficiency, or a pre-registered context claim. | [Run benchmarks](docs/howto/run-benchmarks.md) |
 
 ## Feature Map
 
@@ -252,6 +269,8 @@ the full tables, commands, and caveats.
 | --- | --- |
 | Start from scratch. | [Quick-start tutorial](docs/tutorials/quick-start.md) |
 | Decide whether Spacefolding fits. | [Why Spacefolding](docs/concepts/why-spacefolding.md) |
+| Understand the current research direction. | [Research handoff](docs/RESEARCH-HANDOFF.md) |
+| Run a realism-gated claim evaluation. | [Run benchmarks](docs/howto/run-benchmarks.md) |
 | Understand the model. | [How Spacefolding works](docs/concepts/how-spacefolding-works.md) |
 | Tune retrieval behavior. | [Retrieval pipeline](docs/concepts/retrieval-pipeline.md) |
 | Use command-line commands. | [CLI reference](docs/reference/cli.md) |

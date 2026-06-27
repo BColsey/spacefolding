@@ -50,6 +50,17 @@ The checker JSON has a top-level `passed` boolean and a `checks` array. Each
 check reports `passed`, `actual`, and `expected` so failures identify the
 metric or missing JSON section directly.
 
+Validate a pre-registered claim manifest before running research experiments:
+
+```sh
+npx tsx benchmarks/claim-protocol.ts \
+  benchmarks/claims/reranker-reliability.json
+```
+
+Claim manifests are dev-only benchmark inputs. They record the claim, scope,
+positive control, realism gate, kill criterion, generated `/tmp` artifacts, and
+verdict. They do not add MCP tools, runtime CLI commands, or storage schema.
+
 Run autonomous measurement iterations with one hour between successful runs:
 
 ```sh

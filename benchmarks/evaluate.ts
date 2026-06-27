@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { join, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import type { EmbeddingProvider, RetrievalStrategy } from '../src/types/index.js';
+import type { EmbeddingProvider, RerankerProvider, RetrievalStrategy } from '../src/types/index.js';
 import { projectRelativePath, walkBenchmarkSourceFiles } from './source-files.js';
 import {
   createBenchmarkSqliteArtifact,
@@ -121,8 +121,19 @@ export interface TokenCost {
 
 export interface StrategySummary {
   strategy: string;
+  metadata?: StrategyMetadata;
   averages: Record<string, number>;
   results: EvalResult[];
+}
+
+export interface StrategyMetadata {
+  baseStrategy: string;
+  rerankerMode: 'production-default' | 'none' | 'deterministic' | 'cross-encoder' | 'oracle' | 'not-applicable';
+  candidateWindow?: number;
+  provider?: string;
+  modelId?: string;
+  fallbackDetected?: boolean;
+  maxDocChars?: number;
 }
 
 /** Paired-bootstrap contrast (structural − comparator) of a per-task metric. */
@@ -159,6 +170,38 @@ export interface EvaluationReport {
     hitsAt1BeatsFts: boolean | null;
     // The blocking condition: both halves hold. Present only when computable.
     structuralMeetsGate?: boolean;
+  };
+  /** Run-level provenance so a report is reproducible and auditable. */
+  provenance?: RunProvenance;
+}
+
+export interface RunProvenance {
+  gitCommit: string;
+  gitBranch: string;
+  nodeVersion: string;
+  platform: string;
+  arch: string;
+  generatedAt: string;
+}
+
+/** Capture run-level provenance for an evaluation report. */
+export function buildProvenance(): RunProvenance {
+  const git = (args: string[]): string => {
+    try {
+      const result = spawnSync('git', args, { encoding: 'utf-8' });
+      if (result.status === 0) return result.stdout.trim();
+    } catch {
+      // git unavailable — leave as 'unknown'
+    }
+    return 'unknown';
+  };
+  return {
+    gitCommit: git(['rev-parse', 'HEAD']),
+    gitBranch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
+    nodeVersion: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    generatedAt: new Date().toISOString(),
   };
 }
 
@@ -199,8 +242,16 @@ export interface CorpusSnapshotEntry {
 }
 
 const ALL_STRATEGIES = ['keyword', 'bm25', 'bm25body', 'path-match', 'fts', 'grep', 'vector', 'symbol-only', 'structural'];
+const RERANKER_BENCHMARK_STRATEGIES = [
+  'structural-plain',
+  'structural-rerank-deterministic',
+  'structural-rerank-cross-encoder',
+  'structural-rerank-oracle',
+] as const;
+type BenchmarkRerankerStrategy = typeof RERANKER_BENCHMARK_STRATEGIES[number];
 const KNOWN_STRATEGIES = new Set([
   ...ALL_STRATEGIES,
+  ...RERANKER_BENCHMARK_STRATEGIES,
   'hybrid',
   'random',
   'spacefolding',
@@ -221,7 +272,7 @@ const RECALL_NONINFERIORITY_MARGIN = 0.05;
 const GREP_ROUNDS_DEFAULT = 3;
 const GREP_BUDGET_DEFAULT = 8000;
 
-type BenchmarkChunk = { id: string; text: string; path?: string };
+type BenchmarkChunk = { id: string; text: string; path?: string; tokensEstimate?: number };
 
 interface BenchmarkSymbolRow {
   chunkId?: string;
@@ -244,6 +295,7 @@ export interface BenchmarkGrepContext {
 interface BenchmarkRuntime {
   storage: any;
   pipeline: any;
+  plainPipeline: any;
   parseStructuralQuery: (query: string) => {
     normalizedIdentifiers: string[];
     identifierParts: string[];
@@ -251,6 +303,8 @@ interface BenchmarkRuntime {
   allSymbols?: BenchmarkSymbolRow[];
   tokenEstimator: { estimate: (text: string) => number };
   grep: BenchmarkGrepContext;
+  benchmarkRerankers: Map<string, RerankerProvider>;
+  strategyMetadata: Map<string, StrategyMetadata>;
   close: () => void;
 }
 
@@ -269,6 +323,7 @@ interface BenchmarkWorkerPayload {
 
 type BenchmarkWorkerMessage =
   | { type: 'result'; workerId: number; index: number; result: EvalResult }
+  | { type: 'metadata'; workerId: number; strategy: string; metadata: StrategyMetadata }
   | { type: 'done'; workerId: number }
   | { type: 'error'; workerId: number; message: string };
 
@@ -1242,13 +1297,121 @@ const BENCHMARK_RETRIEVAL_DEPTH = (() => {
   return parsed;
 })();
 
+function benchmarkRerankCandidateWindow(): number {
+  const raw = process.env.BENCH_RERANK_CANDIDATE_WINDOW;
+  if (raw === undefined) return 20;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error('BENCH_RERANK_CANDIDATE_WINDOW must be a positive integer');
+  }
+  return parsed;
+}
+
+function benchmarkCrossEncoderMaxDocChars(): number {
+  const raw = process.env.BENCH_RERANK_MAX_DOC_CHARS;
+  if (raw === undefined) return 2048;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error('BENCH_RERANK_MAX_DOC_CHARS must be a positive integer');
+  }
+  return parsed;
+}
+
+function benchmarkCrossEncoderForcedFallback(): boolean {
+  return /^(1|true|yes)$/i.test(process.env.BENCH_RERANKER_DETERMINISTIC_FALLBACK ?? '');
+}
+
+/**
+ * Cap concurrent workers for the cross-encoder arm. Each worker lazily loads the
+ * multi-hundred-MB reranker model into its own thread; N concurrent loads can
+ * OOM, and the resulting throw flips the provider into permanent fallback — a
+ * self-inflicted false-debunk. Default 2; override with BENCH_RERANKER_MAX_WORKERS.
+ */
+export function benchmarkCrossEncoderMaxWorkers(): number {
+  const raw = process.env.BENCH_RERANKER_MAX_WORKERS;
+  if (raw === undefined) return 2;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error('BENCH_RERANKER_MAX_WORKERS must be a positive integer');
+  }
+  return parsed;
+}
+
+/** Resolve the worker count, applying the cross-encoder concurrency cap. */
+export function resolveWorkerCount(
+  requested: number,
+  taskCount: number,
+  strategy: string,
+  maxCrossEncoderWorkers: number
+): number {
+  const base = Math.min(requested, taskCount);
+  if (strategy === 'structural-rerank-cross-encoder' && maxCrossEncoderWorkers > 0) {
+    return Math.min(base, maxCrossEncoderWorkers);
+  }
+  return base;
+}
+
+function isBenchmarkRerankerStrategy(strategy: string): strategy is BenchmarkRerankerStrategy {
+  return (RERANKER_BENCHMARK_STRATEGIES as readonly string[]).includes(strategy);
+}
+
+function benchmarkStrategyMetadata(strategy: string): StrategyMetadata {
+  const candidateWindow = isBenchmarkRerankerStrategy(strategy)
+    ? benchmarkRerankCandidateWindow()
+    : undefined;
+  switch (strategy) {
+    case 'structural-plain':
+      return { baseStrategy: 'structural', rerankerMode: 'none', candidateWindow };
+    case 'structural-rerank-deterministic':
+      return {
+        baseStrategy: 'structural',
+        rerankerMode: 'deterministic',
+        candidateWindow,
+        provider: 'DeterministicRerankerProvider',
+      };
+    case 'structural-rerank-cross-encoder': {
+      const modelId = process.env.BENCH_RERANKER_MODEL ?? 'Xenova/bge-reranker-v2-m3';
+      return {
+        baseStrategy: 'structural',
+        rerankerMode: 'cross-encoder',
+        candidateWindow,
+        provider: 'CrossEncoderRerankerProvider',
+        modelId,
+        fallbackDetected: benchmarkCrossEncoderForcedFallback(),
+        maxDocChars: benchmarkCrossEncoderMaxDocChars(),
+      };
+    }
+    case 'structural-rerank-oracle':
+      return { baseStrategy: 'structural', rerankerMode: 'oracle', candidateWindow };
+    case 'spacefolding':
+    case 'structural':
+      return { baseStrategy: 'structural', rerankerMode: 'production-default' };
+    case 'hybrid':
+      return { baseStrategy: 'hybrid', rerankerMode: 'production-default' };
+    case 'fts':
+    case 'text':
+      return { baseStrategy: 'text', rerankerMode: 'production-default' };
+    case 'vector':
+      return { baseStrategy: 'vector', rerankerMode: 'production-default' };
+    default:
+      return { baseStrategy: strategy, rerankerMode: 'not-applicable' };
+  }
+}
+
 interface RankedRetrieval {
   /** Ranked file paths (chunk order, before dedup), filtered to defined paths. */
   paths: string[];
   /** Ranked chunks with token estimates, in retrieval order (pre-dedup). */
-  ranked: { path?: string; tokens: number }[];
+  ranked: BenchmarkRankedChunk[];
   /** Sum of token estimates over all returned chunks at the retrieval depth. */
   totalTokens: number;
+}
+
+export interface BenchmarkRankedChunk {
+  id: string;
+  path?: string;
+  text: string;
+  tokens: number;
 }
 
 async function spacefoldingRetrieval(
@@ -1265,7 +1428,9 @@ async function spacefoldingRetrieval(
   });
 
   const ranked = result.chunks.map((c: any) => ({
+    id: String(c.id),
     path: c.path as string | undefined,
+    text: typeof c.text === 'string' ? c.text : '',
     tokens: typeof c.tokensEstimate === 'number' ? c.tokensEstimate : 0,
   }));
   return {
@@ -1283,7 +1448,7 @@ async function spacefoldingRetrieval(
  * is the cumulative cost at the first chunk whose file is relevant.
  */
 function computeTokenCost(
-  ranked: { path?: string; tokens: number }[],
+  ranked: BenchmarkRankedChunk[],
   relevant: Set<string>,
   totalTokens: number
 ): TokenCost {
@@ -1301,6 +1466,146 @@ function computeTokenCost(
     tokensToFirstHit,
     avgChunkTokens: ranked.length > 0 ? totalTokens / ranked.length : 0,
   };
+}
+
+export function sanitizeBenchmarkRerankIndexes(
+  output: Array<{ index: number; score?: number; reason?: string }>,
+  candidateCount: number
+): number[] {
+  const seen = new Set<number>();
+  const indexes: number[] = [];
+  for (const item of output) {
+    if (!Number.isFinite(item.index) || !Number.isInteger(item.index)) continue;
+    if (item.index < 0 || item.index >= candidateCount || seen.has(item.index)) continue;
+    seen.add(item.index);
+    indexes.push(item.index);
+  }
+  for (let i = 0; i < candidateCount; i++) {
+    if (!seen.has(i)) indexes.push(i);
+  }
+  return indexes;
+}
+
+export function applySanitizedBenchmarkRerank(
+  ranked: BenchmarkRankedChunk[],
+  output: Array<{ index: number; score?: number; reason?: string }>,
+  candidateWindow: number
+): BenchmarkRankedChunk[] {
+  const windowSize = Math.min(candidateWindow, ranked.length);
+  const window = ranked.slice(0, windowSize);
+  const tail = ranked.slice(windowSize);
+  const sanitized = sanitizeBenchmarkRerankIndexes(output, window.length);
+  return [
+    ...sanitized.map((index) => window[index]),
+    ...tail,
+  ];
+}
+
+export function oracleRerankOutput(window: BenchmarkRankedChunk[], relevant: Set<string>): Array<{ index: number; score: number; reason: string }> {
+  return window
+    .map((chunk, index) => ({
+      index,
+      score: chunk.path && relevant.has(chunk.path) ? 1 : 0,
+      reason: chunk.path && relevant.has(chunk.path) ? 'oracle relevant path' : 'oracle non-relevant path',
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+}
+
+function benchmarkDocument(chunk: BenchmarkRankedChunk, maxDocChars?: number): string {
+  const text = `${chunk.path ?? ''}\n${chunk.text}`;
+  return maxDocChars ? text.slice(0, maxDocChars) : text;
+}
+
+/**
+ * Decide whether a cross-encoder arm actually used the model, so a silent
+ * degradation to the deterministic rerank cannot be reported as cross-encoder
+ * evidence. Any one signal is conclusive:
+ *   1. the provider's sticky `modelFailed` flag (load failed / forced off);
+ *   2. empty output (the model produced nothing);
+ *   3. reason strings — the real model always tags `cross-encoder relevance`;
+ *   4. degenerate scores (all-equal / non-finite) — a model that loaded but
+ *      returns garbage cannot discriminate and is not usable evidence.
+ */
+export function detectCrossEncoderFallback(
+  provider: unknown,
+  output: Array<{ index: number; score?: number; reason?: string }>
+): boolean {
+  if ((provider as { modelFailed?: unknown } | null)?.modelFailed === true) return true;
+  if (output.length === 0) return true;
+  if (!output.every((item) => item.reason?.includes('cross-encoder'))) return true;
+  const scores = output.map((item) => item.score);
+  if (!scores.every((value): value is number => typeof value === 'number' && Number.isFinite(value))) return true;
+  if (scores.length > 1 && scores.every((value) => value === scores[0])) return true;
+  return false;
+}
+
+/**
+ * Merge a worker's strategy metadata into the accumulated main-thread record.
+ * `fallbackDetected` is OR'd across workers (any worker that fell back taints
+ * the strategy); other fields let the latest worker win.
+ */
+export function mergeStrategyMetadata(
+  existing: StrategyMetadata | undefined,
+  incoming: StrategyMetadata
+): StrategyMetadata {
+  const base = existing ?? incoming;
+  return {
+    ...base,
+    ...incoming,
+    fallbackDetected: Boolean(existing?.fallbackDetected || incoming.fallbackDetected),
+  };
+}
+
+async function getBenchmarkReranker(strategy: string, runtime: BenchmarkRuntime): Promise<RerankerProvider> {
+  const existing = runtime.benchmarkRerankers.get(strategy);
+  if (existing) return existing;
+  const metadata = runtime.strategyMetadata.get(strategy) ?? benchmarkStrategyMetadata(strategy);
+  let provider: RerankerProvider;
+  if (metadata.rerankerMode === 'cross-encoder') {
+    const { CrossEncoderRerankerProvider } = await import('../dist/providers/cross-encoder-reranker.js');
+    provider = new CrossEncoderRerankerProvider({
+      modelId: metadata.modelId,
+      topK: metadata.candidateWindow,
+      maxDocChars: metadata.maxDocChars,
+      useDeterministicFallback: benchmarkCrossEncoderForcedFallback(),
+    });
+  } else {
+    const { DeterministicRerankerProvider } = await import('../dist/providers/deterministic-reranker.js');
+    provider = new DeterministicRerankerProvider();
+  }
+  runtime.benchmarkRerankers.set(strategy, provider);
+  return provider;
+}
+
+async function applyBenchmarkReranker(
+  task: BenchmarkTask,
+  strategy: BenchmarkRerankerStrategy,
+  ranked: BenchmarkRankedChunk[],
+  runtime: BenchmarkRuntime,
+  relevantSet: Set<string>
+): Promise<BenchmarkRankedChunk[]> {
+  const metadata = runtime.strategyMetadata.get(strategy) ?? benchmarkStrategyMetadata(strategy);
+  runtime.strategyMetadata.set(strategy, metadata);
+  const candidateWindow = metadata.candidateWindow ?? benchmarkRerankCandidateWindow();
+  if (metadata.rerankerMode === 'none') return ranked;
+
+  const window = ranked.slice(0, candidateWindow);
+  if (window.length === 0) {
+    if (metadata.rerankerMode === 'cross-encoder') metadata.fallbackDetected = true;
+    return ranked;
+  }
+
+  if (metadata.rerankerMode === 'oracle') {
+    return applySanitizedBenchmarkRerank(ranked, oracleRerankOutput(window, relevantSet), candidateWindow);
+  }
+
+  const provider = await getBenchmarkReranker(strategy, runtime);
+  const docs = window.map((chunk) => benchmarkDocument(chunk, metadata.maxDocChars));
+  const output = await provider.rerank(task.task, docs);
+  if (metadata.rerankerMode === 'cross-encoder') {
+    metadata.fallbackDetected = detectCrossEncoderFallback(provider, output) || Boolean(metadata.fallbackDetected);
+  }
+  return applySanitizedBenchmarkRerank(ranked, output, candidateWindow);
 }
 
 async function symbolOnlyRetrieval(
@@ -1414,6 +1719,7 @@ export function buildEvaluationReport(input: {
   corpus: string;
   requestedStrategies: string[];
   strategies: StrategySummary[];
+  provenance?: RunProvenance;
 }): EvaluationReport {
   const byStrategy = Object.fromEntries(
     input.strategies.map((summary) => [summary.strategy, summary])
@@ -1463,6 +1769,7 @@ export function buildEvaluationReport(input: {
     requestedStrategies: input.requestedStrategies,
     strategies: input.strategies,
     successGate,
+    provenance: input.provenance,
   };
 }
 
@@ -1488,13 +1795,19 @@ async function createEvaluationRuntime(dbPath: string): Promise<BenchmarkRuntime
   const pipeline = new PipelineOrchestrator(
     storage, scorer, router, compressionProvider, dependencyAnalyzer, ingester, embeddingProvider
   );
+  const plainPipeline = new PipelineOrchestrator(
+    storage, scorer, router, compressionProvider, dependencyAnalyzer, ingester, embeddingProvider, undefined, null
+  );
 
   return {
     storage,
     pipeline,
+    plainPipeline,
     parseStructuralQuery,
     tokenEstimator,
     grep: { corpusDir: null, tokensPath: null, budget: GREP_BUDGET_DEFAULT, rounds: GREP_ROUNDS_DEFAULT },
+    benchmarkRerankers: new Map(),
+    strategyMetadata: new Map(),
     close: () => {
       pipeline.close();
       (embeddingProvider as { close?: () => void }).close?.();
@@ -1534,16 +1847,32 @@ async function evaluateBenchmarkTask(
   let retrievedPaths: string[];
   let tokenCost: TokenCost | undefined;
 
-  const runRanked = async (s: Exclude<RetrievalStrategy, 'graph'>) => {
-    const ranked = await spacefoldingRetrieval(task, runtime.pipeline, s);
-    tokenCost = computeTokenCost(ranked.ranked, relevantSet, ranked.totalTokens);
-    return ranked.paths;
+  const runRanked = async (
+    s: Exclude<RetrievalStrategy, 'graph'>,
+    options: { plain?: boolean; benchmarkReranker?: BenchmarkRerankerStrategy } = {}
+  ) => {
+    const ranked = await spacefoldingRetrieval(task, options.plain ? runtime.plainPipeline : runtime.pipeline, s);
+    const finalRanked = options.benchmarkReranker
+      ? await applyBenchmarkReranker(task, options.benchmarkReranker, ranked.ranked, runtime, relevantSet)
+      : ranked.ranked;
+    const totalTokens = finalRanked.reduce((sum, chunk) => sum + chunk.tokens, 0);
+    tokenCost = computeTokenCost(finalRanked, relevantSet, totalTokens);
+    return finalRanked.map((c) => c.path).filter(Boolean) as string[];
   };
 
   switch (strategy) {
     case 'spacefolding':
     case 'structural':
       retrievedPaths = await runRanked('structural');
+      break;
+    case 'structural-plain':
+    case 'structural-rerank-deterministic':
+    case 'structural-rerank-cross-encoder':
+    case 'structural-rerank-oracle':
+      retrievedPaths = await runRanked('structural', {
+        plain: true,
+        benchmarkReranker: strategy,
+      });
       break;
     case 'hybrid':
       retrievedPaths = await runRanked('hybrid');
@@ -1656,7 +1985,8 @@ function splitTaskShards(tasks: BenchmarkTask[], workerCount: number): IndexedBe
 
 async function runWorkerShard(
   payload: BenchmarkWorkerPayload,
-  onResult?: (index: number, result: EvalResult) => void
+  onResult?: (index: number, result: EvalResult) => void,
+  onMetadata?: (message: Extract<BenchmarkWorkerMessage, { type: 'metadata' }>) => void
 ): Promise<void> {
   const worker = fileURLToPath(import.meta.url).endsWith('.ts')
     ? new Worker(`
@@ -1691,6 +2021,8 @@ async function runWorkerShard(
     worker.on('message', (message: BenchmarkWorkerMessage) => {
       if (message.type === 'result') {
         onResult?.(message.index, message.result);
+      } else if (message.type === 'metadata') {
+        onMetadata?.(message);
       } else if (message.type === 'error') {
         rejectOnce(new Error(`Benchmark worker ${message.workerId} failed: ${message.message}`));
       }
@@ -1713,9 +2045,13 @@ async function evaluateTasksParallel(input: {
   dbPath: string;
   requestedWorkers: number;
   grep: BenchmarkGrepContext;
+  metadataByStrategy: Map<string, StrategyMetadata>;
   log: (...args: unknown[]) => void;
 }): Promise<EvalResult[]> {
-  const workerCount = Math.min(input.requestedWorkers, input.tasks.length);
+  const maxCrossEncoderWorkers = input.strategy === 'structural-rerank-cross-encoder'
+    ? benchmarkCrossEncoderMaxWorkers()
+    : input.requestedWorkers;
+  const workerCount = resolveWorkerCount(input.requestedWorkers, input.tasks.length, input.strategy, maxCrossEncoderWorkers);
   const results = new Array<EvalResult | undefined>(input.tasks.length);
   const shards = splitTaskShards(input.tasks, workerCount);
 
@@ -1730,6 +2066,11 @@ async function evaluateTasksParallel(input: {
   }, (taskIndex, result) => {
     results[taskIndex] = result;
     logTaskResult(result, input.log);
+  }, (message) => {
+    input.metadataByStrategy.set(
+      message.strategy,
+      mergeStrategyMetadata(input.metadataByStrategy.get(message.strategy), message.metadata)
+    );
   })));
 
   const missing = results.findIndex((result) => result === undefined);
@@ -1759,6 +2100,12 @@ async function runBenchmarkWorker(): Promise<void> {
         result,
       } satisfies BenchmarkWorkerMessage);
     }
+    parentPort.postMessage({
+      type: 'metadata',
+      workerId: payload.workerId,
+      strategy: payload.strategy,
+      metadata: runtime.strategyMetadata.get(payload.strategy) ?? benchmarkStrategyMetadata(payload.strategy),
+    } satisfies BenchmarkWorkerMessage);
     parentPort.postMessage({
       type: 'done',
       workerId: payload.workerId,
@@ -1904,6 +2251,7 @@ async function runEvaluation(options: CliOptions) {
   const summaries: StrategySummary[] = [];
 
   for (const strat of strategies) {
+    runtime.strategyMetadata.set(strat, benchmarkStrategyMetadata(strat));
     log(`\n${'─'.repeat(70)}`);
     log(`  Strategy: ${strat.toUpperCase()}`);
     log(`${'─'.repeat(70)}\n`);
@@ -1916,6 +2264,7 @@ async function runEvaluation(options: CliOptions) {
         dbPath,
         requestedWorkers: options.workers,
         grep: runtime.grep,
+        metadataByStrategy: runtime.strategyMetadata,
         log,
       })
       : await evaluateTasksSequential(
@@ -1956,7 +2305,12 @@ async function runEvaluation(options: CliOptions) {
       log(`    ${intent.padEnd(12)} R@10=${avgRecall.toFixed(3)} NDCG=${avgNdcg.toFixed(3)} (${intentResults.length} tasks)`);
     }
 
-    summaries.push({ strategy: strat, averages: avgMetrics, results });
+    summaries.push({
+      strategy: strat,
+      metadata: runtime.strategyMetadata.get(strat) ?? benchmarkStrategyMetadata(strat),
+      averages: avgMetrics,
+      results,
+    });
   }
 
   // Cleanup
@@ -1969,6 +2323,7 @@ async function runEvaluation(options: CliOptions) {
     corpus: options.corpus,
     requestedStrategies: strategies,
     strategies: summaries,
+    provenance: buildProvenance(),
   });
 
   if (options.json) {

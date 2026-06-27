@@ -84,14 +84,17 @@ export class PipelineOrchestrator {
     private ingester: ContextIngester,
     private embeddingProvider?: EmbeddingProvider,
     embeddingModel?: string,
-    reranker?: RerankerProvider,
+    reranker?: RerankerProvider | null,
   ) {
     this.embeddingModel = embeddingModel ?? defaultEmbeddingModelForProvider(embeddingProvider);
     this.structuralIndexer = new StructuralIndexer();
+    const effectiveReranker = reranker === undefined
+      ? new DeterministicRerankerProvider()
+      : reranker;
     this.retriever = new HybridRetriever(storage, embeddingProvider ?? {
       embed: async () => [],
       embedBatch: async () => [],
-    }, reranker ?? new DeterministicRerankerProvider());
+    }, effectiveReranker);
   }
 
   /** Run the full pipeline: score, route, compress, persist */

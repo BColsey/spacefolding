@@ -37,14 +37,35 @@ flip code localization — **contra the field's assumption.** Full record: `benc
 (Honest open thread: the **task-success** level — does a non-flipping confuser still mislead the *edit*? —
 remains untested; rated low-prior but is the one v2 follow-up.)
 
+## Paper #2 — SELECTED CANDIDATE
+
+**Claim to stress-test:** *"cross-encoder rerankers reliably improve code
+localization."* This is selected as the next candidate because it is
+harness-ready, timely, and narrow enough to test without adding an edit-success
+verifier. The claim is not accepted yet. The pre-registration stub lives in
+`benchmarks/claims/reranker-reliability.json` and must pass:
+
+```bash
+npx tsx benchmarks/claim-protocol.ts benchmarks/claims/reranker-reliability.json
+```
+
+Minimum test shape:
+- compare structural retrieval with and without the cross-encoder reranker;
+- include an oracle-reranker positive control;
+- run commit-derived django/typescript/rust tasks plus symbol-removed ablations;
+- include at least one large-corpus scale case;
+- report Hits@1, Recall@10, NDCG@10, MRR, and tokens-to-first-correct-file with paired CIs;
+- debunk the reliability claim if reranking cannot improve both Hits@1 and
+  tokens-to-first-correct-file without a Recall@10 regression in the declared
+  regimes.
+
 ## Candidate claims for paper #2+ (shortlist to be ranked)
 
 Each is widely repeated and stress-testable with the existing harness:
 
 - **"Long context obviates retrieval"** (the "RAG is dead" claim). Does it, on real code tasks with real
   token budgets? Where is the context-rot crossover on actual code?
-- **"Cross-encoder rerankers reliably improve code localization."** Under what regime do they help vs not?
-  (The repo already has a default-off reranker to test.)
+- **"Cross-encoder rerankers reliably improve code localization."** Selected as paper #2 candidate; not run yet.
 - **"AST/structural chunking beats naive chunking."** Measurably, with CIs, on real corpora?
 - **"More retrieved context monotonically helps agents."** Find the rot crossover on code.
 - **"Context compression is lossless-enough for code tasks."** Does it silently drop the load-bearing
@@ -63,16 +84,18 @@ Each is widely repeated and stress-testable with the existing harness:
 - **Pre-registration + kill criterion:** state the test and the "this would falsify it" condition before running.
 - **Publish the honest negative.** (The discipline that makes this line defensible.)
 
-## Candidate-discovery (the next action)
+## Candidate-discovery (next action before paper #2 write-up)
 
 Run a workflow to produce a **ranked shortlist** of claims:
 - **research** what the field currently asserts (papers, engineering blogs, product marketing, HN/reddit
   consensus) for coding-agent context / RAG;
 - **score** each claim on: stress-testability-with-your-harness × impact-if-debunked × realism-gate feasibility;
 - **return** a ranked top-N with the closest prior art + a one-line operationalization + the kill criterion for each.
-Then pick paper #2 and run the pipeline.
+Use it to validate or replace the reranker-reliability candidate before the
+paper is written. If reranker reliability stays selected, copy exact primary
+citations into the manifest before running the final experiment.
 
-## Open positioning questions (decide before paper #2)
+## Open positioning questions (decide before publishing paper #2)
 
 - **Venue/form:** short arXiv notes? a sub-stack/"agent-context claim lab"? a living leaderboard of
   debunked/confirmed claims? a paper series?

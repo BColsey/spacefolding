@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-06-reranker-reliability",
+  "title": "Cross-Encoder Rerankers Reliably Improve Code Localization",
+  "status": "candidate",
+  "claim": "Off-the-shelf cross-encoder rerankers, applied as a post-retrieval rerank over a clean structural-retrieval candidate set, reliably improve repository-level code localization for coding-agent context retrieval. This tests the reranker's marginal effect on a no-rerank structural base; it is NOT a test of the shipped in-pipeline fusion rerank.",
+  "scope": "File-localization and tokens-to-first-correct-file on commit-derived code tasks, measured as a post-retrieval cross-encoder rerank over the top-20 structural candidates. The baseline is structural retrieval WITHOUT any reranker (reranker=null) — deliberately not the shipped 'structural' default, which fuses a deterministic reranker in-pipeline via HybridRetriever. This claim does not assert end-to-end edit success.",
+  "priorArt": [
+    {
+      "title": "CORE-Bench / code retrieval benchmark work",
+      "note": "Current code-retrieval work increasingly evaluates retrieval plus reranking; use the formal candidate-discovery pass to replace this placeholder with exact primary citations."
+    },
+    {
+      "title": "General RAG reranker practice",
+      "note": "Engineering practice commonly treats cross-encoder reranking as a quality upgrade; this manifest tests whether that assumption survives realistic code-localization tasks."
+    }
+  ],
+  "metrics": [
+    "hitsAt1",
+    "recallAt10",
+    "ndcgAt10",
+    "mrr",
+    "tokensToFirstHit"
+  ],
+  "positiveControl": {
+    "hypothesis": "An oracle reranker that promotes known relevant files already present in the top-20 candidate window improves both Hits@1 and tokens-to-first-correct-file (its Hits@1 ceiling = base recall@20), proving the harness can detect a reranking effect on the REAL tasks being claimed about — not a hand-crafted easy set.",
+    "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-plain --symbol-removed --json > /tmp/spacefolding-reranker-control-plain.json && npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-rerank-oracle --symbol-removed --json > /tmp/spacefolding-reranker-control-oracle.json && npx tsx benchmarks/reranker-claim-report.ts --baseline /tmp/spacefolding-reranker-control-plain.json --candidate /tmp/spacefolding-reranker-control-oracle.json --manifest benchmarks/claims/reranker-reliability.json --require-confirm --json > /tmp/spacefolding-reranker-control-report.json",
+    "passCriterion": "The paired control report is valid, oracle reranking improves both Hits@1 and tokens-to-first-correct-file with the paired CI excluding zero, and Recall@10 does not regress on the same tasks. A near-zero oracle gain is informative about base-retrieval rank distribution, not a harness failure."
+  },
+  "realismGate": {
+    "regime": "Commit-derived django, typescript, and rust tasks with symbol-removed ablations and at least one large-corpus scale case.",
+    "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-rerank-cross-encoder --symbol-removed --json > /tmp/spacefolding-reranker-realism.json",
+    "passCriterion": "Cross-encoder reranking improves both Hits@1 and tokens-to-first-correct-file with the paired CI excluding zero, without a paired-CI Recall@10 regression, in the declared regimes."
+  },
+  "killCriterion": "Debunk the reliability claim if, in ANY declared regime (django/typescript/rust and the scale case), cross-encoder reranking fails to improve either required improvement metric (Hits@1 and tokens-to-first-correct-file) with the paired CI excluding zero, OR regresses Recall@10 with the paired CI excluding zero. The verdict is machine-evaluated from claimCriteria via the paired claim report; perRegimeAggregation 'all' means every regime must confirm.",
+  "claimCriteria": {
+    "improvementMetrics": [
+      "hitsAt1",
+      "tokensToFirstHit"
+    ],
+    "nonRegressionMetrics": [
+      "recallAt10"
+    ],
+    "requireCiExcludesZero": true,
+    "minEffectSize": {
+      "hitsAt1": 0.02
+    },
+    "perRegimeAggregation": "all"
+  },
+  "datasets": [
+    {
+      "name": "oracle-reranker-control",
+      "corpus": "/path/to/corpus",
+      "taskSource": "/tmp/spacefolding-reranker-tasks.json",
+      "realismRole": "positive_control"
+    },
+    {
+      "name": "commit-derived-realism",
+      "corpus": "/path/to/corpus",
+      "taskSource": "/tmp/spacefolding-reranker-tasks.json",
+      "realismRole": "real_data"
+    },
+    {
+      "name": "symbol-removed-ablation",
+      "corpus": "/path/to/corpus",
+      "taskSource": "/tmp/spacefolding-reranker-tasks.json",
+      "realismRole": "ablation"
+    },
+    {
+      "name": "large-corpus-scale-case",
+      "corpus": "/path/to/large/corpus",
+      "taskSource": "/tmp/spacefolding-reranker-scale.json",
+      "realismRole": "scale_case"
+    }
+  ],
+  "commands": [
+    {
+      "name": "validate-manifest",
+      "command": "npx tsx benchmarks/claim-protocol.ts benchmarks/claims/reranker-reliability.json",
+      "expectedOutput": "Claim manifest OK"
+    },
+    {
+      "name": "baseline-structural-plain",
+      "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-plain --symbol-removed --json > /tmp/spacefolding-reranker-structural-plain.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-structural-plain.json"
+    },
+    {
+      "name": "deterministic-reranker",
+      "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-rerank-deterministic --symbol-removed --json > /tmp/spacefolding-reranker-deterministic.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-deterministic.json"
+    },
+    {
+      "name": "cross-encoder-reranker",
+      "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-rerank-cross-encoder --symbol-removed --json > /tmp/spacefolding-reranker-cross-encoder.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-cross-encoder.json"
+    },
+    {
+      "name": "baseline-structural-plain-control",
+      "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-plain --json > /tmp/spacefolding-reranker-control-plain.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-control-plain.json"
+    },
+    {
+      "name": "oracle-reranker-control",
+      "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-tasks.json --corpus /path/to/corpus --strategy structural-rerank-oracle --json > /tmp/spacefolding-reranker-control-oracle.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-control-oracle.json"
+    },
+    {
+      "name": "paired-control-report",
+      "command": "npx tsx benchmarks/reranker-claim-report.ts --baseline /tmp/spacefolding-reranker-control-plain.json --candidate /tmp/spacefolding-reranker-control-oracle.json --manifest benchmarks/claims/reranker-reliability.json --require-confirm --json > /tmp/spacefolding-reranker-control-report.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-control-report.json"
+    },
+    {
+      "name": "paired-claim-report",
+      "command": "npx tsx benchmarks/reranker-claim-report.ts --baseline /tmp/spacefolding-reranker-structural-plain.json --candidate /tmp/spacefolding-reranker-cross-encoder.json --manifest benchmarks/claims/reranker-reliability.json --require-confirm --json > /tmp/spacefolding-reranker-claim-report.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-claim-report.json"
+    },
+    {
+      "name": "baseline-structural-plain-scale",
+      "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-scale.json --corpus /path/to/large/corpus --strategy structural-plain --symbol-removed --json > /tmp/spacefolding-reranker-scale-plain.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-scale-plain.json"
+    },
+    {
+      "name": "cross-encoder-reranker-scale",
+      "command": "npx tsx benchmarks/evaluate.ts --dataset /tmp/spacefolding-reranker-scale.json --corpus /path/to/large/corpus --strategy structural-rerank-cross-encoder --symbol-removed --json > /tmp/spacefolding-reranker-scale-cross-encoder.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-scale-cross-encoder.json"
+    },
+    {
+      "name": "paired-claim-report-scale",
+      "command": "npx tsx benchmarks/reranker-claim-report.ts --baseline /tmp/spacefolding-reranker-scale-plain.json --candidate /tmp/spacefolding-reranker-scale-cross-encoder.json --manifest benchmarks/claims/reranker-reliability.json --require-confirm --json > /tmp/spacefolding-reranker-scale-report.json",
+      "expectedOutput": "/tmp/spacefolding-reranker-scale-report.json"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/tmp/spacefolding-reranker-control-plain.json",
+      "purpose": "Structural-plain positive-control baseline result.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-structural-plain.json",
+      "purpose": "Baseline structural retrieval result.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-deterministic.json",
+      "purpose": "Deterministic-reranker comparison result.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-cross-encoder.json",
+      "purpose": "Cross-encoder reranker result.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-control-oracle.json",
+      "purpose": "Oracle-reranker positive-control result.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-control-report.json",
+      "purpose": "Paired positive-control report comparing structural-plain and oracle reranking.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-claim-report.json",
+      "purpose": "Paired-CI claim report comparing plain and reranked arms (commit-derived regimes).",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-scale-plain.json",
+      "purpose": "Large-corpus scale-case structural-plain baseline result.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-scale-cross-encoder.json",
+      "purpose": "Large-corpus scale-case cross-encoder result.",
+      "committed": false
+    },
+    {
+      "path": "/tmp/spacefolding-reranker-scale-report.json",
+      "purpose": "Paired-CI claim report for the scale case referenced by the kill criterion.",
+      "committed": false
+    }
+  ],
+  "verdict": {
+    "outcome": "pending",
+    "summary": "Candidate selected as paper #2. No claim has been run or accepted yet."
+  }
+}

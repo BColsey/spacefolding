@@ -4,24 +4,33 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   BM25F_PARAMS,
+  applySanitizedBenchmarkRerank,
+  benchmarkCrossEncoderMaxWorkers,
   buildBm25Corpus,
+  buildEvaluationReport,
+  buildProvenance,
   bm25Baseline,
   bm25BodyBaseline,
-  buildEvaluationReport,
   computeGrepTokenCost,
+  detectCrossEncoderFallback,
   extractGrepRounds,
   grepBaseline,
   grepProseTerms,
   loadBenchmarkDataset,
+  mergeStrategyMetadata,
   parseBenchmarkDataset,
   parseArgs,
   recallAtBudget,
+  oracleRerankOutput,
   resolveStrategies,
+  resolveWorkerCount,
   scoreBm25f,
   walkDir,
+  type BenchmarkRankedChunk,
   type BenchmarkTask,
   type EvalResult,
   type Metrics,
+  type StrategyMetadata,
   type StrategySummary,
   type TokenCost,
 } from '../benchmarks/evaluate.ts';
@@ -175,9 +184,60 @@ describe('retrieval benchmark report', () => {
     ]);
     expect(resolveStrategies('grep')).toEqual(['grep']);
     expect(resolveStrategies('structural')).toEqual(['structural']);
+    expect(resolveStrategies('structural-plain')).toEqual(['structural-plain']);
+    expect(resolveStrategies('structural-rerank-deterministic')).toEqual(['structural-rerank-deterministic']);
+    expect(resolveStrategies('structural-rerank-cross-encoder')).toEqual(['structural-rerank-cross-encoder']);
+    expect(resolveStrategies('structural-rerank-oracle')).toEqual(['structural-rerank-oracle']);
     expect(() => resolveStrategies('bogus')).toThrow(
       'Unknown benchmark strategy "bogus"'
     );
+  });
+
+  it('promotes oracle-relevant chunks and reduces tokensToFirstHit', () => {
+    const ranked: BenchmarkRankedChunk[] = [
+      { id: 'a', path: 'src/nope.ts', text: 'nope', tokens: 100 },
+      { id: 'b', path: 'src/gold.ts', text: 'gold', tokens: 20 },
+      { id: 'c', path: 'src/other.ts', text: 'other', tokens: 30 },
+    ];
+    const relevant = new Set(['src/gold.ts']);
+    const tokensToFirstHit = (chunks: BenchmarkRankedChunk[]) => {
+      let total = 0;
+      for (const chunk of chunks) {
+        total += chunk.tokens;
+        if (chunk.path && relevant.has(chunk.path)) return total;
+      }
+      return null;
+    };
+
+    const reranked = applySanitizedBenchmarkRerank(
+      ranked,
+      oracleRerankOutput(ranked, relevant),
+      20
+    );
+
+    expect(reranked.map((chunk) => chunk.id)).toEqual(['b', 'a', 'c']);
+    expect(tokensToFirstHit(ranked)).toBe(120);
+    expect(tokensToFirstHit(reranked)).toBe(20);
+  });
+
+  it('sanitizes malformed reranker output without corrupting ordering', () => {
+    const ranked: BenchmarkRankedChunk[] = [
+      { id: 'a', path: 'a.ts', text: 'a', tokens: 1 },
+      { id: 'b', path: 'b.ts', text: 'b', tokens: 1 },
+      { id: 'c', path: 'c.ts', text: 'c', tokens: 1 },
+      { id: 'd', path: 'd.ts', text: 'd', tokens: 1 },
+    ];
+
+    const reranked = applySanitizedBenchmarkRerank(ranked, [
+      { index: 2 },
+      { index: 2 },
+      { index: 99 },
+      { index: -1 },
+      { index: 1.5 },
+      { index: 1 },
+    ], 3);
+
+    expect(reranked.map((chunk) => chunk.id)).toEqual(['c', 'b', 'a', 'd']);
   });
 
   it('rejects malformed benchmark datasets with direct messages', () => {
@@ -506,4 +566,120 @@ describe('agentic-grep baseline (Phase 8 head-to-head)', () => {
       dir.cleanup();
     }
   }, 30_000);
+});
+
+describe('cross-encoder fallback detection', () => {
+  type Item = { index: number; score: number; reason: string };
+
+  it('detects fallback from the sticky provider flag', () => {
+    expect(detectCrossEncoderFallback({ modelFailed: true }, [{ index: 0, score: 0.9, reason: 'cross-encoder relevance' }])).toBe(true);
+  });
+
+  it('returns false when the model tagged its own relevance reasons with varied scores', () => {
+    const output: Item[] = [
+      { index: 0, score: 0.9, reason: 'cross-encoder relevance' },
+      { index: 1, score: 0.4, reason: 'cross-encoder relevance' },
+    ];
+    expect(detectCrossEncoderFallback({ modelFailed: false }, output)).toBe(false);
+  });
+
+  it('does not treat a single finite cross-encoder score as degenerate', () => {
+    expect(detectCrossEncoderFallback(
+      { modelFailed: false },
+      [{ index: 0, score: 0.9, reason: 'cross-encoder relevance' }]
+    )).toBe(false);
+  });
+
+  it('detects the deterministic fallback from its non-cross-encoder reason strings', () => {
+    const output: Item[] = [
+      { index: 0, score: 1, reason: 'direct keyword match' },
+      { index: 1, score: 0, reason: 'no keyword overlap' },
+    ];
+    expect(detectCrossEncoderFallback({ modelFailed: false }, output)).toBe(true);
+  });
+
+  it('detects a model that loaded but returned degenerate (all-equal) scores', () => {
+    const output: Item[] = [
+      { index: 0, score: 0, reason: 'cross-encoder relevance' },
+      { index: 1, score: 0, reason: 'cross-encoder relevance' },
+    ];
+    expect(detectCrossEncoderFallback({ modelFailed: false }, output)).toBe(true);
+  });
+
+  it('detects mixed non-finite scores as invalid model evidence', () => {
+    const output = [
+      { index: 0, score: 0.9, reason: 'cross-encoder relevance' },
+      { index: 1, score: Number.NaN, reason: 'cross-encoder relevance' },
+      { index: 2, score: 0.4, reason: 'cross-encoder relevance' },
+    ];
+
+    expect(detectCrossEncoderFallback({ modelFailed: false }, output)).toBe(true);
+  });
+
+  it('requires every output reason to be tagged as cross-encoder evidence', () => {
+    const output: Item[] = [
+      { index: 0, score: 0.9, reason: 'cross-encoder relevance' },
+      { index: 1, score: 0.4, reason: 'partial keyword match' },
+    ];
+
+    expect(detectCrossEncoderFallback({ modelFailed: false }, output)).toBe(true);
+  });
+
+  it('treats empty model output as a fallback (the model did not run)', () => {
+    expect(detectCrossEncoderFallback({ modelFailed: false }, [])).toBe(true);
+  });
+});
+
+describe('strategy metadata worker merge', () => {
+  const base = (fallbackDetected?: boolean): StrategyMetadata => ({
+    baseStrategy: 'structural',
+    rerankerMode: 'cross-encoder',
+    fallbackDetected,
+  });
+
+  it('OR-merges fallbackDetected across workers (any fallback wins)', () => {
+    expect(mergeStrategyMetadata(base(false), base(true)).fallbackDetected).toBe(true);
+    expect(mergeStrategyMetadata(base(true), base(false)).fallbackDetected).toBe(true);
+    expect(mergeStrategyMetadata(base(false), base(false)).fallbackDetected).toBe(false);
+  });
+
+  it('falls back to the incoming metadata when no existing entry is present', () => {
+    const merged = mergeStrategyMetadata(undefined, base(true));
+    expect(merged.fallbackDetected).toBe(true);
+    expect(merged.rerankerMode).toBe('cross-encoder');
+  });
+});
+
+describe('run provenance', () => {
+  it('captures git commit, runtime, and an ISO timestamp', () => {
+    const p = buildProvenance();
+
+    expect(typeof p.gitCommit).toBe('string');
+    expect(p.gitCommit.length).toBeGreaterThan(0);
+    expect(p.nodeVersion).toBe(process.version);
+    expect(p.platform).toBe(process.platform);
+    expect(p.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+  });
+});
+
+describe('cross-encoder worker cap', () => {
+  it('defaults the cap to 2 and reads BENCH_RERANKER_MAX_WORKERS', () => {
+    const before = process.env.BENCH_RERANKER_MAX_WORKERS;
+    try {
+      delete process.env.BENCH_RERANKER_MAX_WORKERS;
+      expect(benchmarkCrossEncoderMaxWorkers()).toBe(2);
+      process.env.BENCH_RERANKER_MAX_WORKERS = '3';
+      expect(benchmarkCrossEncoderMaxWorkers()).toBe(3);
+    } finally {
+      if (before === undefined) delete process.env.BENCH_RERANKER_MAX_WORKERS;
+      else process.env.BENCH_RERANKER_MAX_WORKERS = before;
+    }
+  });
+
+  it('caps worker count only for the cross-encoder arm (mitigate concurrent model-load OOM)', () => {
+    expect(resolveWorkerCount(8, 100, 'structural', 2)).toBe(8);
+    expect(resolveWorkerCount(8, 100, 'structural-rerank-deterministic', 2)).toBe(8);
+    expect(resolveWorkerCount(8, 100, 'structural-rerank-cross-encoder', 2)).toBe(2);
+    expect(resolveWorkerCount(8, 1, 'structural-rerank-cross-encoder', 2)).toBe(1);
+  });
 });

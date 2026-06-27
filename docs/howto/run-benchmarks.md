@@ -1,6 +1,6 @@
 ---
 title: Run Benchmarks
-description: How to run Spacefolding quality gates, retrieval benchmarks, and acceptance checks.
+description: How to run Spacefolding quality gates, retrieval benchmarks, acceptance checks, and claim protocols.
 last_updated: 2026-05-27
 review_schedule: quarterly
 owner: maintainers
@@ -9,7 +9,8 @@ doc_type: howto
 
 # Run Benchmarks
 
-Use this guide when you need to validate build quality, retrieval quality, or focused context efficiency.
+Use this guide when you need to validate build quality, retrieval quality,
+focused context efficiency, or a realism-gated context-management claim.
 
 ## Run the Standard Quality Gate
 
@@ -31,6 +32,35 @@ npx tsx benchmarks/evaluate.ts \
 
 This measures top-k ranking quality with exhaustive selection so token-budget pruning does not affect ranking metrics.
 
+Reranker reliability experiments use explicit benchmark-only structural arms.
+They are accepted by `--strategy`, but are intentionally excluded from
+`--strategy all`:
+
+```bash
+npx tsx benchmarks/evaluate.ts \
+  --strategy structural-plain \
+  --json > /tmp/spacefolding-reranker-plain.json
+
+npx tsx benchmarks/evaluate.ts \
+  --strategy structural-rerank-cross-encoder \
+  --json > /tmp/spacefolding-reranker-cross-encoder.json
+
+npx tsx benchmarks/reranker-claim-report.ts \
+  --baseline /tmp/spacefolding-reranker-plain.json \
+  --candidate /tmp/spacefolding-reranker-cross-encoder.json \
+  --manifest benchmarks/claims/reranker-reliability.json \
+  --require-confirm
+```
+
+Supported reranker arms are `structural-plain`,
+`structural-rerank-deterministic`, `structural-rerank-cross-encoder`, and
+`structural-rerank-oracle`.
+
+For offline plumbing checks, set `BENCH_RERANKER_DETERMINISTIC_FALLBACK=1` on
+the cross-encoder arm. The resulting report metadata sets
+`fallbackDetected: true`, and `benchmarks/reranker-claim-report.ts` marks that
+comparison invalid as cross-encoder evidence.
+
 ## Interpret Ranking Results
 
 Use the ranking benchmark to answer whether retrieval is useful before an
@@ -45,12 +75,12 @@ with the expected files.
 | `mrr` | How early the first expected file appears. `1.0` means rank 1. |
 | `avgResults` | How broad the strategy's candidate set is before the top-k cutoffs. |
 
-For code agents, high recall means the needed file is available. High NDCG and
-MRR mean the agent is likely to read it before lower-value files. The keyword
-strategy is the baseline to beat because it approximates simple grep-like
-search over paths and content. Structural retrieval is meaningful when it beats
-that baseline by using code-aware signals such as paths, symbols, references,
-FTS, vector similarity, and dependencies.
+For code agents, high recall means the needed file is available. High NDCG,
+MRR, and Hits@1 mean the needed file appears early enough to influence the
+agent. The honest baseline is not a single keyword strawman: the composite gate
+compares structural retrieval against the strongest lexical arm available in the
+run (BM25F / FTS / keyword) on Recall@10, and separately requires a top-1
+localization win over FTS when that claim is in scope.
 
 When presenting results, convert recall into task counts. For example, a
 `recallAt10` of `0.883` on a 60-task dataset means the strategy placed an
@@ -88,7 +118,23 @@ npx tsx benchmarks/check-acceptance.ts \
   --e2e-json /tmp/spacefolding-e2e.json
 ```
 
-The checker verifies structural ranking against keyword baselines and focused retrieval against recall, precision, and token thresholds.
+The checker verifies structural ranking against BM25F / FTS / keyword baselines
+and focused retrieval against recall, precision, and token thresholds.
+
+The retrieval half of the full composite gate is informational unless you are
+running the GPU/code-embedding regime named by the claim. For local deterministic
+non-regression, use the frozen blocking subset:
+
+```bash
+npx tsx benchmarks/evaluate.ts \
+  --strategy all \
+  --corpus-snapshot benchmarks/fixtures/self-corpus.json \
+  --json > /tmp/spacefolding-eval-frozen.json
+
+npx tsx benchmarks/check-acceptance.ts \
+  --retrieval-json /tmp/spacefolding-eval-frozen.json \
+  --blocking-subset
+```
 
 ## Capture Machine-Readable Acceptance Output
 
@@ -122,6 +168,34 @@ npx tsx benchmarks/evaluate.ts \
   --max-chunks 1000000 \
   --json > /tmp/spacefolding-heldout-eval.json
 ```
+
+## Run A Claim Protocol
+
+The forward research program treats each field claim as a pre-registered
+experiment: claim -> operationalization -> positive control -> realism gate ->
+paired CI -> honest verdict. The manifest validator keeps that spine explicit.
+
+Validate the current paper #2 candidate:
+
+```bash
+npx tsx benchmarks/claim-protocol.ts \
+  benchmarks/claims/reranker-reliability.json
+```
+
+A claim manifest must include:
+
+- the claim and scope;
+- prior-art slots to fill during candidate discovery;
+- metrics and datasets;
+- a positive control proving the harness can detect the effect;
+- a real-data realism gate;
+- a pre-registered kill criterion;
+- generated artifacts under `/tmp`;
+- a verdict of `pending`, `confirm`, `debunk`, `nuance`, or `inconclusive`.
+
+Keep claim protocol work under `benchmarks/` unless a later product decision
+explicitly promotes it. Do not add MCP tools, database migrations, or runtime
+commands for research controls.
 
 ## Read Current Snapshots
 

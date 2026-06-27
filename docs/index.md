@@ -9,7 +9,7 @@ doc_type: reference
 
 # Documentation Index
 
-> **The local-first context-engineering engine for coding agents.**
+> **The local-first context-engineering engine and evaluation harness for coding agents.**
 
 Start here when you know what you want to do but not which file has the answer.
 
@@ -19,6 +19,7 @@ Start here when you know what you want to do but not which file has the answer.
 | --- | --- |
 | Install and try Spacefolding. | [Quick-start tutorial](./tutorials/quick-start.md) |
 | Understand when Spacefolding is useful. | [Why Spacefolding](./concepts/why-spacefolding.md) |
+| Understand the current research direction. | [Research handoff](./RESEARCH-HANDOFF.md) |
 | Understand hot/warm/cold routing. | [How Spacefolding works](./concepts/how-spacefolding-works.md) |
 | Understand focused retrieval. | [Retrieval pipeline](./concepts/retrieval-pipeline.md) |
 | Connect Claude Code. | [Claude Code integration](./integration-guide.md) |
@@ -26,7 +27,7 @@ Start here when you know what you want to do but not which file has the answer.
 | Look up MCP tools. | [MCP tools reference](./reference/mcp-tools.md) |
 | Tune environment variables. | [Configuration reference](./configuration.md) |
 | Review the code layout. | [Architecture reference](./reference/architecture.md) |
-| Run quality and benchmark gates. | [Run benchmarks](./howto/run-benchmarks.md) |
+| Run quality, benchmark, and claim-protocol gates. | [Run benchmarks](./howto/run-benchmarks.md) |
 
 ## Documentation Sets
 
@@ -37,7 +38,7 @@ Start here when you know what you want to do but not which file has the answer.
 ### How-To Guides
 
 - [Claude Code integration](./integration-guide.md) - Configure Spacefolding as an MCP server for Claude Code.
-- [Run benchmarks](./howto/run-benchmarks.md) - Build, test, and run retrieval acceptance checks.
+- [Run benchmarks](./howto/run-benchmarks.md) - Build, test, run retrieval acceptance checks, and validate claim manifests.
 
 ### Reference
 
@@ -52,10 +53,14 @@ Start here when you know what you want to do but not which file has the answer.
 - [How Spacefolding works](./concepts/how-spacefolding-works.md) - Context lifecycle, routing tiers, scoring, and storage.
 - [Retrieval pipeline](./concepts/retrieval-pipeline.md) - Query planning, strategies, modes, and token budgets.
 
-## Benchmark Snapshots
+## Research And Benchmark Artifacts
 
-Benchmark result snapshots live under `benchmarks/` because they are point-in-time measurements rather than long-lived docs:
+Research handoffs live under `docs/`; benchmark result snapshots live under
+`benchmarks/` because they are point-in-time measurements rather than long-lived
+docs:
 
+- [Research handoff](./RESEARCH-HANDOFF.md)
+- [Meta-evaluation program](./plans/2026-06-26-meta-evaluation-program.md)
 - [Ranking results](../benchmarks/RESULTS.md)
 - [Focused retrieval E2E results](../benchmarks/E2E-RESULTS.md)
 - [Acceptance gate](../benchmarks/ACCEPTANCE.md)

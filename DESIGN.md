@@ -1,18 +1,37 @@
 # Spacefolding Design
 
-Current status: this design is the product contract. The acceptance gate's composite claim is regime-dependent — it holds on the GPU code-embedding model and fails honestly on the deterministic (CPU) provider used in CI; see `benchmarks/COMMIT-DERIVED-FINDINGS.md` for the current, honest numbers. Rerun the commands below after changes because benchmark metrics are codebase-state dependent.
+Current status: this design is the engine contract and benchmark substrate for a
+research-first project. The runtime engine remains a useful local-first context
+tool, but the forward contribution is the realism-gated evaluation program in
+`docs/RESEARCH-HANDOFF.md` and
+`docs/plans/2026-06-26-meta-evaluation-program.md`. The acceptance gate's
+composite retrieval claim is regime-dependent — it holds on the GPU
+code-embedding model and fails honestly on the deterministic (CPU) provider used
+in CI; see `benchmarks/COMMIT-DERIVED-FINDINGS.md` for the current, honest
+numbers. Rerun the commands below after changes because benchmark metrics are
+codebase-state dependent.
 
 ## Purpose
 
 Spacefolding is a local-first context management service for coding agents. It ingests project files and working context, indexes them, retrieves the most relevant pieces for a task, and fits the result into a token budget.
 
-Its goal is not to add another retrieval mechanism for its own sake, but to make the existing retrieval path measurably better for coding-agent work:
+Its engine goal is not to add another retrieval mechanism for its own sake, but
+to make the existing retrieval path measurably better for coding-agent work:
 
 - Find the files a developer actually needs.
 - Rank the most useful files near the top.
 - Return materially fewer tokens than reading the whole codebase.
 - Explain why context was selected or dropped.
 - Keep MCP, CLI, benchmark, and web behavior aligned.
+
+Its research goal is to use that engine and benchmark harness to stress-test
+agent-context claims with explicit scope:
+
+- Pre-register the claim, metrics, positive control, realism gate, and kill
+  criterion before running.
+- Report paired-bootstrap CIs and symbol-removed ablations when applicable.
+- Publish honest negative or scoped results instead of converting benchmark
+  artifacts into broad product claims.
 
 ## Success Metrics
 
@@ -126,6 +145,12 @@ Benchmarks are product tests, not decorative reports.
 - How many returned chunks were relevant?
 - How many tokens were returned?
 - Did focused retrieval improve over current hybrid behavior?
+
+`benchmarks/claim-protocol.ts` validates dev-only claim manifests for the
+meta-evaluation program. Claim manifests live under `benchmarks/claims/` and
+record the claim, prior-art slots, metrics, positive control, realism regime,
+kill criterion, commands, temporary artifacts, and verdict. They are benchmark
+inputs, not public runtime APIs.
 
 Held-out benchmarks are generated in a scratch directory outside the repository and must never commit private datasets.
 

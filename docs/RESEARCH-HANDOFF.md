@@ -81,8 +81,9 @@ new program makes that the contribution. See the companion program doc.
 ## Next steps (for the recipient)
 
 1. **Read** [`docs/plans/2026-06-26-meta-evaluation-program.md`](plans/2026-06-26-meta-evaluation-program.md).
-2. **Run candidate-discovery** — a ranked shortlist of high-value, harness-stress-testable agent-context/RAG
-   claims (the workflow spec is in the program doc). Pick paper #2.
+2. **Validate the paper #2 candidate** — reranker reliability is now the selected
+   candidate, recorded in `benchmarks/claims/reranker-reliability.json`. Run
+   candidate-discovery against current primary sources before writing the paper.
 3. For each target: **operationalize on the harness → realism gate → honest result.**
 4. **Decide positioning/venue** (sub-stack? paper series? a "claim leaderboard"?). Open question — see program doc.
 5. **Optional, independent:** the `quality-then-publish` branch is publish-ready if you want to ship the
@@ -113,6 +114,10 @@ new program makes that the contribution. See the companion program doc.
 - `benchmarks/harm-multilang.ts` — M multi-language generalization.
 - `benchmarks/harm-learned.ts` — L learned HP predictor (works on synthetic only).
 - `benchmarks/legitimacy-eval.ts` — legitimacy-as-quality (NULL/hurts).
+
+**Claim protocol**
+- `benchmarks/claim-protocol.ts` — dev-only manifest validator for the meta-evaluation loop.
+- `benchmarks/claims/reranker-reliability.json` — paper #2 candidate manifest (pending; no result claimed).
 
 **Claude-internal memory** (session context, not human-facing): `~/.claude/projects/-home-ben-Documents-Projects-spacefolding/memory/` — `novel-research-pivot.md` (the strategic arc), `project-state.md`, `phase-8-grep-baseline.md`, `benchmark-harness-throughput.md`.
 

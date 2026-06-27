@@ -80,7 +80,7 @@ export class HybridRetriever {
   constructor(
     private storage: SQLiteRepository,
     private embeddingProvider: EmbeddingProvider,
-    reranker?: RerankerProvider
+    reranker?: RerankerProvider | null
   ) {
     this.reranker = reranker ?? null;
     this.vectorReliable = inferEmbeddingQuality(embeddingProvider) !== 'deterministic';
